@@ -1,0 +1,12 @@
+# Local dev secrets for wrangler / CF Vite plugin.
+# Copy to .dev.vars and fill in values before running `npm run dev`.
+#
+# DASHBOARD_KEK
+#   Base64-encoded 32 random bytes. Used to AES-GCM-seal the gateway admin key,
+#   the super-admin TOTP secret, and each merchant API key before they are
+#   written to KV. Generate with:
+#     openssl rand -base64 32
+#   Rotating this value invalidates every sealed blob — only do it alongside a
+#   dashboard re-onboarding.
+
+DASHBOARD_KEK="replace-me-with-openssl-rand--base64-32-output-32-bytes-b64"

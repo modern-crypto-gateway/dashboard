@@ -1,0 +1,94 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "gateway-dashboard",
+	"main": "worker/index.ts",
+	"compatibility_date": "2026-04-18",
+	"assets": {
+		"not_found_handling": "single-page-application"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"upload_source_maps": true,
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+
+	/**
+	 * KV used by the dashboard for all state (config, users, sessions,
+	 * CSRF tokens, long-window rate-limit counters, merchant keys, etc).
+	 * Create with:   wrangler kv namespace create DASHBOARD_KV
+	 * Then replace `id` below with the returned id.
+	 */
+	"kv_namespaces": [
+		{
+			"binding": "DASHBOARD_KV",
+			"id": "REPLACE_WITH_KV_NAMESPACE_ID"
+		}
+	],
+
+	/**
+	 * Cloudflare native Rate Limiting bindings.
+	 * See https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+	 *
+	 * Period is *limited to 10 or 60 seconds* by the platform. Windows longer
+	 * than 60s (login brute-force, security-action cooldowns) live in
+	 * worker/lib/ratelimit.ts backed by KV sliding-window counters.
+	 *
+	 * Namespace ids must be unique *within this worker*. 1000-range is
+	 * arbitrary; pick whatever you like.
+	 */
+	"ratelimits": [
+		{
+			"name": "API_RL",
+			"namespace_id": "1001",
+			"simple": {
+				"limit": 300,
+				"period": 60
+			}
+		},
+		{
+			"name": "GW_RL",
+			"namespace_id": "1002",
+			"simple": {
+				"limit": 120,
+				"period": 60
+			}
+		},
+		{
+			"name": "SETUP_RL",
+			"namespace_id": "1003",
+			"simple": {
+				"limit": 5,
+				"period": 60
+			}
+		},
+		{
+			"name": "SESS_RL",
+			"namespace_id": "1004",
+			"simple": {
+				"limit": 30,
+				"period": 60
+			}
+		}
+	]
+
+	/**
+	 * Required secrets (set via `wrangler secret put <NAME>`):
+	 *
+	 *   DASHBOARD_KEK
+	 *     Base64 of 32 random bytes. Master key used to AES-GCM encrypt
+	 *     every sensitive value before writing it to KV. Generate with:
+	 *       openssl rand -base64 32
+	 *     Rotating this invalidates all sealed blobs — only do it when
+	 *     you are also prepared to re-onboard the dashboard.
+	 *
+	 * Smart Placement
+	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
+	 */
+	// "placement": {  "mode": "smart" }
+}
