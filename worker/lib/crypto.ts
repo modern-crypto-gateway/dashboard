@@ -90,7 +90,7 @@ export async function sha256Hex(input: string | Uint8Array): Promise<string> {
 
 /* ── PBKDF2 password hashing ────────────────────────────────── */
 
-const PBKDF2_ITERATIONS = 210_000
+const PBKDF2_ITERATIONS = 100_000
 const PBKDF2_SALT_BYTES = 16
 const PBKDF2_KEY_BYTES = 32
 

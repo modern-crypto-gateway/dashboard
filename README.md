@@ -25,7 +25,7 @@ CSRF tokens, merchant API keys, tracked invoices / payouts).
 - **Settings** — gateway base URL, admin-key rotation, password change, **2FA rotation**, **recovery-code regeneration**, **active-session list + per-session revoke**
 
 ### Security
-- PBKDF2-SHA256 (210k iter) password hashing; AES-GCM sealing of admin key + TOTP secret + merchant API keys
+- PBKDF2-SHA256 (100k iter) password hashing; AES-GCM sealing of admin key + TOTP secret + merchant API keys
 - Sessions: HttpOnly `gw_sess` cookie carrying the raw token; KV keyed by `sha256(token)`; per-user session index for list/revoke
 - CSRF: `gw_csrf` double-submit token, verified on every non-GET mutation
 - Two-layer rate limiting: **Cloudflare native `ratelimits` bindings** (60s windows — blanket API 300/m, gw proxy 120/m, setup 5/m, session-revoke 30/m) + **KV sliding-window** for longer windows (login 10/5m, TOTP 20/5m, password change 5/10m, recovery regen 3/hr)

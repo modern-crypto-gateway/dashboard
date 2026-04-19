@@ -69,7 +69,7 @@ export async function postLoginPassword(
     : await verifyPassword(
         password,
         // constant dummy hash — iterations match real hashes so timing is stable.
-        'pbkdf2$sha256$210000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+        'pbkdf2$sha256$100000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
       )
   if (!user || !ok) {
     return error('BAD_CREDS', 'Invalid username or password', 401)
