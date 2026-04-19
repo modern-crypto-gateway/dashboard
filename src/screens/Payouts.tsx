@@ -27,6 +27,7 @@ import type {
 } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
+import { ChainTokenPicker } from '@/components/ChainTokenPicker'
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
 import { MerchantSwitcher } from '@/components/MerchantSwitcher'
@@ -679,23 +680,16 @@ function CreatePayoutDialog({
             create.mutate()
           }}
         >
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Chain ID">
-              <Input
-                value={chainId}
-                onChange={(e) => setChainId(e.target.value)}
-                inputMode="numeric"
-                className="font-mono"
-              />
-            </Field>
-            <Field label="Token">
-              <Input
-                value={token}
-                onChange={(e) => setToken(e.target.value.toUpperCase())}
-                className="font-mono"
-              />
-            </Field>
-          </div>
+          <ChainTokenPicker
+            chainId={chainId}
+            token={token}
+            onChange={({ chainId: c, token: t }) => {
+              setChainId(c)
+              setToken(t)
+            }}
+            filter={(c) => c.bootstrapReady}
+            emptyHint="No bootstrap-ready chains. Register a fee wallet from Chains first."
+          />
           <Field label="Amount (raw integer, smallest units)">
             <Input
               value={amountRaw}

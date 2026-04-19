@@ -194,6 +194,55 @@ export type FeeWalletResult = {
   label: string
 }
 
+export type FeeWalletRow = {
+  id: string
+  chainId: number
+  chain?: string | null
+  address: string
+  label: string
+  active: boolean
+  reservedByPayoutId: string | null
+  reservedAt: string | null
+  createdAt: string
+  nativeSymbol?: string | null
+  nativeDecimals?: number | null
+  nativeBalance?: string | null
+  nativeBalanceError?: 'chain_not_wired' | 'rpc_error' | null
+}
+
+export type ChainToken = {
+  symbol: string
+  decimals: number
+  isStable: boolean
+  displayName: string
+  contractAddress?: string | null
+}
+
+export type ChainInventoryEntry = {
+  chainId: number
+  slug: string
+  family: Family
+  displayName: string
+  wired: boolean
+  webhooksSupported: boolean
+  alchemyConfigured: boolean
+  webhooks: boolean
+  feeWallets: boolean
+  detection: 'alchemy' | 'rpc-poll'
+  bootstrapReady: boolean
+  confirmationsRequired: number
+  tokens: ChainToken[]
+}
+
+export type AlchemyWebhookEntry = {
+  chainId: number
+  chain: string | null
+  webhookId: string
+  webhookUrl: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type BalancesSnapshot = {
   generatedAt: string
   source: 'db' | 'rpc'

@@ -1,11 +1,24 @@
 import * as React from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowUp, Plus, RefreshCw, Terminal } from 'lucide-react'
+import { ArrowRight, ArrowUp, Flame, Link2, Plus, RefreshCw, Terminal } from 'lucide-react'
 
 import { api } from '@/lib/api'
-import { chainInfo, FAMILY_COLOR } from '@/lib/chains'
+import {
+  chainInfo,
+  FAMILY_COLOR,
+  isLowGas,
+  nativeBalanceDecimal,
+} from '@/lib/chains'
 import { fmtUsd, fmtNum } from '@/lib/format'
-import type { BalancesSnapshot, Family, Health, PoolStatsRow } from '@/lib/types'
+import type {
+  BalancesSnapshot,
+  ChainInventoryEntry,
+  Family,
+  FeeWalletRow,
+  Health,
+  PoolStatsRow,
+} from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
 import { Button } from '@/components/ui/button'
@@ -36,10 +49,54 @@ const BAL_Q = {
   refetchInterval: 60_000,
 }
 
+const CHAINS_Q = {
+  queryKey: ['gw', 'chains'] as const,
+  queryFn: () =>
+    api<{ chains: ChainInventoryEntry[] }>('/api/gw/admin/chains'),
+  refetchInterval: 120_000,
+}
+
+const FEE_GAS_Q = {
+  queryKey: ['gw', 'fee-wallets', 'gas'] as const,
+  queryFn: () =>
+    api<{ feeWallets: FeeWalletRow[] }>(
+      '/api/gw/admin/fee-wallets?includeBalance=true&active=true&limit=200',
+    ),
+  refetchInterval: 120_000,
+}
+
 export function DashboardPage() {
   const health = useQuery(HEALTH_Q)
   const pool = useQuery(POOL_Q)
   const bal = useQuery(BAL_Q)
+  const chains = useQuery(CHAINS_Q)
+  const feeGas = useQuery(FEE_GAS_Q)
+
+  const bootstrapGaps = React.useMemo(() => {
+    const chainList = chains.data?.chains ?? []
+    if (chainList.length === 0) return null
+    const wired = chainList.filter((c) => c.wired)
+    const webhookGaps = wired.filter(
+      (c) => c.webhooksSupported && !c.webhooks,
+    ).length
+    const walletGaps = wired.filter((c) => !c.feeWallets).length
+    const notReady = wired.filter((c) => !c.bootstrapReady).length
+    return { webhookGaps, walletGaps, notReady, total: wired.length }
+  }, [chains.data])
+
+  const showGapsCard = !!bootstrapGaps && bootstrapGaps.notReady > 0
+
+  const lowGas = React.useMemo(() => {
+    const rows = feeGas.data?.feeWallets ?? []
+    const low = rows.filter((w) => {
+      const fam = chainInfo(w.chainId).family
+      const bal = nativeBalanceDecimal(w.nativeBalance, w.nativeDecimals)
+      return isLowGas(fam, bal)
+    })
+    return { low, total: rows.length }
+  }, [feeGas.data])
+
+  const showGasCard = lowGas.low.length > 0
 
   const poolTotals = React.useMemo(() => {
     const rows = pool.data?.stats ?? []
@@ -85,6 +142,17 @@ export function DashboardPage() {
           </Button>
         </div>
       </div>
+
+      {showGapsCard && bootstrapGaps && (
+        <BootstrapGapsCard
+          notReady={bootstrapGaps.notReady}
+          webhookGaps={bootstrapGaps.webhookGaps}
+          walletGaps={bootstrapGaps.walletGaps}
+          total={bootstrapGaps.total}
+        />
+      )}
+
+      {showGasCard && <LowGasCard rows={lowGas.low} />}
 
       {/* KPI row */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -559,6 +627,93 @@ function ActivityCard() {
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+function BootstrapGapsCard({
+  notReady,
+  webhookGaps,
+  walletGaps,
+  total,
+}: {
+  notReady: number
+  webhookGaps: number
+  walletGaps: number
+  total: number
+}) {
+  const parts: string[] = []
+  if (webhookGaps > 0)
+    parts.push(
+      `${webhookGaps} missing Alchemy webhook${webhookGaps === 1 ? '' : 's'}`,
+    )
+  if (walletGaps > 0)
+    parts.push(
+      `${walletGaps} missing fee wallet${walletGaps === 1 ? '' : 's'}`,
+    )
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3">
+      <div className="flex items-start gap-3">
+        <Link2 className="mt-0.5 size-4 shrink-0 text-warn" />
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-warn">
+            {notReady} of {total} wired chains not bootstrap-ready
+          </div>
+          <div className="mt-0.5 text-xs text-[var(--fg-2)]">
+            {parts.join(' · ')}. Ingest and payouts stay degraded until these
+            are filled.
+          </div>
+        </div>
+      </div>
+      <Button asChild size="sm">
+        <Link to="/chains">
+          Open chains
+          <ArrowRight className="size-3.5" />
+        </Link>
+      </Button>
+    </div>
+  )
+}
+
+function LowGasCard({ rows }: { rows: FeeWalletRow[] }) {
+  const preview = rows.slice(0, 3)
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3">
+      <div className="flex items-start gap-3">
+        <Flame className="mt-0.5 size-4 shrink-0 text-warn" />
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-warn">
+            {rows.length} fee wallet{rows.length === 1 ? '' : 's'} below gas
+            threshold
+          </div>
+          <div className="mt-0.5 text-xs text-[var(--fg-2)]">
+            {preview
+              .map((w) => {
+                const bal = nativeBalanceDecimal(w.nativeBalance, w.nativeDecimals)
+                const sym = w.nativeSymbol ?? ''
+                const amt =
+                  bal == null
+                    ? '—'
+                    : bal >= 1
+                      ? bal.toFixed(4)
+                      : bal.toFixed(6)
+                return `${w.label} (${amt} ${sym})`
+              })
+              .join(' · ')}
+            {rows.length > preview.length
+              ? ` · +${rows.length - preview.length} more`
+              : ''}
+            . Fund before payouts stall.
+          </div>
+        </div>
+      </div>
+      <Button asChild size="sm">
+        <Link to="/fee-wallets">
+          Open fee wallets
+          <ArrowRight className="size-3.5" />
+        </Link>
+      </Button>
+    </div>
   )
 }
 

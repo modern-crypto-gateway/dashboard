@@ -6,6 +6,7 @@ import {
   CircleDollarSign,
   FileText,
   LayoutDashboard,
+  Link2,
   Radio,
   Settings,
   ShieldCheck,
@@ -63,6 +64,7 @@ const sections: Section[] = [
   {
     group: 'Admin',
     items: [
+      { to: '/chains', label: 'Chains', icon: Link2 },
       { to: '/audit-address', label: 'Audit address', icon: ShieldCheck },
       { to: '/fee-wallets', label: 'Fee wallets', icon: Wallet },
       { to: '/alchemy', label: 'Alchemy webhooks', icon: Radio },

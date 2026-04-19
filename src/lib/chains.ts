@@ -43,3 +43,26 @@ export function chainInfo(chainId: number) {
     }
   )
 }
+
+export const LOW_GAS_THRESHOLD: Record<Family, number> = {
+  evm: 0.01,
+  tron: 100,
+  solana: 0.1,
+}
+
+export function nativeBalanceDecimal(
+  raw: string | null | undefined,
+  decimals: number | null | undefined,
+): number | null {
+  if (raw == null || decimals == null) return null
+  const n = Number(raw) / 10 ** decimals
+  return Number.isFinite(n) ? n : null
+}
+
+export function isLowGas(
+  family: Family,
+  balance: number | null,
+): boolean {
+  if (balance == null) return false
+  return balance < LOW_GAS_THRESHOLD[family]
+}
