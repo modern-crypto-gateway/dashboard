@@ -21,6 +21,7 @@ import { api, ApiError } from '@/lib/api'
 import { chainInfo } from '@/lib/chains'
 import {
   decimalPlaces,
+  fmtLocal,
   fmtNum,
   fmtRel,
   fmtUsd,
@@ -545,15 +546,11 @@ function PayoutDetailSheet({
                   )}
                 </KVItem>
                 <KVItem label="Created">
-                  <span className="font-mono text-xs">
-                    {new Date(po.createdAt).toISOString().slice(0, 19)}Z
-                  </span>
+                  <span className="font-mono text-xs">{fmtLocal(po.createdAt)}</span>
                 </KVItem>
                 <KVItem label="Confirmed">
                   <span className="font-mono text-xs">
-                    {po.confirmedAt
-                      ? new Date(po.confirmedAt).toISOString().slice(0, 19) + 'Z'
-                      : '—'}
+                    {po.confirmedAt ? fmtLocal(po.confirmedAt) : '—'}
                   </span>
                 </KVItem>
               </KV>

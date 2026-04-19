@@ -10,7 +10,7 @@ import {
   isLowGas,
   nativeBalanceDecimal,
 } from '@/lib/chains'
-import { fmtUsd, fmtNum } from '@/lib/format'
+import { fmtLocalTime, fmtUsd, fmtNum } from '@/lib/format'
 import type {
   BalancesSnapshot,
   ChainInventoryEntry,
@@ -122,7 +122,7 @@ export function DashboardPage() {
               <StatusDot tone="success" />
               Last sync{' '}
               <span className="font-mono">
-                {new Date(balSnap.generatedAt).toISOString().slice(11, 19)}Z
+                {fmtLocalTime(balSnap.generatedAt)}
               </span>
             </span>
           )}

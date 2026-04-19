@@ -21,7 +21,7 @@ import {
 
 import { api, ApiError } from '@/lib/api'
 import { merchantsQuery, useMerchants } from '@/lib/merchants'
-import { fmtRel } from '@/lib/format'
+import { fmtLocal, fmtRel } from '@/lib/format'
 import type { Merchant } from '@/lib/types'
 
 import { Badge } from '@/components/ui/badge'
@@ -549,7 +549,7 @@ function OverviewSection({ m }: { m: Merchant }) {
             'API key fingerprint',
             m.apiKeyFingerprint ? `…${m.apiKeyFingerprint}` : '—',
           ],
-          ['Created', new Date(m.createdAt * 1000).toLocaleString()],
+          ['Created', fmtLocal(m.createdAt)],
           ['Updated', fmtRel(m.updatedAt)],
         ]}
       />

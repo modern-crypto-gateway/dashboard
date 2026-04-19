@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { Search, Shield } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
+import { fmtLocalDate } from '@/lib/format'
 import type { AuditResult, ChainInventoryEntry } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
@@ -177,11 +178,7 @@ export function AuditAddressPage() {
               <Stat label="already present" value={audit.data.audit.alreadyPresent} />
               <Stat
                 label="since"
-                value={
-                  new Date(audit.data.audit.sinceMs)
-                    .toISOString()
-                    .slice(0, 10)
-                }
+                value={fmtLocalDate(audit.data.audit.sinceMs)}
                 mono
               />
             </div>

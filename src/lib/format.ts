@@ -53,3 +53,69 @@ export const fmtRel = (unixSec: number): string => {
   if (diff < 2_592_000) return `${Math.floor(diff / 604_800)}w ago`
   return new Date(unixSec * 1000).toLocaleDateString()
 }
+
+/* ── Local-time date formatting ─────────────────────────────── */
+
+const pad2 = (n: number): string => n.toString().padStart(2, '0')
+
+/**
+ * Normalize anything date-ish to a Date in local time.
+ * Accepts ISO strings, unix seconds, and unix ms. Heuristic: numbers below
+ * 1e12 are seconds (any post-2001 ms timestamp is ≥ 1e12).
+ */
+export function toDate(
+  x: string | number | Date | null | undefined,
+): Date | null {
+  if (x == null || x === '') return null
+  if (x instanceof Date) return isNaN(+x) ? null : x
+  if (typeof x === 'number') {
+    if (!isFinite(x)) return null
+    const d = new Date(x < 1e12 ? x * 1000 : x)
+    return isNaN(+d) ? null : d
+  }
+  const d = new Date(x)
+  return isNaN(+d) ? null : d
+}
+
+/** `YYYY-MM-DD HH:MM` (local). Pass `{ seconds: true }` for `:SS` precision. */
+export function fmtLocal(
+  x: string | number | Date | null | undefined,
+  opts: { seconds?: boolean } = {},
+): string {
+  const d = toDate(x)
+  if (!d) return '—'
+  const base = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  return opts.seconds ? `${base}:${pad2(d.getSeconds())}` : base
+}
+
+/** `HH:MM:SS` (local). */
+export function fmtLocalTime(
+  x: string | number | Date | null | undefined,
+): string {
+  const d = toDate(x)
+  if (!d) return '—'
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+}
+
+/** `YYYY-MM-DD` (local). */
+export function fmtLocalDate(
+  x: string | number | Date | null | undefined,
+): string {
+  const d = toDate(x)
+  if (!d) return '—'
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+/** Compact `[Nd] [Nh] MMm SSs` remaining, given a positive diff in ms. */
+export function fmtCountdown(diffMs: number): string {
+  if (diffMs <= 0) return '0s'
+  const sec = Math.floor(diffMs / 1000) % 60
+  const min = Math.floor(diffMs / 60_000) % 60
+  const hr = Math.floor(diffMs / 3_600_000) % 24
+  const day = Math.floor(diffMs / 86_400_000)
+  const parts: string[] = []
+  if (day) parts.push(`${day}d`)
+  if (day || hr) parts.push(`${hr}h`)
+  parts.push(`${pad2(min)}m`, `${pad2(sec)}s`)
+  return parts.join(' ')
+}

@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
-import { truncateAddr } from '@/lib/format'
+import { fmtLocal, fmtLocalTime, truncateAddr } from '@/lib/format'
 import type { WebhookDelivery } from '@/lib/types'
 
 import { CopyButton } from '@/components/CopyButton'
@@ -243,7 +243,7 @@ function DeliveryRow({
 
 function formatAt(d: WebhookDelivery): string {
   if (d.status === 'delivered' && d.deliveredAt) {
-    return new Date(d.deliveredAt).toISOString().slice(11, 19) + 'Z'
+    return fmtLocalTime(d.deliveredAt)
   }
   if (d.status === 'pending' && d.nextAttemptAt) {
     const delta = d.nextAttemptAt - Date.now()
@@ -252,7 +252,7 @@ function formatAt(d: WebhookDelivery): string {
     if (delta < 3_600_000) return `in ${Math.ceil(delta / 60_000)}m`
     return `in ${Math.ceil(delta / 3_600_000)}h`
   }
-  return new Date(d.updatedAt).toISOString().slice(11, 19) + 'Z'
+  return fmtLocalTime(d.updatedAt)
 }
 
 /* ── detail sheet ──────────────────────────────────────── */
@@ -323,12 +323,12 @@ function DeliveryDetailSheet({
                 </KVItem>
                 <KVItem label="Created">
                   <span className="font-mono text-xs">
-                    {new Date(delivery.createdAt).toISOString().slice(0, 19)}Z
+                    {fmtLocal(delivery.createdAt)}
                   </span>
                 </KVItem>
                 <KVItem label="Updated">
                   <span className="font-mono text-xs">
-                    {new Date(delivery.updatedAt).toISOString().slice(0, 19)}Z
+                    {fmtLocal(delivery.updatedAt)}
                   </span>
                 </KVItem>
               </KV>

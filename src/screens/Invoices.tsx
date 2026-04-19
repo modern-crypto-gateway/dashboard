@@ -14,7 +14,14 @@ import {
 
 import { api, ApiError } from '@/lib/api'
 import { chainInfo } from '@/lib/chains'
-import { fmtNum, fmtRel, fmtUsd, truncateAddr } from '@/lib/format'
+import {
+  fmtCountdown,
+  fmtLocal,
+  fmtNum,
+  fmtRel,
+  fmtUsd,
+  truncateAddr,
+} from '@/lib/format'
 import { useActiveMerchant, useMerchants } from '@/lib/merchants'
 import type {
   Family,
@@ -566,14 +573,10 @@ function OverviewTab({ data }: { data: InvoiceDetails }) {
           </span>
         </KVItem>
         <KVItem label="Created">
-          <span className="font-mono text-xs">
-            {new Date(invoice.createdAt).toISOString().slice(0, 19)}Z
-          </span>
+          <span className="font-mono text-xs">{fmtLocal(invoice.createdAt)}</span>
         </KVItem>
         <KVItem label="Expires">
-          <span className="font-mono text-xs">
-            {new Date(invoice.expiresAt).toISOString().slice(0, 19)}Z
-          </span>
+          <ExpiresCell iso={invoice.expiresAt} />
         </KVItem>
       </KV>
 
@@ -590,6 +593,32 @@ function OverviewTab({ data }: { data: InvoiceDetails }) {
         </div>
       )}
     </div>
+  )
+}
+
+function ExpiresCell({ iso }: { iso: string }) {
+  const target = React.useMemo(() => new Date(iso).getTime(), [iso])
+  const [now, setNow] = React.useState(() => Date.now())
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const diff = target - now
+  if (!isFinite(target)) {
+    return <span className="font-mono text-xs">—</span>
+  }
+  if (diff <= 0) {
+    return (
+      <span className="font-mono text-xs text-destructive">
+        expired · {fmtLocal(iso, { seconds: true })}
+      </span>
+    )
+  }
+  return (
+    <span className="font-mono text-xs">
+      in {fmtCountdown(diff)}
+      <span className="ml-1.5 text-[var(--fg-3)]">· {fmtLocal(iso)}</span>
+    </span>
   )
 }
 

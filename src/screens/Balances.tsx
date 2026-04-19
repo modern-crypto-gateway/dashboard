@@ -10,7 +10,7 @@ import {
 
 import { api } from '@/lib/api'
 import { chainInfo, FAMILY_COLOR } from '@/lib/chains'
-import { fmtUsd, fmtNum } from '@/lib/format'
+import { fmtLocalTime, fmtUsd, fmtNum } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { BalancesSnapshot, Family } from '@/lib/types'
 
@@ -83,7 +83,7 @@ export function BalancesPage() {
                 )}
                 {' · '}generated{' '}
                 <span className="font-mono">
-                  {new Date(snap.generatedAt).toISOString().slice(11, 19)}Z
+                  {fmtLocalTime(snap.generatedAt)}
                 </span>
               </div>
             </div>

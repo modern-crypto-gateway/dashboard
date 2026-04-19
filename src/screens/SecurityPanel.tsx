@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
+import { fmtLocal } from '@/lib/format'
 
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
@@ -581,11 +582,7 @@ function SessionRowView({ row }: { row: SessionRow }) {
           {row.ip && <span className="font-mono">{row.ip}</span>}
           <span>idle {humanSecs(row.idleSeconds)}</span>
           <span>·</span>
-          <span>
-            expires{' '}
-            {new Date(row.expiresAt * 1000).toISOString().slice(0, 16).replace('T', ' ')}
-            Z
-          </span>
+          <span>expires {fmtLocal(row.expiresAt)}</span>
         </div>
       </div>
       {!row.current && (

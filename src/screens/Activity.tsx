@@ -4,7 +4,7 @@ import { Activity as ActivityIcon, RefreshCw } from 'lucide-react'
 
 import { api } from '@/lib/api'
 import type { WebhookDelivery } from '@/lib/types'
-import { truncateAddr } from '@/lib/format'
+import { fmtLocalTime, truncateAddr } from '@/lib/format'
 
 import { Addr } from '@/components/Addr'
 import { Badge } from '@/components/ui/badge'
@@ -160,7 +160,7 @@ export function ActivityPage() {
                     )}
                   </div>
                   <span className="shrink-0 font-mono text-[11px] text-[var(--fg-3)]">
-                    {new Date(e.updatedAt).toISOString().slice(11, 19)}Z
+                    {fmtLocalTime(e.updatedAt)}
                   </span>
                 </li>
               ))}
