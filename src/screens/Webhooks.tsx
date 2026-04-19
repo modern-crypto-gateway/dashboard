@@ -5,8 +5,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
-  RefreshCw,
   RotateCcw,
+  Search,
   Webhook,
 } from 'lucide-react'
 
@@ -14,25 +14,26 @@ import { api, ApiError } from '@/lib/api'
 import { truncateAddr } from '@/lib/format'
 import type { WebhookDelivery } from '@/lib/types'
 
-import { Addr } from '@/components/Addr'
 import { CopyButton } from '@/components/CopyButton'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
 type Status = 'pending' | 'delivered' | 'dead'
 
 export function WebhooksPage() {
   const [status, setStatus] = React.useState<Status>('dead')
+  const [query, setQuery] = React.useState('')
+  const [detailId, setDetailId] = React.useState<string | null>(null)
   const qc = useQueryClient()
 
   const list = useQuery({
@@ -44,10 +45,31 @@ export function WebhooksPage() {
     refetchInterval: 60_000,
   })
 
-  const [detail, setDetail] = React.useState<WebhookDelivery | null>(null)
+  const all = list.data?.deliveries ?? []
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return all
+    return all.filter(
+      (d) =>
+        d.id.toLowerCase().includes(q) ||
+        d.merchantId.toLowerCase().includes(q) ||
+        d.eventType.toLowerCase().includes(q),
+    )
+  }, [all, query])
+
+  const detail = all.find((d) => d.id === detailId) ?? null
+
+  const counts = React.useMemo(
+    () => ({
+      pending: status === 'pending' ? all.length : undefined,
+      delivered: status === 'delivered' ? all.length : undefined,
+      dead: status === 'dead' ? all.length : undefined,
+    }),
+    [all, status],
+  )
 
   return (
-    <div className="fade-in space-y-6">
+    <div className="fade-in space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="eyebrow">Operations</div>
@@ -59,93 +81,40 @@ export function WebhooksPage() {
             fixed the underlying cause.
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => list.refetch()}
-          disabled={list.isFetching}
-        >
-          <RefreshCw className={'size-3.5' + (list.isFetching ? ' animate-spin' : '')} />
-          Refresh
-        </Button>
       </div>
 
-      <StatusTabs
-        value={status}
-        onChange={setStatus}
-        counts={{
-          pending: list.data?.deliveries.filter((d) => d.status === 'pending').length,
-          delivered: list.data?.deliveries.filter((d) => d.status === 'delivered').length,
-          dead: list.data?.deliveries.filter((d) => d.status === 'dead').length,
-        }}
-      />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <StatusTabs value={status} onChange={setStatus} counts={counts} />
+        <div className="relative sm:flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[var(--fg-3)]" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by id, merchant, event…"
+            className="pl-8"
+          />
+        </div>
+      </div>
 
       {list.isLoading ? (
-        <Card className="p-10 text-center text-sm text-[var(--fg-2)]">Loading…</Card>
+        <ListSkeleton />
       ) : list.isError ? (
-        <Card className="p-10 text-center text-sm text-destructive">
+        <div className="rounded-lg border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-destructive">
           {list.error instanceof Error
             ? list.error.message
             : 'Could not load deliveries'}
-        </Card>
-      ) : (list.data?.deliveries.length ?? 0) === 0 ? (
-        <EmptyCard status={status} />
+        </div>
+      ) : all.length === 0 ? (
+        <EmptyState status={status} />
+      ) : filtered.length === 0 ? (
+        <NoMatch />
       ) : (
-        <Card className="overflow-hidden p-0">
-          <CardContent className="p-0">
-            <table className="w-full border-separate border-spacing-0 text-sm">
-              <thead>
-                <tr>
-                  <Th>Delivery</Th>
-                  <Th>Event</Th>
-                  <Th>Merchant</Th>
-                  <Th>Attempts</Th>
-                  <Th>Last code</Th>
-                  <Th>Next / delivered</Th>
-                  <Th />
-                </tr>
-              </thead>
-              <tbody>
-                {list.data!.deliveries.map((d) => (
-                  <tr
-                    key={d.id}
-                    className="cursor-pointer transition-colors hover:bg-[var(--bg-2)]"
-                    onClick={() => setDetail(d)}
-                  >
-                    <Td>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-[12.5px]">
-                          {truncateAddr(d.id, 8, 6)}
-                        </span>
-                        <CopyButton value={d.id} />
-                      </div>
-                    </Td>
-                    <Td className="font-mono text-[12.5px]">{d.eventType}</Td>
-                    <Td>
-                      <Addr value={d.merchantId} />
-                    </Td>
-                    <Td className="font-mono text-[12.5px]">{d.attempts}</Td>
-                    <Td className="font-mono text-[12.5px]">
-                      {d.lastStatusCode ?? '—'}
-                    </Td>
-                    <Td className="font-mono text-xs text-[var(--fg-2)]">
-                      {formatAt(d)}
-                    </Td>
-                    <Td className="text-right">
-                      {d.status === 'dead' && <ReplayButton id={d.id} />}
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+        <DeliveryList rows={filtered} onOpen={setDetailId} />
       )}
 
-      <DeliveryDetailDialog
-        open={!!detail}
-        onOpenChange={(o) => !o && setDetail(null)}
+      <DeliveryDetailSheet
         delivery={detail}
+        onOpenChange={(v) => !v && setDetailId(null)}
         onReplayed={() =>
           qc.invalidateQueries({ queryKey: ['webhook-deliveries', status] })
         }
@@ -175,7 +144,7 @@ function StatusTabs({
           key={key}
           onClick={() => onChange(key)}
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer',
+            'inline-flex cursor-pointer items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-medium transition-colors',
             value === key
               ? 'bg-secondary text-foreground shadow-xs'
               : 'text-[var(--fg-2)] hover:text-foreground',
@@ -194,40 +163,74 @@ function StatusTabs({
   )
 }
 
-function EmptyCard({ status }: { status: Status }) {
-  const copy: Record<Status, string> = {
-    dead: 'No permanently failed deliveries. 🎉',
-    pending: 'No deliveries queued for retry.',
-    delivered: 'No delivered rows in the recent window.',
-  }
+function DeliveryList({
+  rows,
+  onOpen,
+}: {
+  rows: WebhookDelivery[]
+  onOpen: (id: string) => void
+}) {
   return (
-    <Card className="p-10 text-center">
-      <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-[var(--bg-2)]">
-        <Webhook className="size-5 text-[var(--fg-2)]" />
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="hidden grid-cols-[1fr_180px_140px_80px_100px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
+        <div>Delivery</div>
+        <div>Event</div>
+        <div>Merchant</div>
+        <div>Attempts</div>
+        <div>Timing</div>
       </div>
-      <div className="mt-3 text-sm text-[var(--fg-1)]">{copy[status]}</div>
-    </Card>
+      <ul>
+        {rows.map((d) => (
+          <DeliveryRow key={d.id} d={d} onOpen={() => onOpen(d.id)} />
+        ))}
+      </ul>
+    </div>
   )
 }
 
-function Th({ children }: { children?: React.ReactNode }) {
-  return (
-    <th className="border-b border-border bg-card px-3.5 py-2.5 text-left text-[11.5px] font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
-      {children}
-    </th>
-  )
-}
-function Td({
-  children,
-  className = '',
+function DeliveryRow({
+  d,
+  onOpen,
 }: {
-  children?: React.ReactNode
-  className?: string
+  d: WebhookDelivery
+  onOpen: () => void
 }) {
   return (
-    <td className={'border-b border-border px-3.5 py-2.5 align-middle ' + className}>
-      {children}
-    </td>
+    <li className="border-b border-border last:border-0">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="grid w-full grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] sm:grid-cols-[1fr_180px_140px_80px_100px] sm:gap-4"
+      >
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate font-mono text-[12.5px]">
+              {truncateAddr(d.id, 8, 6)}
+            </span>
+            <span onClick={(e) => e.stopPropagation()}>
+              <CopyButton value={d.id} />
+            </span>
+          </div>
+          {d.lastStatusCode != null && (
+            <div className="mt-0.5 font-mono text-[11px] text-[var(--fg-3)]">
+              last · {d.lastStatusCode}
+            </div>
+          )}
+        </div>
+
+        <div className="truncate font-mono text-[12.5px] text-[var(--fg-2)]">
+          {d.eventType}
+        </div>
+
+        <div className="truncate font-mono text-[12.5px] text-[var(--fg-2)]">
+          {truncateAddr(d.merchantId, 6, 4)}
+        </div>
+
+        <div className="font-mono text-[12.5px]">{d.attempts}</div>
+
+        <div className="text-xs text-[var(--fg-3)]">{formatAt(d)}</div>
+      </button>
+    </li>
   )
 }
 
@@ -245,46 +248,18 @@ function formatAt(d: WebhookDelivery): string {
   return new Date(d.updatedAt).toISOString().slice(11, 19) + 'Z'
 }
 
-function ReplayButton({ id }: { id: string }) {
-  const qc = useQueryClient()
-  const replay = useMutation({
-    mutationFn: () =>
-      api(`/api/gw/admin/webhook-deliveries/${encodeURIComponent(id)}/replay`, {
-        method: 'POST',
-      }),
-    onSuccess: () => {
-      toast.success('Queued for retry')
-      qc.invalidateQueries({ queryKey: ['webhook-deliveries'] })
-    },
-    onError: (e: ApiError) => toast.error(e.message || 'Could not replay'),
-  })
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={(e) => {
-        e.stopPropagation()
-        replay.mutate()
-      }}
-      disabled={replay.isPending}
-    >
-      <RotateCcw className={'size-3.5' + (replay.isPending ? ' animate-spin' : '')} />
-      Replay
-    </Button>
-  )
-}
+/* ── detail sheet ──────────────────────────────────────── */
 
-function DeliveryDetailDialog({
-  open,
-  onOpenChange,
+function DeliveryDetailSheet({
   delivery,
+  onOpenChange,
   onReplayed,
 }: {
-  open: boolean
-  onOpenChange: (o: boolean) => void
   delivery: WebhookDelivery | null
+  onOpenChange: (o: boolean) => void
   onReplayed: () => void
 }) {
+  const open = delivery !== null
   const replay = useMutation({
     mutationFn: () =>
       api(
@@ -300,93 +275,182 @@ function DeliveryDetailDialog({
   })
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Delivery detail</DialogTitle>
-          <DialogDescription>
-            <span className="font-mono">{delivery?.id}</span>
-          </DialogDescription>
-        </DialogHeader>
-        {delivery && (
-          <>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FieldRow label="Event">
-                <span className="font-mono text-[12.5px]">{delivery.eventType}</span>
-              </FieldRow>
-              <FieldRow label="Status">
-                <Badge
-                  variant={
-                    delivery.status === 'delivered'
-                      ? 'success'
-                      : delivery.status === 'dead'
-                        ? 'danger'
-                        : 'warn'
-                  }
-                >
-                  {delivery.status}
-                </Badge>
-              </FieldRow>
-              <FieldRow label="Attempts">
-                <span className="font-mono">{delivery.attempts}</span>
-              </FieldRow>
-              <FieldRow label="Last status">
-                <span className="font-mono">
-                  {delivery.lastStatusCode ?? '—'}
-                </span>
-              </FieldRow>
-              <FieldRow label="Created">
-                <span className="font-mono text-xs">
-                  {new Date(delivery.createdAt).toISOString()}
-                </span>
-              </FieldRow>
-              <FieldRow label="Updated">
-                <span className="font-mono text-xs">
-                  {new Date(delivery.updatedAt).toISOString()}
-                </span>
-              </FieldRow>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent>
+        <SheetHeader className="space-y-2">
+          {delivery && (
+            <div className="flex items-center gap-2">
+              <SheetTitle className="truncate font-mono text-base">
+                {truncateAddr(delivery.id, 10, 8)}
+              </SheetTitle>
+              <CopyButton value={delivery.id} />
+              <StatusBadge status={delivery.status} />
             </div>
-            {delivery.lastError && (
-              <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-xs text-destructive">
-                <div className="mb-1 font-semibold">last error</div>
-                <div className="font-mono whitespace-pre-wrap break-all">
-                  {delivery.lastError}
+          )}
+        </SheetHeader>
+
+        <SheetBody>
+          {delivery && (
+            <div className="space-y-5">
+              <KV>
+                <KVItem label="Event">
+                  <span className="font-mono text-[12.5px]">
+                    {delivery.eventType}
+                  </span>
+                </KVItem>
+                <KVItem label="Last status">
+                  <span className="font-mono">
+                    {delivery.lastStatusCode ?? '—'}
+                  </span>
+                </KVItem>
+                <KVItem label="Attempts">
+                  <span className="font-mono">{delivery.attempts}</span>
+                </KVItem>
+                <KVItem label="Timing">
+                  <span className="font-mono text-xs">{formatAt(delivery)}</span>
+                </KVItem>
+                <KVItem label="Merchant" wide>
+                  <span className="font-mono text-[12.5px]">
+                    {delivery.merchantId}
+                  </span>
+                </KVItem>
+                <KVItem label="Created">
+                  <span className="font-mono text-xs">
+                    {new Date(delivery.createdAt).toISOString().slice(0, 19)}Z
+                  </span>
+                </KVItem>
+                <KVItem label="Updated">
+                  <span className="font-mono text-xs">
+                    {new Date(delivery.updatedAt).toISOString().slice(0, 19)}Z
+                  </span>
+                </KVItem>
+              </KV>
+
+              {delivery.lastError && (
+                <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
+                  <div className="eyebrow mb-1 text-destructive">last error</div>
+                  <div className="whitespace-pre-wrap break-all font-mono text-xs text-destructive">
+                    {delivery.lastError}
+                  </div>
                 </div>
-              </div>
-            )}
-            <DialogFooter>
-              {delivery.status === 'dead' && (
-                <Button
-                  variant="outline"
-                  onClick={() => replay.mutate()}
-                  disabled={replay.isPending}
-                >
-                  <RotateCcw className="size-3.5" />{' '}
-                  {replay.isPending ? 'Replaying…' : 'Replay'}
-                </Button>
               )}
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                Close
-              </Button>
-            </DialogFooter>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+
+              {delivery.status === 'dead' && (
+                <div className="border-t border-border pt-5">
+                  <div className="eyebrow mb-3">Action</div>
+                  <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-secondary px-3 py-2.5">
+                    <div>
+                      <div className="text-sm font-medium">Replay delivery</div>
+                      <div className="text-xs text-[var(--fg-2)]">
+                        Resets attempts and re-queues this delivery.
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => replay.mutate()}
+                      disabled={replay.isPending}
+                    >
+                      <RotateCcw
+                        className={'size-3.5' + (replay.isPending ? ' animate-spin' : '')}
+                      />
+                      {replay.isPending ? 'Replaying…' : 'Replay'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
   )
 }
 
-function FieldRow({
+function StatusBadge({ status }: { status: Status }) {
+  return (
+    <Badge
+      variant={
+        status === 'delivered'
+          ? 'success'
+          : status === 'dead'
+            ? 'danger'
+            : 'warn'
+      }
+    >
+      {status}
+    </Badge>
+  )
+}
+
+function KV({ children }: { children: React.ReactNode }) {
+  return (
+    <dl className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
+      {children}
+    </dl>
+  )
+}
+
+function KVItem({
   label,
   children,
+  wide,
 }: {
   label: string
   children: React.ReactNode
+  wide?: boolean
 }) {
   return (
-    <div>
-      <div className="eyebrow">{label}</div>
-      <div className="mt-1">{children}</div>
+    <div className={wide ? 'sm:col-span-2' : ''}>
+      <dt className="eyebrow mb-1">{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  )
+}
+
+/* ── skeletons / empty ─────────────────────────────────── */
+
+function ListSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div
+          key={i}
+          className="grid grid-cols-[1fr_180px_140px_80px_100px] items-center gap-4 border-b border-border px-5 py-3 last:border-0"
+        >
+          <div className="space-y-1.5">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-2.5 w-16" />
+          </div>
+          <Skeleton className="h-3 w-32" />
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-3 w-6" />
+          <Skeleton className="h-3 w-16" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function EmptyState({ status }: { status: Status }) {
+  const copy: Record<Status, string> = {
+    dead: 'No permanently failed deliveries.',
+    pending: 'No deliveries queued for retry.',
+    delivered: 'No delivered rows in the recent window.',
+  }
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-14 text-center">
+      <div className="flex size-11 items-center justify-center rounded-full bg-[var(--bg-2)]">
+        <Webhook className="size-5 text-[var(--fg-2)]" />
+      </div>
+      <div className="text-sm font-medium">{copy[status]}</div>
+    </div>
+  )
+}
+
+function NoMatch() {
+  return (
+    <div className="rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-[var(--fg-2)]">
+      No deliveries match your search.
     </div>
   )
 }

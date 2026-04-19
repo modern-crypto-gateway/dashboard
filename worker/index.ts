@@ -32,6 +32,7 @@ import {
   getConfig,
   postAdminKey as settingsAdminKey,
   postBaseUrl as settingsBaseUrl,
+  postDefaultMerchant,
 } from './routes/settings'
 import { proxyGateway } from './routes/proxy'
 import {
@@ -44,11 +45,15 @@ import {
   postTotpCommit as securityTotpCommit,
 } from './routes/security'
 import {
+  activateMerchant,
   createMerchantViaGateway,
+  deactivateMerchant,
   deleteMerchant,
   importMerchant,
   listMerchants,
   patchMerchant,
+  rotateMerchantKey,
+  rotateWebhookSecret,
 } from './routes/merchants'
 import { proxyAsMerchant } from './routes/proxy-merchant'
 import {
@@ -56,13 +61,11 @@ import {
   expireInvoice,
   getInvoice,
   listInvoices,
-  trackInvoice,
 } from './routes/invoices'
 import {
   createPayout,
   getPayout,
   listPayouts,
-  trackPayout,
 } from './routes/payouts'
 
 const router = new Router()
@@ -109,6 +112,10 @@ router.post('/api/settings/base-url', async (req, env) => {
 router.post('/api/settings/admin-key', async (req, env) => {
   await guardAuthAndCsrf(req, env)
   return settingsAdminKey(req, env)
+})
+router.post('/api/settings/default-merchant', async (req, env) => {
+  await guardAuthAndCsrf(req, env)
+  return postDefaultMerchant(req, env)
 })
 
 /* ── security (authenticated, CSRF + tight rate limits) ──── */
@@ -194,6 +201,25 @@ router.patch('/api/merchants/*', async (req, env, _ctx, params) => {
   if (!id) return error('BAD_ID', 'Merchant id required', 400)
   return patchMerchant(req, env, id)
 })
+// POST sub-actions: rotate-key, activate, deactivate. Must come AFTER the
+// exact `/api/merchants` + `/api/merchants/import` POSTs above.
+router.post('/api/merchants/*', async (req, env, _ctx, params) => {
+  await guardAuthAndCsrf(req, env)
+  const parts = (params.tail ?? '').split('/').filter(Boolean)
+  const [id, action] = parts
+  if (!id || !action) return error('BAD_ID', 'Merchant id + action required', 400)
+  if (action === 'rotate-key') {
+    await cfLimit(env.GW_RL, clientId(req), 'gw')
+    return rotateMerchantKey(req, env, id)
+  }
+  if (action === 'rotate-webhook-secret') {
+    await cfLimit(env.GW_RL, clientId(req), 'gw')
+    return rotateWebhookSecret(req, env, id)
+  }
+  if (action === 'activate') return activateMerchant(req, env, id)
+  if (action === 'deactivate') return deactivateMerchant(req, env, id)
+  return error('BAD_ACTION', 'Unknown merchant action', 404)
+})
 
 /* ── gateway proxy (admin-scoped) ────────────────────────── */
 router.any('/api/gw/*', async (req, env, _ctx, params) => {
@@ -225,8 +251,6 @@ async function dispatchMerchant(
         await cfLimit(env.GW_RL, clientId(req), 'gw')
         return createInvoice(req, env, merchantId)
       }
-    } else if (rest.length === 1 && rest[0] === 'track' && method === 'POST') {
-      return trackInvoice(req, env, merchantId)
     } else if (rest.length === 1 && method === 'GET') {
       return getInvoice(req, env, merchantId, rest[0])
     } else if (rest.length === 2 && rest[1] === 'expire' && method === 'POST') {
@@ -240,8 +264,6 @@ async function dispatchMerchant(
         await cfLimit(env.GW_RL, clientId(req), 'gw')
         return createPayout(req, env, merchantId)
       }
-    } else if (rest.length === 1 && rest[0] === 'track' && method === 'POST') {
-      return trackPayout(req, env, merchantId)
     } else if (rest.length === 1 && method === 'GET') {
       return getPayout(req, env, merchantId, rest[0])
     }

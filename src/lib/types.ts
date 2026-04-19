@@ -30,33 +30,15 @@ export type Health = { status: 'ok' | 'degraded'; phase: number }
 export type Merchant = {
   id: string
   name: string
-  source: 'dashboard' | 'imported'
+  source: 'dashboard' | 'imported' | 'gateway-only'
   webhookUrl: string | null
-  apiKeyFingerprint: string
-  createdAt: number
-  updatedAt: number
-}
-
-export type TrackedInvoice = {
-  id: string
-  merchantId: string
-  chainId: number
-  token: string
-  status: string
-  amountSpec: string
-  externalId?: string
-  createdAt: number
-  updatedAt: number
-}
-
-export type TrackedPayout = {
-  id: string
-  merchantId: string
-  chainId: number
-  token: string
-  status: string
-  amountRaw: string
-  destinationAddress: string
+  /** null when source === 'gateway-only' (no sealed key held locally) */
+  apiKeyFingerprint: string | null
+  /** null if the gateway was unreachable when the list was fetched */
+  active: boolean | null
+  paymentToleranceUnderBps: number | null
+  paymentToleranceOverBps: number | null
+  addressCooldownSeconds: number | null
   createdAt: number
   updatedAt: number
 }
@@ -122,6 +104,20 @@ export type InvoiceDetails = {
   invoice: GatewayInvoice
   amounts: InvoiceAmounts
   transactions: InvoiceTransaction[]
+}
+
+export type InvoiceListResponse = {
+  invoices: GatewayInvoice[]
+  limit: number
+  offset: number
+  hasMore: boolean
+}
+
+export type PayoutListResponse = {
+  payouts: GatewayPayout[]
+  limit: number
+  offset: number
+  hasMore: boolean
 }
 
 export type GatewayPayout = {

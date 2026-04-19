@@ -1,13 +1,15 @@
 import * as React from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { KeyRound, Wallet } from 'lucide-react'
+import { KeyRound, Lock, RefreshCw, Wallet } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
 import type { Family, FeeWalletResult } from '@/lib/types'
+import { chainInfo } from '@/lib/chains'
 
 import { Addr } from '@/components/Addr'
 import { Field } from '@/components/Field'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -24,6 +26,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+
+interface FeeWalletRow {
+  id: string
+  chainId: number
+  address: string
+  label: string
+  active: boolean
+  reservedByPayoutId: string | null
+  reservedAt: string | null
+  createdAt: string
+}
 
 export function FeeWalletsPage() {
   const [chainId, setChainId] = React.useState('1')
@@ -126,6 +139,8 @@ export function FeeWalletsPage() {
         </CardContent>
       </Card>
 
+      <FeeWalletsList refreshKey={register.data?.feeWallet.address} />
+
       {register.data && (
         <Card>
           <CardHeader>
@@ -150,5 +165,116 @@ export function FeeWalletsPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+function FeeWalletsList({ refreshKey }: { refreshKey?: string }) {
+  const [reservedOnly, setReservedOnly] = React.useState(false)
+  const q = useQuery({
+    queryKey: ['fee-wallets', 'list', reservedOnly, refreshKey] as const,
+    queryFn: () => {
+      const qs = new URLSearchParams({ limit: '200' })
+      if (reservedOnly) qs.set('reserved', 'true')
+      return api<{ feeWallets: FeeWalletRow[] }>(
+        `/api/gw/admin/fee-wallets?${qs.toString()}`,
+      )
+    },
+    refetchInterval: reservedOnly ? 15_000 : 60_000,
+  })
+
+  const rows = q.data?.feeWallets ?? []
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div>
+          <CardTitle>Fleet</CardTitle>
+          <CardDescription>
+            Every registered fee wallet, with its current CAS reservation.
+            Filter by <span className="font-mono">reserved</span> to spot
+            payouts stuck in <span className="font-mono">reserved</span> or{' '}
+            <span className="font-mono">submitted</span> state.
+          </CardDescription>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant={reservedOnly ? 'default' : 'outline'}
+            onClick={() => setReservedOnly((v) => !v)}
+          >
+            <Lock className="size-3.5" />
+            Reserved only
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => q.refetch()}
+            disabled={q.isFetching}
+          >
+            <RefreshCw className={`size-3.5 ${q.isFetching ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {q.isLoading ? (
+          <p className="text-sm text-[var(--fg-2)]">Loading…</p>
+        ) : q.isError ? (
+          <p className="text-sm text-destructive">
+            {(q.error as ApiError)?.message || 'Could not load fee wallets'}
+          </p>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-[var(--fg-2)]">
+            {reservedOnly
+              ? 'No reserved wallets right now.'
+              : 'No fee wallets registered yet.'}
+          </p>
+        ) : (
+          <div className="-mx-5 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-[11px] uppercase tracking-wider text-[var(--fg-3)]">
+                <tr>
+                  <th className="px-5 py-2 text-left">Label</th>
+                  <th className="px-5 py-2 text-left">Chain</th>
+                  <th className="px-5 py-2 text-left">Address</th>
+                  <th className="px-5 py-2 text-left">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((w) => {
+                  const chain = chainInfo(w.chainId)
+                  return (
+                    <tr key={w.id} className="border-t border-border">
+                      <td className="px-5 py-2 font-mono text-xs">{w.label}</td>
+                      <td className="px-5 py-2 text-xs text-[var(--fg-2)]">
+                        {chain?.name ?? `chain ${w.chainId}`}
+                      </td>
+                      <td className="px-5 py-2">
+                        <Addr value={w.address} />
+                      </td>
+                      <td className="px-5 py-2">
+                        {!w.active ? (
+                          <Badge variant="warn">inactive</Badge>
+                        ) : w.reservedByPayoutId ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <Badge variant="warn">
+                              <Lock className="size-3" /> reserved
+                            </Badge>
+                            <span className="font-mono text-[11px] text-[var(--fg-2)]">
+                              {w.reservedByPayoutId.slice(0, 8)}…
+                            </span>
+                          </span>
+                        ) : (
+                          <Badge variant="success">available</Badge>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }

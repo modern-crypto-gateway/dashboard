@@ -25,15 +25,50 @@ async function writeIndex(env: Bindings, idx: Index): Promise<void> {
   await kvPut(env, K.merchantIndex, idx)
 }
 
-function publicShape(m: MerchantRecord) {
+interface GatewayMerchant {
+  id: string
+  name: string
+  webhookUrl: string | null
+  active: boolean
+  paymentToleranceUnderBps: number
+  paymentToleranceOverBps: number
+  addressCooldownSeconds: number
+  createdAt: string
+  updatedAt: string
+}
+
+function publicShape(
+  m: MerchantRecord,
+  gw?: GatewayMerchant | null,
+) {
   return {
     id: m.id,
-    name: m.name,
+    name: gw?.name ?? m.name,
     source: m.source,
-    webhookUrl: m.webhookUrl ?? null,
+    webhookUrl: gw?.webhookUrl ?? m.webhookUrl ?? null,
     apiKeyFingerprint: m.apiKeyFingerprint,
+    active: gw?.active ?? null,
+    paymentToleranceUnderBps: gw?.paymentToleranceUnderBps ?? null,
+    paymentToleranceOverBps: gw?.paymentToleranceOverBps ?? null,
+    addressCooldownSeconds: gw?.addressCooldownSeconds ?? null,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
+  }
+}
+
+function gatewayOnlyShape(gw: GatewayMerchant) {
+  return {
+    id: gw.id,
+    name: gw.name,
+    source: 'gateway-only' as const,
+    webhookUrl: gw.webhookUrl,
+    apiKeyFingerprint: null,
+    active: gw.active,
+    paymentToleranceUnderBps: gw.paymentToleranceUnderBps,
+    paymentToleranceOverBps: gw.paymentToleranceOverBps,
+    addressCooldownSeconds: gw.addressCooldownSeconds,
+    createdAt: Math.floor(new Date(gw.createdAt).getTime() / 1000),
+    updatedAt: Math.floor(new Date(gw.updatedAt).getTime() / 1000),
   }
 }
 
@@ -59,29 +94,92 @@ export async function merchantKeyPlain(
   return { merchant: m, apiKey }
 }
 
+/** Call a gateway admin endpoint with the sealed admin key injected. */
+async function callGateway(
+  env: Bindings,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; payload: any }> {
+  const baseUrl = await loadBaseUrl(env)
+  const adminKey = await adminKeyPlain(env)
+  const target = new URL(path.replace(/^\//, ''), baseUrl.endsWith('/') ? baseUrl : baseUrl + '/')
+  let upstream: Response
+  try {
+    upstream = await fetch(target.toString(), {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminKey}`,
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    })
+  } catch (e) {
+    throw new HttpError(
+      502,
+      'UPSTREAM_UNREACHABLE',
+      `Gateway unreachable: ${e instanceof Error ? e.message : String(e)}`,
+    )
+  }
+  const payload = await upstream.json().catch(() => ({}))
+  return { status: upstream.status, payload }
+}
+
 /* ── routes ──────────────────────────────────────────────── */
 
+/**
+ * Merge the gateway's merchant list (source of truth for name, active,
+ * tolerances) with our KV-held sealed API keys (source of truth for
+ * "usable from this dashboard"). Gateway merchants we don't hold a key
+ * for are still surfaced with `source: 'gateway-only'` so operators can
+ * see them and can `rotate-key` to bring them in-dashboard.
+ */
 export async function listMerchants(
   _req: Request,
   env: Bindings,
 ): Promise<Response> {
   const idx = await readIndex(env)
-  if (idx.ids.length === 0) return json({ merchants: [] })
-
-  const loaded = await Promise.all(
+  const localLoaded = await Promise.all(
     idx.ids.map((id) => kvGet<MerchantRecord>(env, K.merchant(id), 'json')),
   )
-  const merchants = loaded
-    .filter((m): m is MerchantRecord => !!m)
-    .map(publicShape)
-  // Clean up stale index entries silently.
-  const aliveIds = loaded
+  const locals = localLoaded.filter((m): m is MerchantRecord => !!m)
+  const localById = new Map(locals.map((m) => [m.id, m]))
+
+  // Clean up stale local index entries silently.
+  const aliveIds = localLoaded
     .map((m, i) => (m ? idx.ids[i] : null))
     .filter((x): x is string => !!x)
   if (aliveIds.length !== idx.ids.length) {
     await writeIndex(env, { ids: aliveIds })
   }
-  return json({ merchants })
+
+  // Best-effort gateway list — if it fails we fall back to local-only.
+  let gwList: GatewayMerchant[] = []
+  let gwReachable = true
+  try {
+    const { status, payload } = await callGateway(
+      env,
+      'GET',
+      '/admin/merchants?limit=500&offset=0',
+    )
+    if (status === 200 && Array.isArray(payload.merchants)) {
+      gwList = payload.merchants as GatewayMerchant[]
+    } else if (status === 404) {
+      // Admin surface not enabled — treat as reachable-but-empty.
+      gwList = []
+    } else {
+      gwReachable = false
+    }
+  } catch {
+    gwReachable = false
+  }
+  const gwById = new Map(gwList.map((g) => [g.id, g]))
+
+  const merged = [
+    ...locals.map((m) => publicShape(m, gwById.get(m.id))),
+    ...gwList.filter((g) => !localById.has(g.id)).map(gatewayOnlyShape),
+  ]
+  return json({ merchants: merged, gatewayReachable: gwReachable })
 }
 
 /** Create a merchant via the gateway's admin endpoint, store its plaintext key. */
@@ -219,6 +317,12 @@ export async function importMerchant(
   return json({ merchant: publicShape(record) }, { status: 201 })
 }
 
+/**
+ * PATCH every field that the gateway owns (name, webhookUrl, tolerances,
+ * cooldown). If the merchant had no webhook URL before and we're setting one,
+ * the gateway mints a fresh HMAC secret and returns it exactly once — we
+ * bubble that plaintext up to the caller so it can be shown one-shot.
+ */
 export async function patchMerchant(
   req: Request,
   env: Bindings,
@@ -235,9 +339,9 @@ export async function patchMerchant(
     addressCooldownSeconds?: number
   }>(req)
 
-  // Gateway-side patches only apply to merchants that live on the gateway
-  // (i.e. we know the id is the gateway's id, not a dashboard-only alias).
   const gwPatch: Record<string, unknown> = {}
+  if (body.name?.trim()) gwPatch.name = body.name.trim().slice(0, 128)
+  if (body.webhookUrl !== undefined) gwPatch.webhookUrl = body.webhookUrl
   if (body.paymentToleranceUnderBps != null)
     gwPatch.paymentToleranceUnderBps = body.paymentToleranceUnderBps
   if (body.paymentToleranceOverBps != null)
@@ -245,58 +349,37 @@ export async function patchMerchant(
   if (body.addressCooldownSeconds != null)
     gwPatch.addressCooldownSeconds = body.addressCooldownSeconds
 
-  if (Object.keys(gwPatch).length > 0) {
-    const baseUrl = await loadBaseUrl(env)
-    const adminKey = await adminKeyPlain(env)
-    const target = new URL(
-      `/admin/merchants/${encodeURIComponent(id)}`,
-      baseUrl.endsWith('/') ? baseUrl : baseUrl + '/',
-    )
-    let upstream: Response
-    try {
-      upstream = await fetch(target.toString(), {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminKey}`,
-        },
-        body: JSON.stringify(gwPatch),
-      })
-    } catch (e) {
-      return error(
-        'UPSTREAM_UNREACHABLE',
-        `Gateway unreachable: ${e instanceof Error ? e.message : String(e)}`,
-        502,
-      )
-    }
-    const gwBody = (await upstream.json().catch(() => ({}))) as {
-      error?: { code?: string; message?: string; details?: unknown }
-    }
-    if (!upstream.ok) {
-      return error(
-        gwBody.error?.code ?? 'UPSTREAM_ERROR',
-        gwBody.error?.message ?? 'Gateway rejected PATCH',
-        upstream.status || 502,
-        gwBody.error?.details,
-      )
-    }
+  if (Object.keys(gwPatch).length === 0) {
+    return json({ merchant: publicShape(m) })
   }
 
-  // Local-only fields (name, webhookUrl) still live in KV on the dashboard.
+  const { status, payload } = await callGateway(
+    env,
+    'PATCH',
+    `/admin/merchants/${encodeURIComponent(id)}`,
+    gwPatch,
+  )
+  if (status !== 200) {
+    return error(
+      payload.error?.code ?? 'UPSTREAM_ERROR',
+      payload.error?.message ?? 'Gateway rejected PATCH',
+      status || 502,
+      payload.error?.details,
+    )
+  }
+
   const now = Math.floor(Date.now() / 1000)
   const next: MerchantRecord = {
     ...m,
-    name: body.name?.trim() ? body.name.trim().slice(0, 128) : m.name,
-    webhookUrl:
-      body.webhookUrl === null
-        ? undefined
-        : body.webhookUrl !== undefined
-          ? body.webhookUrl
-          : m.webhookUrl,
+    name: payload.merchant?.name ?? m.name,
+    webhookUrl: payload.merchant?.webhookUrl ?? undefined,
     updatedAt: now,
   }
   await kvPut(env, K.merchant(id), next)
-  return json({ merchant: publicShape(next) })
+  return json({
+    merchant: publicShape(next, payload.merchant),
+    ...(payload.webhookSecret ? { webhookSecret: payload.webhookSecret } : {}),
+  })
 }
 
 export async function deleteMerchant(
@@ -311,4 +394,124 @@ export async function deleteMerchant(
   idx.ids = idx.ids.filter((x) => x !== id)
   await writeIndex(env, idx)
   return json({ ok: true })
+}
+
+/**
+ * Rotate a merchant's API key via the gateway. The gateway returns the
+ * new plaintext key exactly once — we re-seal it in KV, update the
+ * fingerprint, and also bubble the plaintext up so the operator can
+ * copy it (one-time view). If the merchant is not in our KV yet,
+ * we create a local record on the fly (source: 'dashboard').
+ */
+export async function rotateMerchantKey(
+  _req: Request,
+  env: Bindings,
+  id: string,
+): Promise<Response> {
+  const { status, payload } = await callGateway(
+    env,
+    'POST',
+    `/admin/merchants/${encodeURIComponent(id)}/rotate-key`,
+  )
+  if (status !== 200 || !payload.apiKey || !payload.merchant) {
+    return error(
+      payload.error?.code ?? 'UPSTREAM_ERROR',
+      payload.error?.message ?? 'Gateway rejected rotate-key',
+      status || 502,
+      payload.error?.details,
+    )
+  }
+
+  const apiKey = payload.apiKey as string
+  const gwMerchant = payload.merchant as { id: string; name: string }
+  const sealedKey = await seal(apiKey, kek(env))
+  const now = Math.floor(Date.now() / 1000)
+  const existing = await kvGet<MerchantRecord>(env, K.merchant(id), 'json')
+  const record: MerchantRecord = existing
+    ? { ...existing, apiKeySealed: sealedKey, apiKeyFingerprint: apiKey.slice(-4), updatedAt: now }
+    : {
+        id: gwMerchant.id,
+        name: gwMerchant.name,
+        source: 'dashboard',
+        apiKeySealed: sealedKey,
+        apiKeyFingerprint: apiKey.slice(-4),
+        createdAt: now,
+        updatedAt: now,
+      }
+  await kvPut(env, K.merchant(id), record)
+  if (!existing) {
+    const idx = await readIndex(env)
+    if (!idx.ids.includes(id)) {
+      idx.ids.push(id)
+      await writeIndex(env, idx)
+    }
+  }
+
+  return json({ merchant: publicShape(record), apiKey })
+}
+
+export async function activateMerchant(
+  _req: Request,
+  env: Bindings,
+  id: string,
+): Promise<Response> {
+  const { status, payload } = await callGateway(
+    env,
+    'POST',
+    `/admin/merchants/${encodeURIComponent(id)}/activate`,
+  )
+  if (status !== 200) {
+    return error(
+      payload.error?.code ?? 'UPSTREAM_ERROR',
+      payload.error?.message ?? 'Gateway rejected activate',
+      status || 502,
+      payload.error?.details,
+    )
+  }
+  return json({ merchant: payload.merchant ?? null })
+}
+
+export async function deactivateMerchant(
+  _req: Request,
+  env: Bindings,
+  id: string,
+): Promise<Response> {
+  const { status, payload } = await callGateway(
+    env,
+    'POST',
+    `/admin/merchants/${encodeURIComponent(id)}/deactivate`,
+  )
+  if (status !== 200) {
+    return error(
+      payload.error?.code ?? 'UPSTREAM_ERROR',
+      payload.error?.message ?? 'Gateway rejected deactivate',
+      status || 502,
+      payload.error?.details,
+    )
+  }
+  return json({ merchant: payload.merchant ?? null })
+}
+
+/** Rotate the HMAC signing secret for this merchant's webhooks. Plaintext
+ * is shown once, never persisted here — the merchant stores it on their
+ * side to verify signatures. */
+export async function rotateWebhookSecret(
+  _req: Request,
+  env: Bindings,
+  id: string,
+): Promise<Response> {
+  const { status, payload } = await callGateway(
+    env,
+    'POST',
+    `/admin/merchants/${encodeURIComponent(id)}/rotate-webhook-secret`,
+  )
+  if (status !== 200 || !payload.webhookSecret) {
+    return error(
+      payload.error?.code ?? 'UPSTREAM_ERROR',
+      payload.error?.message ?? 'Gateway rejected webhook-secret rotate',
+      status || 502,
+      payload.error?.details,
+    )
+  }
+  return json({ webhookSecret: payload.webhookSecret })
 }

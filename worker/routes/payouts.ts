@@ -1,51 +1,27 @@
 /**
- * Payout routes — merchant-scoped, KV-tracked index per merchant.
+ * Payout routes — merchant-scoped, proxied through the merchant's API key.
  *
- *   GET  /api/mg/:merchantId/payouts            → list tracked payouts (from KV)
- *   POST /api/mg/:merchantId/payouts            → plan a payout, track result
- *   GET  /api/mg/:merchantId/payouts/:id        → fetch detail, update track
- *   POST /api/mg/:merchantId/payouts/:id/track  → import a payout id created outside
+ *   GET  /api/mg/:merchantId/payouts           → list via gateway /api/v1/payouts
+ *   POST /api/mg/:merchantId/payouts           → plan a payout via gateway
+ *   GET  /api/mg/:merchantId/payouts/:id       → fetch detail via gateway
  */
 
 import { merchantKeyPlain } from './merchants'
 import type { Bindings } from '../lib/env'
 import { error, HttpError, json, readJson } from '../lib/http'
-import { kvGet, kvPut, K, type TrackedPayout } from '../lib/kv'
+import { kvGet, K } from '../lib/kv'
 
-interface IndexShape {
-  ids: string[]
-}
-
-async function upsertTracked(
-  env: Bindings,
-  merchantId: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  gw: Record<string, any>,
-): Promise<TrackedPayout> {
-  const id = gw.id as string
-  const now = Math.floor(Date.now() / 1000)
-  const existing = await kvGet<TrackedPayout>(env, K.payout(merchantId, id), 'json')
-  const record: TrackedPayout = {
-    id,
-    merchantId,
-    chainId: gw.chainId ?? existing?.chainId ?? 0,
-    token: gw.token ?? existing?.token ?? '',
-    status: gw.status ?? existing?.status ?? 'planned',
-    amountRaw: gw.amountRaw ?? existing?.amountRaw ?? '',
-    destinationAddress: gw.destinationAddress ?? existing?.destinationAddress ?? '',
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  }
-  await kvPut(env, K.payout(merchantId, id), record)
-
-  const idx = (await kvGet<IndexShape>(env, K.payoutIndex(merchantId), 'json')) ?? { ids: [] }
-  if (!idx.ids.includes(id)) {
-    idx.ids.unshift(id)
-    if (idx.ids.length > 500) idx.ids = idx.ids.slice(0, 500)
-    await kvPut(env, K.payoutIndex(merchantId), idx)
-  }
-  return record
-}
+const LIST_PASSTHROUGH = [
+  'status',
+  'chainId',
+  'token',
+  'destinationAddress',
+  'sourceAddress',
+  'createdFrom',
+  'createdTo',
+  'limit',
+  'offset',
+] as const
 
 async function gwFetch(
   env: Bindings,
@@ -72,18 +48,35 @@ async function gwFetch(
 }
 
 export async function listPayouts(
-  _req: Request,
+  req: Request,
   env: Bindings,
   merchantId: string,
 ): Promise<Response> {
-  const idx = await kvGet<IndexShape>(env, K.payoutIndex(merchantId), 'json')
-  const ids = idx?.ids ?? []
-  const loaded = await Promise.all(
-    ids.map((id) => kvGet<TrackedPayout>(env, K.payout(merchantId, id), 'json')),
-  )
-  return json({
-    payouts: loaded.filter((x): x is TrackedPayout => !!x),
-  })
+  const { apiKey } = await merchantKeyPlain(env, merchantId)
+  const incoming = new URL(req.url).searchParams
+  const qs = new URLSearchParams()
+  for (const key of LIST_PASSTHROUGH) {
+    const v = incoming.get(key)
+    if (v) qs.set(key, v)
+  }
+  const suffix = qs.toString() ? `?${qs}` : ''
+  const upstream = await gwFetch(env, apiKey, 'GET', `/api/v1/payouts${suffix}`)
+  const payload = (await upstream.json().catch(() => ({}))) as {
+    payouts?: unknown[]
+    limit?: number
+    offset?: number
+    hasMore?: boolean
+    error?: { code?: string; message?: string; details?: unknown }
+  }
+  if (!upstream.ok) {
+    return error(
+      payload.error?.code ?? 'UPSTREAM_ERROR',
+      payload.error?.message ?? 'Gateway rejected list',
+      upstream.status || 502,
+      payload.error?.details,
+    )
+  }
+  return json(payload, { status: upstream.status })
 }
 
 export async function createPayout(
@@ -106,8 +99,7 @@ export async function createPayout(
       payload.error?.details,
     )
   }
-  const tracked = await upsertTracked(env, merchantId, payload.payout)
-  return json({ payout: payload.payout, tracked }, { status: upstream.status })
+  return json({ payout: payload.payout }, { status: upstream.status })
 }
 
 export async function getPayout(
@@ -134,36 +126,5 @@ export async function getPayout(
       upstream.status || 502,
     )
   }
-  await upsertTracked(env, merchantId, payload.payout)
   return json(payload, { status: upstream.status })
-}
-
-export async function trackPayout(
-  req: Request,
-  env: Bindings,
-  merchantId: string,
-): Promise<Response> {
-  const body = await readJson<{ id?: string }>(req)
-  const id = (body.id ?? '').trim()
-  if (!id) return error('BAD_ID', 'Payout id required', 400)
-  const { apiKey } = await merchantKeyPlain(env, merchantId)
-  const upstream = await gwFetch(
-    env,
-    apiKey,
-    'GET',
-    `/api/v1/payouts/${encodeURIComponent(id)}`,
-  )
-  const payload = (await upstream.json().catch(() => ({}))) as {
-    payout?: Record<string, unknown>
-    error?: { code?: string; message?: string; details?: unknown }
-  }
-  if (!upstream.ok || !payload.payout) {
-    return error(
-      payload.error?.code ?? 'UPSTREAM_ERROR',
-      payload.error?.message ?? 'Payout not found or not owned by this merchant',
-      upstream.status || 502,
-    )
-  }
-  const tracked = await upsertTracked(env, merchantId, payload.payout)
-  return json({ payout: payload.payout, tracked })
 }

@@ -87,35 +87,12 @@ export interface MerchantRecord {
   updatedAt: number
 }
 
-export interface TrackedInvoice {
-  id: string
-  merchantId: string
-  chainId: number
-  token: string
-  status: string
-  amountSpec: string // one-line summary for list view
-  externalId?: string
-  createdAt: number
-  updatedAt: number
-}
-
-export interface TrackedPayout {
-  id: string
-  merchantId: string
-  chainId: number
-  token: string
-  status: string
-  amountRaw: string
-  destinationAddress: string
-  createdAt: number
-  updatedAt: number
-}
-
 export const K = {
   setupComplete: 'cfg:setup_complete',
   baseUrl: 'cfg:base_url',
   adminKey: 'cfg:admin_key',
   adminKeyHint: 'cfg:admin_key_hint',
+  defaultMerchant: 'cfg:default_merchant_id',
   userIndex: 'user:index',
   user: (u: string) => `user:${u}` as const,
   pendingUser: 'setup:pending_user',
@@ -127,10 +104,4 @@ export const K = {
 
   merchantIndex: 'merchant:index',
   merchant: (id: string) => `merchant:${id}` as const,
-
-  invoiceIndex: (merchantId: string) => `inv:idx:${merchantId}` as const,
-  invoice: (merchantId: string, id: string) => `inv:${merchantId}:${id}` as const,
-
-  payoutIndex: (merchantId: string) => `po:idx:${merchantId}` as const,
-  payout: (merchantId: string, id: string) => `po:${merchantId}:${id}` as const,
 }

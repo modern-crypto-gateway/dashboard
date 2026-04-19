@@ -1,16 +1,27 @@
 import * as React from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Search, RefreshCw, FileText, ExternalLink, X } from 'lucide-react'
+import {
+  ChevronDown,
+  FileText,
+  KeyRound,
+  Loader2,
+  Plus,
+  Search,
+  X,
+} from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
 import { chainInfo } from '@/lib/chains'
-import { fmtUsd, fmtNum, truncateAddr } from '@/lib/format'
+import { fmtNum, fmtRel, fmtUsd, truncateAddr } from '@/lib/format'
 import { useActiveMerchant, useMerchants } from '@/lib/merchants'
 import type {
   Family,
+  GatewayInvoice,
   InvoiceDetails,
-  TrackedInvoice,
+  InvoiceListResponse,
+  Merchant,
 } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
@@ -19,7 +30,6 @@ import { Field } from '@/components/Field'
 import { MerchantSwitcher } from '@/components/MerchantSwitcher'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -27,7 +37,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
@@ -37,187 +46,613 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 
-const invoicesQueryKey = (merchantId?: string) =>
-  ['invoices', 'list', merchantId ?? null] as const
+/* ── public helpers reused by Payouts ───────────────────── */
+
+export function StatusBadge({ status }: { status: string }) {
+  const variant: 'success' | 'accent' | 'warn' | 'danger' | 'default' = (() => {
+    switch (status) {
+      case 'confirmed':
+        return 'success'
+      case 'overpaid':
+        return 'accent'
+      case 'detected':
+      case 'partial':
+      case 'submitted':
+      case 'reserved':
+      case 'planned':
+        return 'warn'
+      case 'expired':
+      case 'canceled':
+      case 'failed':
+      case 'reverted':
+        return 'danger'
+      default:
+        return 'default'
+    }
+  })()
+  return <Badge variant={variant}>{status}</Badge>
+}
+
+/* ── page ────────────────────────────────────────────────── */
+
+type InvoiceFilter = 'all' | 'open' | 'paid' | 'failed'
+
+const STATUS_CSV: Record<InvoiceFilter, string | undefined> = {
+  all: undefined,
+  open: 'created,partial,detected',
+  paid: 'confirmed,overpaid',
+  failed: 'expired,canceled',
+}
+
+const PAGE_SIZE = 50
+
+const invoicesQueryKey = (merchantId: string | null, filter: InvoiceFilter) =>
+  ['invoices', 'list', merchantId, filter] as const
 
 export function InvoicesPage() {
   const merchants = useMerchants()
   const { active } = useActiveMerchant()
 
-  const list = useQuery({
-    enabled: !!active,
-    queryKey: invoicesQueryKey(active?.id),
-    queryFn: () =>
-      api<{ invoices: TrackedInvoice[] }>(
-        `/api/mg/${encodeURIComponent(active!.id)}/invoices`,
-      ),
+  const [query, setQuery] = React.useState('')
+  const [filter, setFilter] = React.useState<InvoiceFilter>('all')
+  const [createOpen, setCreateOpen] = React.useState(false)
+  const [detailId, setDetailId] = React.useState<string | null>(null)
+
+  const canList =
+    !!active && active.source !== 'gateway-only' && active.apiKeyFingerprint !== null
+
+  const list = useInfiniteQuery({
+    enabled: canList,
+    queryKey: invoicesQueryKey(active?.id ?? null, filter),
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => {
+      const qs = new URLSearchParams({
+        limit: String(PAGE_SIZE),
+        offset: String(pageParam),
+      })
+      const s = STATUS_CSV[filter]
+      if (s) qs.set('status', s)
+      return api<InvoiceListResponse>(
+        `/api/mg/${encodeURIComponent(active!.id)}/invoices?${qs}`,
+      )
+    },
+    getNextPageParam: (last) => (last.hasMore ? last.offset + last.limit : undefined),
     refetchInterval: 30_000,
   })
 
-  const [detailOpen, setDetailOpen] = React.useState(false)
-  const [detailId, setDetailId] = React.useState<string | null>(null)
-  const openDetail = (id: string) => {
-    setDetailId(id)
-    setDetailOpen(true)
-  }
+  const all = React.useMemo(
+    () => list.data?.pages.flatMap((p) => p.invoices) ?? [],
+    [list.data],
+  )
+
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return all
+    return all.filter(
+      (inv) =>
+        inv.id.toLowerCase().includes(q) ||
+        (inv.externalId ?? '').toLowerCase().includes(q) ||
+        inv.token.toLowerCase().includes(q),
+    )
+  }, [all, query])
 
   if (merchants.isLoading) {
-    return <div className="p-6 text-sm text-[var(--fg-2)]">Loading…</div>
+    return <PageSkeleton title="Invoices" />
   }
   if ((merchants.data?.merchants.length ?? 0) === 0) {
-    return <NoMerchantsCard />
+    return <NoMerchants />
   }
 
   return (
-    <div className="fade-in space-y-6">
+    <div className="fade-in space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="eyebrow">Money</div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">Invoices</h1>
           <p className="mt-1 text-sm text-[var(--fg-2)]">
-            Create, look up, and force-expire invoices for the selected merchant.
+            Every invoice the selected merchant has issued, straight from the
+            gateway.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
           <MerchantSwitcher />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => list.refetch()}
-            disabled={list.isFetching || !active}
-          >
-            <RefreshCw className={'size-3.5' + (list.isFetching ? ' animate-spin' : '')} />
-            Refresh
+          <Button size="sm" disabled={!canList} onClick={() => setCreateOpen(true)}>
+            <Plus className="size-3.5" /> New invoice
           </Button>
-          <LookupInvoiceDialog merchantId={active?.id} onOpenDetail={openDetail} />
-          <CreateInvoiceDialog merchantId={active?.id} onOpenDetail={openDetail} />
         </div>
       </div>
 
-      {list.isLoading ? (
-        <Card className="p-10 text-center text-sm text-[var(--fg-2)]">Loading…</Card>
-      ) : (list.data?.invoices.length ?? 0) === 0 ? (
-        <EmptyInvoicesCard />
+      {!canList && active ? (
+        <NoApiKeyCard merchant={active} />
       ) : (
-        <Card className="overflow-hidden p-0">
-          <CardContent className="p-0">
-            <table className="w-full border-separate border-spacing-0 text-sm">
-              <thead>
-                <tr>
-                  <Th>Invoice</Th>
-                  <Th>Chain</Th>
-                  <Th>Token</Th>
-                  <Th>Amount</Th>
-                  <Th>External</Th>
-                  <Th>Status</Th>
-                  <Th>Updated</Th>
-                  <Th />
-                </tr>
-              </thead>
-              <tbody>
-                {list.data!.invoices.map((inv) => (
-                  <tr
-                    key={inv.id}
-                    className="cursor-pointer transition-colors hover:bg-[var(--bg-2)]"
-                    onClick={() => openDetail(inv.id)}
+        <>
+          <Toolbar
+            query={query}
+            setQuery={setQuery}
+            filter={filter}
+            setFilter={setFilter}
+            loaded={all.length}
+          />
+
+          {list.isLoading ? (
+            <ListSkeleton />
+          ) : list.isError ? (
+            <ErrorCard message={list.error instanceof Error ? list.error.message : 'Could not load'} />
+          ) : all.length === 0 ? (
+            <EmptyState onCreate={() => setCreateOpen(true)} />
+          ) : filtered.length === 0 ? (
+            <NoMatch />
+          ) : (
+            <>
+              <InvoiceList rows={filtered} onOpen={setDetailId} />
+              {list.hasNextPage && (
+                <div className="flex justify-center">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => list.fetchNextPage()}
+                    disabled={list.isFetchingNextPage}
                   >
-                    <Td>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-[12.5px]">
-                          {truncateAddr(inv.id, 8, 6)}
-                        </span>
-                        <CopyButton value={inv.id} />
-                      </div>
-                    </Td>
-                    <Td>
-                      <ChainPill chainId={inv.chainId} />
-                    </Td>
-                    <Td className="font-mono text-[12.5px]">{inv.token}</Td>
-                    <Td className="font-mono text-[12.5px]">{inv.amountSpec}</Td>
-                    <Td className="font-mono text-[12.5px] text-[var(--fg-2)]">
-                      {inv.externalId ?? '—'}
-                    </Td>
-                    <Td>
-                      <StatusBadge status={inv.status} />
-                    </Td>
-                    <Td className="font-mono text-xs text-[var(--fg-2)]">
-                      {formatRelative(inv.updatedAt)}
-                    </Td>
-                    <Td className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openDetail(inv.id)
-                        }}
-                      >
-                        <ExternalLink className="size-3.5" />
-                      </Button>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+                    {list.isFetchingNextPage ? (
+                      <>
+                        <Loader2 className="size-3.5 animate-spin" /> Loading…
+                      </>
+                    ) : (
+                      <>Load more</>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </>
       )}
 
-      {detailId && active && (
-        <InvoiceDetailDialog
-          open={detailOpen}
-          onOpenChange={setDetailOpen}
-          merchantId={active.id}
-          invoiceId={detailId}
+      {active && canList && (
+        <>
+          <CreateInvoiceDialog
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            merchantId={active.id}
+            onCreated={(id) => setDetailId(id)}
+          />
+          <InvoiceDetailSheet
+            merchantId={active.id}
+            invoiceId={detailId}
+            onOpenChange={(v) => !v && setDetailId(null)}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
+/* ── toolbar / list / row ───────────────────────────────── */
+
+function Toolbar({
+  query,
+  setQuery,
+  filter,
+  setFilter,
+  loaded,
+}: {
+  query: string
+  setQuery: (v: string) => void
+  filter: InvoiceFilter
+  setFilter: (v: InvoiceFilter) => void
+  loaded: number
+}) {
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+      <div className="relative flex-1">
+        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[var(--fg-3)]" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search loaded by id, external id, token…"
+          className="pl-8"
         />
+      </div>
+      <div className="flex items-center gap-2">
+        <Select value={filter} onValueChange={(v) => setFilter(v as InvoiceFilter)}>
+          <SelectTrigger className="h-9 w-[140px] text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="open">Open</SelectItem>
+            <SelectItem value="paid">Paid</SelectItem>
+            <SelectItem value="failed">Failed</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="hidden text-xs text-[var(--fg-3)] sm:block">
+          {loaded} loaded
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InvoiceList({
+  rows,
+  onOpen,
+}: {
+  rows: GatewayInvoice[]
+  onOpen: (id: string) => void
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="hidden grid-cols-[1fr_120px_160px_110px_90px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
+        <div>Invoice</div>
+        <div>Chain</div>
+        <div>Amount</div>
+        <div>Status</div>
+        <div>Updated</div>
+      </div>
+      <ul>
+        {rows.map((inv) => (
+          <InvoiceRow key={inv.id} inv={inv} onOpen={() => onOpen(inv.id)} />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function amountSpecOf(inv: GatewayInvoice): string {
+  if (inv.amountUsd) return fmtUsd(inv.amountUsd)
+  if (inv.fiatAmount && inv.fiatCurrency) return `${inv.fiatAmount} ${inv.fiatCurrency}`
+  return inv.requiredAmountRaw
+}
+
+function unixOf(iso: string): number {
+  const t = Date.parse(iso)
+  return isFinite(t) ? Math.floor(t / 1000) : 0
+}
+
+function InvoiceRow({
+  inv,
+  onOpen,
+}: {
+  inv: GatewayInvoice
+  onOpen: () => void
+}) {
+  return (
+    <li className="border-b border-border last:border-0">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="grid w-full grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] sm:grid-cols-[1fr_120px_160px_110px_90px] sm:gap-4"
+      >
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate font-mono text-[12.5px]">
+              {truncateAddr(inv.id, 8, 6)}
+            </span>
+            <span onClick={(e) => e.stopPropagation()}>
+              <CopyButton value={inv.id} />
+            </span>
+          </div>
+          {inv.externalId && (
+            <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--fg-3)]">
+              ext · {inv.externalId}
+            </div>
+          )}
+        </div>
+
+        <ChainPill chainId={inv.chainId} />
+
+        <div className="min-w-0">
+          <div className="truncate font-mono text-[12.5px]">
+            {amountSpecOf(inv)}
+          </div>
+          <div className="font-mono text-[11px] text-[var(--fg-3)]">
+            {inv.token}
+          </div>
+        </div>
+
+        <div>
+          <StatusBadge status={inv.status} />
+        </div>
+
+        <div className="text-xs text-[var(--fg-3)]">
+          {fmtRel(unixOf(inv.updatedAt))}
+        </div>
+      </button>
+    </li>
+  )
+}
+
+function ChainPill({ chainId }: { chainId: number }) {
+  const info = chainInfo(chainId)
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[var(--fg-2)]">
+      <span
+        className="size-[7px] shrink-0 rounded-full"
+        style={{ background: info.color }}
+      />
+      <span className="truncate">{info.name}</span>
+    </span>
+  )
+}
+
+/* ── detail sheet ────────────────────────────────────────── */
+
+type Tab = 'overview' | 'addresses' | 'transactions'
+
+function InvoiceDetailSheet({
+  merchantId,
+  invoiceId,
+  onOpenChange,
+}: {
+  merchantId: string
+  invoiceId: string | null
+  onOpenChange: (open: boolean) => void
+}) {
+  const open = invoiceId !== null
+  const [tab, setTab] = React.useState<Tab>('overview')
+  React.useEffect(() => {
+    if (invoiceId) setTab('overview')
+  }, [invoiceId])
+
+  const qc = useQueryClient()
+  const detail = useQuery({
+    enabled: open,
+    queryKey: ['invoice', merchantId, invoiceId] as const,
+    queryFn: () =>
+      api<InvoiceDetails>(
+        `/api/mg/${encodeURIComponent(merchantId)}/invoices/${encodeURIComponent(invoiceId!)}`,
+      ),
+    refetchInterval: open ? 10_000 : false,
+  })
+
+  const expire = useMutation({
+    mutationFn: () =>
+      api(
+        `/api/mg/${encodeURIComponent(merchantId)}/invoices/${encodeURIComponent(invoiceId!)}/expire`,
+        { method: 'POST' },
+      ),
+    onSuccess: () => {
+      toast.success('Invoice force-expired')
+      qc.invalidateQueries({ queryKey: ['invoice', merchantId, invoiceId] })
+      qc.invalidateQueries({ queryKey: ['invoices', 'list', merchantId] })
+    },
+    onError: (e: ApiError) => toast.error(e.message || 'Could not expire'),
+  })
+
+  const inv = detail.data?.invoice
+  const canExpire =
+    inv && !['expired', 'canceled', 'confirmed', 'overpaid'].includes(inv.status)
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent>
+        <SheetHeader className="space-y-2">
+          <div className="flex items-center gap-2">
+            <SheetTitle className="truncate font-mono text-base">
+              {invoiceId ? truncateAddr(invoiceId, 10, 8) : ''}
+            </SheetTitle>
+            {invoiceId && <CopyButton value={invoiceId} />}
+            {inv && <StatusBadge status={inv.status} />}
+          </div>
+          <SheetTabs value={tab} onChange={setTab} />
+        </SheetHeader>
+
+        <SheetBody>
+          {detail.isLoading ? (
+            <DetailSkeleton />
+          ) : !detail.data ? (
+            <div className="py-8 text-center text-sm text-destructive">
+              {detail.error instanceof Error ? detail.error.message : 'Not found'}
+            </div>
+          ) : tab === 'overview' ? (
+            <OverviewTab data={detail.data} />
+          ) : tab === 'addresses' ? (
+            <AddressesTab data={detail.data} />
+          ) : (
+            <TransactionsTab data={detail.data} />
+          )}
+
+          {detail.data && canExpire && (
+            <div className="mt-6 border-t border-border pt-5">
+              <div className="eyebrow mb-3">Danger zone</div>
+              <div className="flex items-center justify-between gap-4 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
+                <div>
+                  <div className="text-sm font-medium">Force expire</div>
+                  <div className="text-xs text-[var(--fg-2)]">
+                    Moves the invoice to expired immediately. Partial deposits
+                    become orphans.
+                  </div>
+                </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => expire.mutate()}
+                  disabled={expire.isPending}
+                >
+                  <X className="size-3.5" />
+                  {expire.isPending ? 'Expiring…' : 'Expire'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function SheetTabs({
+  value,
+  onChange,
+}: {
+  value: Tab
+  onChange: (t: Tab) => void
+}) {
+  const tabs: Array<{ key: Tab; label: string }> = [
+    { key: 'overview', label: 'Overview' },
+    { key: 'addresses', label: 'Addresses' },
+    { key: 'transactions', label: 'Transactions' },
+  ]
+  return (
+    <div className="-mb-px flex gap-1 border-b-0">
+      {tabs.map(({ key, label }) => {
+        const active = value === key
+        return (
+          <button
+            key={key}
+            onClick={() => onChange(key)}
+            className={
+              'cursor-pointer rounded-t-md border-b-2 px-3 py-2 text-xs font-medium transition-colors ' +
+              (active
+                ? 'border-foreground text-foreground'
+                : 'border-transparent text-[var(--fg-3)] hover:text-foreground')
+            }
+          >
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function OverviewTab({ data }: { data: InvoiceDetails }) {
+  const { invoice, amounts } = data
+  return (
+    <div className="space-y-5">
+      <KV grid>
+        <KVItem label="Chain">
+          <ChainPill chainId={invoice.chainId} />
+        </KVItem>
+        <KVItem label="Token">
+          <span className="font-mono">{invoice.token}</span>
+        </KVItem>
+        <KVItem label="External id">
+          <span className="font-mono text-xs">
+            {invoice.externalId ?? '—'}
+          </span>
+        </KVItem>
+        <KVItem label="Required">
+          <span className="font-mono">
+            {invoice.amountUsd
+              ? fmtUsd(invoice.amountUsd)
+              : invoice.requiredAmountRaw}
+          </span>
+        </KVItem>
+        <KVItem label="Received">
+          <span className="font-mono">
+            {invoice.paidUsd
+              ? fmtUsd(invoice.paidUsd)
+              : invoice.receivedAmountRaw}
+          </span>
+        </KVItem>
+        <KVItem label="Created">
+          <span className="font-mono text-xs">
+            {new Date(invoice.createdAt).toISOString().slice(0, 19)}Z
+          </span>
+        </KVItem>
+        <KVItem label="Expires">
+          <span className="font-mono text-xs">
+            {new Date(invoice.expiresAt).toISOString().slice(0, 19)}Z
+          </span>
+        </KVItem>
+      </KV>
+
+      {amounts.requiredUsd != null && (
+        <PaymentProgress amounts={amounts} overpaidUsd={invoice.overpaidUsd} />
+      )}
+
+      {invoice.metadata && Object.keys(invoice.metadata).length > 0 && (
+        <div className="space-y-2">
+          <div className="eyebrow">Metadata</div>
+          <pre className="overflow-x-auto rounded-md border border-border bg-secondary px-3 py-2 text-[11.5px] font-mono">
+            {JSON.stringify(invoice.metadata, null, 2)}
+          </pre>
+        </div>
       )}
     </div>
   )
 }
 
-function NoMerchantsCard() {
-  return (
-    <div className="fade-in space-y-6">
-      <div>
-        <div className="eyebrow">Money</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Invoices</h1>
+function AddressesTab({ data }: { data: InvoiceDetails }) {
+  const { invoice } = data
+  if (invoice.receiveAddresses?.length) {
+    return (
+      <div className="space-y-2">
+        {invoice.receiveAddresses.map((r) => (
+          <div
+            key={r.family}
+            className="flex items-center gap-3 rounded-md border border-border bg-secondary px-3 py-2"
+          >
+            <span className="rounded bg-card px-1.5 py-0.5 font-mono text-[11px] uppercase">
+              {r.family}
+            </span>
+            <Addr value={r.address} truncated={false} />
+          </div>
+        ))}
       </div>
-      <Card className="p-10 text-center">
-        <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-[var(--bg-2)]">
-          <FileText className="size-5 text-[var(--fg-2)]" />
-        </div>
-        <div className="mt-3 text-sm text-[var(--fg-1)]">
-          Add a merchant first.
-        </div>
-        <p className="mt-1 text-xs text-[var(--fg-2)]">
-          Invoices are issued against a merchant's API key — head to Merchants to create or import one.
-        </p>
-      </Card>
+    )
+  }
+  return (
+    <div className="rounded-md border border-border bg-secondary px-3 py-2">
+      <Addr value={invoice.receiveAddress} truncated={false} />
     </div>
   )
 }
 
-function EmptyInvoicesCard() {
+function TransactionsTab({ data }: { data: InvoiceDetails }) {
+  if (data.transactions.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed border-border py-8 text-center text-sm text-[var(--fg-2)]">
+        No transactions observed yet.
+      </div>
+    )
+  }
   return (
-    <Card className="p-10 text-center">
-      <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-[var(--bg-2)]">
-        <FileText className="size-5 text-[var(--fg-2)]" />
-      </div>
-      <div className="mt-3 text-sm text-[var(--fg-1)]">
-        No invoices tracked yet.
-      </div>
-      <p className="mt-1 text-xs text-[var(--fg-2)]">
-        Create a new one or look one up by id.
-      </p>
-    </Card>
+    <div className="overflow-hidden rounded-md border border-border">
+      <table className="w-full border-separate border-spacing-0 text-sm">
+        <thead>
+          <tr className="bg-[var(--bg-2)]">
+            <Th>Tx</Th>
+            <Th>Status</Th>
+            <Th>Token</Th>
+            <Th>Amount</Th>
+            <Th>Conf</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.transactions.map((t) => (
+            <tr key={t.id}>
+              <Td>
+                <Addr value={t.txHash} />
+              </Td>
+              <Td>
+                <StatusBadge status={t.status} />
+              </Td>
+              <Td className="font-mono text-[12.5px]">{t.token}</Td>
+              <Td className="font-mono text-[12.5px]">{fmtNum(t.amount)}</Td>
+              <Td className="font-mono text-[12.5px]">{t.confirmations}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
 function Th({ children }: { children?: React.ReactNode }) {
   return (
-    <th className="border-b border-border bg-card px-3.5 py-2.5 text-left text-[11.5px] font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
+    <th className="border-b border-border px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)]">
       {children}
     </th>
   )
@@ -230,67 +665,314 @@ function Td({
   className?: string
 }) {
   return (
-    <td className={'border-b border-border px-3.5 py-2.5 align-middle ' + className}>
+    <td
+      className={'border-b border-border px-3 py-2 last:border-b-0 ' + className}
+    >
       {children}
     </td>
   )
 }
 
-function ChainPill({ chainId }: { chainId: number }) {
-  const info = chainInfo(chainId)
+function KV({
+  children,
+  grid = false,
+}: {
+  children: React.ReactNode
+  grid?: boolean
+}) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-[12.5px]">
-      <span
-        className="size-[7px] rounded-full"
-        style={{ background: info.color }}
-      />
-      {info.name}
-    </span>
+    <dl
+      className={
+        grid
+          ? 'grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2'
+          : 'space-y-4'
+      }
+    >
+      {children}
+    </dl>
   )
 }
 
-export function StatusBadge({ status }: { status: string }) {
-  const variant = (() => {
-    switch (status) {
-      case 'confirmed':
-        return 'success' as const
-      case 'overpaid':
-        return 'accent' as const
-      case 'detected':
-      case 'partial':
-        return 'warn' as const
-      case 'expired':
-      case 'canceled':
-      case 'failed':
-      case 'reverted':
-        return 'danger' as const
-      default:
-        return 'default' as const
-    }
-  })()
-  return <Badge variant={variant}>{status}</Badge>
+function KVItem({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div>
+      <dt className="eyebrow mb-1">{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  )
 }
 
-function formatRelative(epochSec: number): string {
-  const diff = Math.floor(Date.now() / 1000) - epochSec
-  if (diff < 60) return `${diff}s ago`
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
+function PaymentProgress({
+  amounts,
+  overpaidUsd,
+}: {
+  amounts: InvoiceDetails['amounts']
+  overpaidUsd: string | null
+}) {
+  const required = parseFloat(amounts.requiredUsd ?? '0') || 0
+  const confirmed = parseFloat(amounts.confirmedUsd ?? '0') || 0
+  const confirming = parseFloat(amounts.confirmingUsd ?? '0') || 0
+  const remaining = Math.max(0, parseFloat(amounts.remainingUsd ?? '0') || 0)
+  const overpaid = parseFloat(overpaidUsd ?? '0') || 0
+
+  const denom = Math.max(required, confirmed + confirming) || 1
+  const pct = (v: number) => Math.min(100, Math.max(0, (v / denom) * 100))
+
+  const confirmedPct = pct(confirmed)
+  const confirmingPct = pct(confirming)
+  const overpaidPct = pct(Math.max(0, confirmed - required))
+  const remainingPct = Math.max(0, 100 - confirmedPct - confirmingPct)
+
+  const milestones: Array<{
+    key: string
+    label: string
+    value: string
+    swatch: string
+    muted?: boolean
+  }> = [
+    {
+      key: 'required',
+      label: 'Required',
+      value: fmtUsd(amounts.requiredUsd ?? '0'),
+      swatch: 'bg-[var(--fg-3)]',
+      muted: true,
+    },
+    {
+      key: 'confirmed',
+      label: overpaid > 0 ? 'Confirmed (overpaid)' : 'Confirmed',
+      value: fmtUsd(amounts.confirmedUsd ?? '0'),
+      swatch: overpaid > 0 ? 'bg-warn' : 'bg-success',
+    },
+    {
+      key: 'confirming',
+      label: 'Confirming',
+      value: fmtUsd(amounts.confirmingUsd ?? '0'),
+      swatch: 'bg-primary/70',
+    },
+    {
+      key: 'remaining',
+      label: 'Remaining',
+      value: fmtUsd(amounts.remainingUsd ?? '0'),
+      swatch: 'bg-[var(--bg-3,var(--bg-2))] border border-border',
+      muted: remaining === 0,
+    },
+  ]
+
+  return (
+    <div className="space-y-3 rounded-md border border-border bg-[var(--bg-2)] p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="eyebrow">Payment progress</div>
+        <div className="font-mono text-xs text-[var(--fg-3)]">
+          {fmtUsd(String(confirmed + confirming))} / {fmtUsd(amounts.requiredUsd ?? '0')}
+        </div>
+      </div>
+
+      <div className="relative h-2 w-full overflow-hidden rounded-full bg-[color-mix(in_oklch,var(--border)_60%,transparent)]">
+        {confirmedPct > 0 && (
+          <div
+            className={overpaid > 0 ? 'absolute inset-y-0 left-0 bg-warn' : 'absolute inset-y-0 left-0 bg-success'}
+            style={{ width: `${confirmedPct}%` }}
+          />
+        )}
+        {confirmingPct > 0 && (
+          <div
+            className="absolute inset-y-0 bg-primary/70"
+            style={{ left: `${confirmedPct}%`, width: `${confirmingPct}%` }}
+          />
+        )}
+        {overpaid > 0 && overpaidPct > 0 && (
+          <div
+            className="absolute inset-y-0 bg-warn/40"
+            style={{ left: `${confirmedPct - overpaidPct}%`, width: `${overpaidPct}%` }}
+          />
+        )}
+        {remainingPct > 0 && confirmedPct + confirmingPct < 100 && (
+          <div
+            className="absolute inset-y-0 right-0 bg-[repeating-linear-gradient(45deg,transparent_0_4px,color-mix(in_oklch,var(--border)_80%,transparent)_4px_8px)]"
+            style={{ width: `${remainingPct}%` }}
+          />
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-4">
+        {milestones.map((m) => (
+          <div key={m.key} className="flex items-center gap-2">
+            <span className={`size-2 shrink-0 rounded-full ${m.swatch}`} />
+            <div className="min-w-0 leading-tight">
+              <div className={`truncate ${m.muted ? 'text-[var(--fg-3)]' : 'text-[var(--fg-2)]'}`}>
+                {m.label}
+              </div>
+              <div className="font-mono tabular-nums">{m.value}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
-/* ── Create Invoice ──────────────────────────────────────── */
+/* ── skeletons / empty / error ──────────────────────────── */
+
+function ListSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div
+          key={i}
+          className="grid grid-cols-[1fr_120px_160px_110px_90px] items-center gap-4 border-b border-border px-5 py-3 last:border-0"
+        >
+          <div className="space-y-1.5">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-2.5 w-24" />
+          </div>
+          <Skeleton className="h-3 w-20" />
+          <div className="space-y-1.5">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-2.5 w-10" />
+          </div>
+          <Skeleton className="h-5 w-16 rounded-full" />
+          <Skeleton className="h-2.5 w-12" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function DetailSkeleton() {
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="space-y-1.5">
+            <Skeleton className="h-2.5 w-16" />
+            <Skeleton className="h-3.5 w-32" />
+          </div>
+        ))}
+      </div>
+      <Skeleton className="h-20 w-full" />
+    </div>
+  )
+}
+
+function PageSkeleton({ title }: { title: string }) {
+  return (
+    <div className="fade-in space-y-5">
+      <div>
+        <div className="eyebrow">Money</div>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
+      </div>
+      <ListSkeleton />
+    </div>
+  )
+}
+
+function EmptyState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-14 text-center">
+      <div className="flex size-11 items-center justify-center rounded-full bg-[var(--bg-2)]">
+        <FileText className="size-5 text-[var(--fg-2)]" />
+      </div>
+      <div>
+        <div className="text-sm font-medium">No invoices yet</div>
+        <p className="mt-1 text-xs text-[var(--fg-2)]">
+          Create your first invoice to start collecting payments.
+        </p>
+      </div>
+      <Button size="sm" onClick={onCreate}>
+        <Plus className="size-3.5" /> Create invoice
+      </Button>
+    </div>
+  )
+}
+
+function NoMatch() {
+  return (
+    <div className="rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-[var(--fg-2)]">
+      No loaded invoices match your search.
+    </div>
+  )
+}
+
+function ErrorCard({ message }: { message: string }) {
+  return (
+    <div className="rounded-lg border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-destructive">
+      {message}
+    </div>
+  )
+}
+
+function NoApiKeyCard({ merchant }: { merchant: Merchant }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-14 text-center">
+      <div className="flex size-11 items-center justify-center rounded-full bg-[var(--bg-2)]">
+        <KeyRound className="size-5 text-[var(--fg-2)]" />
+      </div>
+      <div>
+        <div className="text-sm font-medium">
+          No API key for <span className="font-mono text-xs">{merchant.name}</span>
+        </div>
+        <p className="mt-1 max-w-sm text-xs text-[var(--fg-2)]">
+          The gateway sees this merchant, but no sealed API key is held here.
+          Rotate or import the key from Merchants to list invoices.
+        </p>
+      </div>
+      <Button size="sm" asChild>
+        <Link to="/merchants">
+          <KeyRound className="size-3.5" /> Set up API key
+        </Link>
+      </Button>
+    </div>
+  )
+}
+
+function NoMerchants() {
+  return (
+    <div className="fade-in space-y-6">
+      <div>
+        <div className="eyebrow">Money</div>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Invoices</h1>
+      </div>
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-14 text-center">
+        <div className="flex size-11 items-center justify-center rounded-full bg-[var(--bg-2)]">
+          <FileText className="size-5 text-[var(--fg-2)]" />
+        </div>
+        <div className="text-sm font-medium">Add a merchant first</div>
+        <p className="text-xs text-[var(--fg-2)]">
+          Invoices are issued against a merchant's API key — head to Merchants
+          to create or import one.
+        </p>
+        <Button size="sm" asChild>
+          <Link to="/merchants">
+            <ChevronDown className="size-3.5 -rotate-90" /> Go to Merchants
+          </Link>
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/* ── create invoice ──────────────────────────────────────── */
 
 type PricingMode = 'usd' | 'raw' | 'fiat'
 
-interface CreateInvoiceProps {
-  merchantId?: string
-  onOpenDetail: (id: string) => void
-}
-
-function CreateInvoiceDialog({ merchantId, onOpenDetail }: CreateInvoiceProps) {
+function CreateInvoiceDialog({
+  open,
+  onOpenChange,
+  merchantId,
+  onCreated,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  merchantId: string
+  onCreated: (id: string) => void
+}) {
   const qc = useQueryClient()
-  const [open, setOpen] = React.useState(false)
   const [mode, setMode] = React.useState<PricingMode>('usd')
   const [chainId, setChainId] = React.useState('1')
   const [token, setToken] = React.useState('USDC')
@@ -330,22 +1012,21 @@ function CreateInvoiceDialog({ merchantId, onOpenDetail }: CreateInvoiceProps) {
         body.fiatCurrency = fiatCurrency
       }
       return api<{ invoice: { id: string } }>(
-        `/api/mg/${encodeURIComponent(merchantId!)}/invoices`,
+        `/api/mg/${encodeURIComponent(merchantId)}/invoices`,
         { method: 'POST', body: JSON.stringify(body) },
       )
     },
     onSuccess: (res) => {
       toast.success('Invoice created')
-      qc.invalidateQueries({ queryKey: invoicesQueryKey(merchantId) })
-      setOpen(false)
-      onOpenDetail(res.invoice.id)
+      qc.invalidateQueries({ queryKey: ['invoices', 'list', merchantId] })
+      onOpenChange(false)
+      onCreated(res.invoice.id)
     },
     onError: (e: ApiError | Error) =>
       toast.error(e.message || 'Could not create invoice'),
   })
 
   const canSubmit =
-    !!merchantId &&
     (mode === 'usd'
       ? /^\d+(\.\d{1,8})?$/.test(amountUsd)
       : mode === 'raw'
@@ -356,12 +1037,7 @@ function CreateInvoiceDialog({ merchantId, onOpenDetail }: CreateInvoiceProps) {
     /^[A-Z0-9]+$/.test(token)
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" disabled={!merchantId}>
-          <Plus className="size-3.5" /> New invoice
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Create invoice</DialogTitle>
@@ -438,7 +1114,7 @@ function CreateInvoiceDialog({ merchantId, onOpenDetail }: CreateInvoiceProps) {
                           )
                         }
                         className={
-                          'rounded-md border px-2.5 py-1 text-xs font-medium uppercase tracking-wider transition-colors cursor-pointer ' +
+                          'cursor-pointer rounded-md border px-2.5 py-1 text-xs font-medium uppercase tracking-wider transition-colors ' +
                           (active
                             ? 'border-[var(--accent-border)] bg-[var(--accent-bg)] text-primary'
                             : 'border-border text-[var(--fg-2)] hover:bg-[var(--bg-hover)]')
@@ -522,7 +1198,7 @@ function CreateInvoiceDialog({ merchantId, onOpenDetail }: CreateInvoiceProps) {
           </Field>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={create.isPending || !canSubmit}>
@@ -532,295 +1208,5 @@ function CreateInvoiceDialog({ merchantId, onOpenDetail }: CreateInvoiceProps) {
         </form>
       </DialogContent>
     </Dialog>
-  )
-}
-
-/* ── Lookup by id ────────────────────────────────────────── */
-
-function LookupInvoiceDialog({
-  merchantId,
-  onOpenDetail,
-}: {
-  merchantId?: string
-  onOpenDetail: (id: string) => void
-}) {
-  const [open, setOpen] = React.useState(false)
-  const [id, setId] = React.useState('')
-  const qc = useQueryClient()
-
-  const track = useMutation({
-    mutationFn: () =>
-      api<{ invoice: { id: string } }>(
-        `/api/mg/${encodeURIComponent(merchantId!)}/invoices/track`,
-        { method: 'POST', body: JSON.stringify({ id }) },
-      ),
-    onSuccess: (res) => {
-      toast.success('Invoice tracked')
-      qc.invalidateQueries({ queryKey: invoicesQueryKey(merchantId) })
-      setOpen(false)
-      setId('')
-      onOpenDetail(res.invoice.id)
-    },
-    onError: (e: ApiError) => toast.error(e.message || 'Could not look up'),
-  })
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant="outline" disabled={!merchantId}>
-          <Search className="size-3.5" /> Look up
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Look up an invoice</DialogTitle>
-          <DialogDescription>
-            Fetch an invoice by its id and track it locally.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          className="space-y-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            track.mutate()
-          }}
-        >
-          <Field label="Invoice id">
-            <Input
-              autoFocus
-              value={id}
-              onChange={(e) => setId(e.target.value)}
-              placeholder="uuid"
-              className="font-mono"
-              required
-            />
-          </Field>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={track.isPending || !id.trim()}>
-              {track.isPending ? 'Looking up…' : 'Track invoice'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-/* ── Detail dialog ───────────────────────────────────────── */
-
-function InvoiceDetailDialog({
-  open,
-  onOpenChange,
-  merchantId,
-  invoiceId,
-}: {
-  open: boolean
-  onOpenChange: (o: boolean) => void
-  merchantId: string
-  invoiceId: string
-}) {
-  const qc = useQueryClient()
-  const detail = useQuery({
-    enabled: open,
-    queryKey: ['invoice', merchantId, invoiceId] as const,
-    queryFn: () =>
-      api<InvoiceDetails>(
-        `/api/mg/${encodeURIComponent(merchantId)}/invoices/${encodeURIComponent(invoiceId)}`,
-      ),
-    refetchInterval: open ? 10_000 : false,
-  })
-
-  const expire = useMutation({
-    mutationFn: () =>
-      api(
-        `/api/mg/${encodeURIComponent(merchantId)}/invoices/${encodeURIComponent(invoiceId)}/expire`,
-        { method: 'POST' },
-      ),
-    onSuccess: () => {
-      toast.success('Invoice force-expired')
-      qc.invalidateQueries({ queryKey: ['invoice', merchantId, invoiceId] })
-      qc.invalidateQueries({ queryKey: invoicesQueryKey(merchantId) })
-    },
-    onError: (e: ApiError) => toast.error(e.message || 'Could not expire'),
-  })
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Invoice detail</DialogTitle>
-          <DialogDescription>
-            <span className="font-mono">{invoiceId}</span>
-          </DialogDescription>
-        </DialogHeader>
-
-        {detail.isLoading ? (
-          <div className="py-8 text-center text-sm text-[var(--fg-2)]">Loading…</div>
-        ) : !detail.data ? (
-          <div className="py-8 text-center text-sm text-destructive">
-            {detail.error instanceof Error ? detail.error.message : 'Not found'}
-          </div>
-        ) : (
-          <>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FieldRow label="Status">
-                <StatusBadge status={detail.data.invoice.status} />
-              </FieldRow>
-              <FieldRow label="Chain">
-                <ChainPill chainId={detail.data.invoice.chainId} />
-              </FieldRow>
-              <FieldRow label="Token">
-                <span className="font-mono">{detail.data.invoice.token}</span>
-              </FieldRow>
-              <FieldRow label="External ID">
-                <span className="font-mono">
-                  {detail.data.invoice.externalId ?? '—'}
-                </span>
-              </FieldRow>
-              <FieldRow label="Required">
-                <span className="font-mono">
-                  {detail.data.invoice.amountUsd
-                    ? fmtUsd(detail.data.invoice.amountUsd)
-                    : detail.data.invoice.requiredAmountRaw}
-                </span>
-              </FieldRow>
-              <FieldRow label="Received">
-                <span className="font-mono">
-                  {detail.data.invoice.paidUsd
-                    ? fmtUsd(detail.data.invoice.paidUsd)
-                    : detail.data.invoice.receivedAmountRaw}
-                </span>
-              </FieldRow>
-              <FieldRow label="Created">
-                <span className="font-mono text-xs">
-                  {new Date(detail.data.invoice.createdAt).toISOString().slice(0, 19)}Z
-                </span>
-              </FieldRow>
-              <FieldRow label="Expires">
-                <span className="font-mono text-xs">
-                  {new Date(detail.data.invoice.expiresAt).toISOString().slice(0, 19)}Z
-                </span>
-              </FieldRow>
-            </div>
-
-            {detail.data.invoice.receiveAddresses?.length ? (
-              <div className="space-y-2">
-                <div className="eyebrow">Receive addresses</div>
-                {detail.data.invoice.receiveAddresses.map((r) => (
-                  <div
-                    key={r.family}
-                    className="flex items-center gap-3 rounded-md border border-border bg-secondary px-3 py-2"
-                  >
-                    <span className="rounded bg-card px-1.5 py-0.5 text-[11px] font-mono">
-                      {r.family}
-                    </span>
-                    <Addr value={r.address} truncated={false} />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <FieldRow label="Receive address">
-                <Addr value={detail.data.invoice.receiveAddress} truncated={false} />
-              </FieldRow>
-            )}
-
-            {detail.data.amounts.requiredUsd != null && (
-              <div className="rounded-[var(--radius-md)] border border-border p-3">
-                <div className="eyebrow mb-2">USD axis</div>
-                <div className="grid grid-cols-2 gap-y-1.5 font-mono text-sm sm:grid-cols-4">
-                  <AmountCell label="required" value={detail.data.amounts.requiredUsd} />
-                  <AmountCell label="confirmed" value={detail.data.amounts.confirmedUsd} />
-                  <AmountCell label="confirming" value={detail.data.amounts.confirmingUsd} />
-                  <AmountCell label="remaining" value={detail.data.amounts.remainingUsd} />
-                </div>
-              </div>
-            )}
-
-            {detail.data.transactions.length > 0 && (
-              <div className="space-y-2">
-                <div className="eyebrow">Transactions</div>
-                <div className="overflow-hidden rounded-md border border-border">
-                  <table className="w-full border-separate border-spacing-0 text-sm">
-                    <thead>
-                      <tr>
-                        <Th>Tx</Th>
-                        <Th>Status</Th>
-                        <Th>Token</Th>
-                        <Th>Amount</Th>
-                        <Th>Conf</Th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detail.data.transactions.map((t) => (
-                        <tr key={t.id}>
-                          <Td>
-                            <Addr value={t.txHash} />
-                          </Td>
-                          <Td>
-                            <StatusBadge status={t.status} />
-                          </Td>
-                          <Td className="font-mono text-[12.5px]">{t.token}</Td>
-                          <Td className="font-mono text-[12.5px]">
-                            {fmtNum(t.amount)}
-                          </Td>
-                          <Td className="font-mono text-[12.5px]">
-                            {t.confirmations}
-                          </Td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            <DialogFooter>
-              {['expired', 'canceled', 'confirmed', 'overpaid'].includes(
-                detail.data.invoice.status,
-              ) ? null : (
-                <Button
-                  variant="destructive"
-                  onClick={() => expire.mutate()}
-                  disabled={expire.isPending}
-                >
-                  <X className="size-3.5" />{' '}
-                  {expire.isPending ? 'Expiring…' : 'Force expire'}
-                </Button>
-              )}
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                Close
-              </Button>
-            </DialogFooter>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function FieldRow({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <div>
-      <div className="eyebrow">{label}</div>
-      <div className="mt-1">{children}</div>
-    </div>
-  )
-}
-
-function AmountCell({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-[var(--fg-2)]">{label}</span>
-      <span>{value != null ? fmtUsd(value) : '—'}</span>
-    </div>
   )
 }

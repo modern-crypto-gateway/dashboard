@@ -1,62 +1,29 @@
 /**
- * Invoice routes — merchant-scoped, with a KV-tracked index per merchant.
+ * Invoice routes — merchant-scoped, proxied through the merchant's API key.
  *
- *   GET  /api/mg/:merchantId/invoices                → list tracked invoices (from KV index)
- *   POST /api/mg/:merchantId/invoices                → create via gateway, track result
- *   GET  /api/mg/:merchantId/invoices/:id            → fetch detail via gateway, update track
- *   POST /api/mg/:merchantId/invoices/:id/expire     → force-expire via gateway, update track
- *   POST /api/mg/:merchantId/invoices/:id/track      → import an invoice id we didn't create here
+ *   GET  /api/mg/:merchantId/invoices               → list via gateway /api/v1/invoices
+ *   POST /api/mg/:merchantId/invoices               → create via gateway
+ *   GET  /api/mg/:merchantId/invoices/:id           → fetch detail via gateway
+ *   POST /api/mg/:merchantId/invoices/:id/expire    → force-expire via gateway
  */
 
 import { merchantKeyPlain } from './merchants'
 import type { Bindings } from '../lib/env'
-import { error, json, readJson, HttpError } from '../lib/http'
-import { kvGet, kvPut, K, type TrackedInvoice } from '../lib/kv'
+import { error, HttpError, json, readJson } from '../lib/http'
+import { kvGet, K } from '../lib/kv'
 
-interface IndexShape {
-  ids: string[]
-}
-
-async function upsertTracked(
-  env: Bindings,
-  merchantId: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  gw: Record<string, any>,
-): Promise<TrackedInvoice> {
-  const id = gw.id as string
-  const now = Math.floor(Date.now() / 1000)
-
-  const amountSpec = gw.amountUsd
-    ? `$${gw.amountUsd}`
-    : gw.fiatAmount && gw.fiatCurrency
-      ? `${gw.fiatAmount} ${gw.fiatCurrency}`
-      : gw.requiredAmountRaw
-        ? `${gw.requiredAmountRaw} ${gw.token}`
-        : `${gw.token}`
-
-  const existing = await kvGet<TrackedInvoice>(env, K.invoice(merchantId, id), 'json')
-  const record: TrackedInvoice = {
-    id,
-    merchantId,
-    chainId: gw.chainId ?? existing?.chainId ?? 0,
-    token: gw.token ?? existing?.token ?? '',
-    status: gw.status ?? existing?.status ?? 'created',
-    amountSpec,
-    externalId: gw.externalId ?? existing?.externalId ?? undefined,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  }
-  await kvPut(env, K.invoice(merchantId, id), record)
-
-  const idx = (await kvGet<IndexShape>(env, K.invoiceIndex(merchantId), 'json')) ?? { ids: [] }
-  if (!idx.ids.includes(id)) {
-    idx.ids.unshift(id) // newest-first
-    // cap to a reasonable retention — oldest drop off as operators create more.
-    if (idx.ids.length > 500) idx.ids = idx.ids.slice(0, 500)
-    await kvPut(env, K.invoiceIndex(merchantId), idx)
-  }
-  return record
-}
+const LIST_PASSTHROUGH = [
+  'status',
+  'chainId',
+  'token',
+  'externalId',
+  'toAddress',
+  'fromAddress',
+  'createdFrom',
+  'createdTo',
+  'limit',
+  'offset',
+] as const
 
 async function gwFetch(
   env: Bindings,
@@ -83,18 +50,35 @@ async function gwFetch(
 }
 
 export async function listInvoices(
-  _req: Request,
+  req: Request,
   env: Bindings,
   merchantId: string,
 ): Promise<Response> {
-  const idx = await kvGet<IndexShape>(env, K.invoiceIndex(merchantId), 'json')
-  const ids = idx?.ids ?? []
-  const loaded = await Promise.all(
-    ids.map((id) => kvGet<TrackedInvoice>(env, K.invoice(merchantId, id), 'json')),
-  )
-  return json({
-    invoices: loaded.filter((x): x is TrackedInvoice => !!x),
-  })
+  const { apiKey } = await merchantKeyPlain(env, merchantId)
+  const incoming = new URL(req.url).searchParams
+  const qs = new URLSearchParams()
+  for (const key of LIST_PASSTHROUGH) {
+    const v = incoming.get(key)
+    if (v) qs.set(key, v)
+  }
+  const suffix = qs.toString() ? `?${qs}` : ''
+  const upstream = await gwFetch(env, apiKey, 'GET', `/api/v1/invoices${suffix}`)
+  const payload = (await upstream.json().catch(() => ({}))) as {
+    invoices?: unknown[]
+    limit?: number
+    offset?: number
+    hasMore?: boolean
+    error?: { code?: string; message?: string; details?: unknown }
+  }
+  if (!upstream.ok) {
+    return error(
+      payload.error?.code ?? 'UPSTREAM_ERROR',
+      payload.error?.message ?? 'Gateway rejected list',
+      upstream.status || 502,
+      payload.error?.details,
+    )
+  }
+  return json(payload, { status: upstream.status })
 }
 
 export async function createInvoice(
@@ -118,12 +102,7 @@ export async function createInvoice(
       payload.error?.details,
     )
   }
-
-  const tracked = await upsertTracked(env, merchantId, payload.invoice)
-  return json(
-    { invoice: payload.invoice, tracked },
-    { status: upstream.status },
-  )
+  return json({ invoice: payload.invoice }, { status: upstream.status })
 }
 
 export async function getInvoice(
@@ -147,7 +126,6 @@ export async function getInvoice(
       upstream.status || 502,
     )
   }
-  await upsertTracked(env, merchantId, payload.invoice)
   return json(payload, { status: upstream.status })
 }
 
@@ -176,32 +154,5 @@ export async function expireInvoice(
       payload.error?.details,
     )
   }
-  await upsertTracked(env, merchantId, payload.invoice)
   return json({ invoice: payload.invoice })
-}
-
-export async function trackInvoice(
-  req: Request,
-  env: Bindings,
-  merchantId: string,
-): Promise<Response> {
-  const body = await readJson<{ id?: string }>(req)
-  const id = (body.id ?? '').trim()
-  if (!id) return error('BAD_ID', 'Invoice id required', 400)
-
-  const { apiKey } = await merchantKeyPlain(env, merchantId)
-  const upstream = await gwFetch(env, apiKey, 'GET', `/api/v1/invoices/${encodeURIComponent(id)}`)
-  const payload = (await upstream.json().catch(() => ({}))) as {
-    invoice?: Record<string, unknown>
-    error?: { code?: string; message?: string; details?: unknown }
-  }
-  if (!upstream.ok || !payload.invoice) {
-    return error(
-      payload.error?.code ?? 'UPSTREAM_ERROR',
-      payload.error?.message ?? 'Invoice not found or not owned by this merchant',
-      upstream.status || 502,
-    )
-  }
-  const tracked = await upsertTracked(env, merchantId, payload.invoice)
-  return json({ invoice: payload.invoice, tracked })
 }
