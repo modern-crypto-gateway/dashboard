@@ -91,7 +91,7 @@ export function DashboardPage() {
     const low = rows.filter((w) => {
       const fam = chainInfo(w.chainId).family
       const bal = nativeBalanceDecimal(w.nativeBalance, w.nativeDecimals)
-      return isLowGas(fam, bal)
+      return isLowGas(fam, bal, w.nativeSymbol)
     })
     return { low, total: rows.length }
   }, [feeGas.data])

@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { KeyRound, Lock } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
-import { sessionQuery } from '@/lib/session'
+import { sessionQuery, useSetupStatus } from '@/lib/session'
 
 import { AuthSide } from '@/components/AuthSide'
 import { Field } from '@/components/Field'
@@ -26,6 +26,8 @@ export function LoginScreen() {
 
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const setup = useSetupStatus()
+  const needsSetup = setup.data ? !setup.data.setupComplete : false
 
   const stepOne = useMutation({
     mutationFn: (body: { username: string; password: string; remember: boolean }) =>
@@ -210,14 +212,16 @@ export function LoginScreen() {
             </form>
           )}
 
-          <div className="flex items-center justify-between border-t border-border pt-4 text-[13px]">
-            <span className="text-[var(--fg-2)]">First deployment?</span>
-            <Button asChild variant="outline" size="sm">
-              <Link to="/setup">
-                <KeyRound className="size-3" /> Run first-time setup
-              </Link>
-            </Button>
-          </div>
+          {needsSetup && (
+            <div className="flex items-center justify-between border-t border-border pt-4 text-[13px]">
+              <span className="text-[var(--fg-2)]">First deployment?</span>
+              <Button asChild variant="outline" size="sm">
+                <Link to="/setup">
+                  <KeyRound className="size-3" /> Run first-time setup
+                </Link>
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>

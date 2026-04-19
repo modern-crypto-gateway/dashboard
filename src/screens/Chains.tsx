@@ -494,15 +494,15 @@ function AddFeeWalletDialog({
   onOpenChange: (v: boolean) => void
   onSuccess: () => void
 }) {
-  const [label, setLabel] = React.useState('hot-1')
+  const [label, setLabel] = React.useState('')
   const [revealed, setRevealed] = React.useState<FeeWalletResult | null>(null)
 
   React.useEffect(() => {
     if (chain) {
-      setLabel('hot-1')
+      setLabel(`${chain.displayName} Fee`)
       setRevealed(null)
     }
-  }, [chain?.chainId])
+  }, [chain?.chainId, chain?.displayName])
 
   const register = useMutation({
     mutationFn: (body: { chainId: number; family: Family; label: string }) =>

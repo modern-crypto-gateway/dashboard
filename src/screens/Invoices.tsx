@@ -29,6 +29,8 @@ import { ChainTokenPicker } from '@/components/ChainTokenPicker'
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
 import { MerchantSwitcher } from '@/components/MerchantSwitcher'
+import { MetadataEditor } from '@/components/MetadataEditor'
+import { QrCode } from '@/components/QrCode'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -55,7 +57,6 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Textarea } from '@/components/ui/textarea'
 
 /* ── public helpers reused by Payouts ───────────────────── */
 
@@ -329,10 +330,17 @@ function InvoiceRow({
 }) {
   return (
     <li className="border-b border-border last:border-0">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onOpen}
-        className="grid w-full grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] sm:grid-cols-[1fr_120px_160px_110px_90px] sm:gap-4"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onOpen()
+          }
+        }}
+        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1fr_120px_160px_110px_90px] sm:gap-4"
       >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -368,7 +376,7 @@ function InvoiceRow({
         <div className="text-xs text-[var(--fg-3)]">
           {fmtRel(unixOf(inv.updatedAt))}
         </div>
-      </button>
+      </div>
     </li>
   )
 }
@@ -587,26 +595,36 @@ function OverviewTab({ data }: { data: InvoiceDetails }) {
 
 function AddressesTab({ data }: { data: InvoiceDetails }) {
   const { invoice } = data
-  if (invoice.receiveAddresses?.length) {
-    return (
-      <div className="space-y-2">
-        {invoice.receiveAddresses.map((r) => (
-          <div
-            key={r.family}
-            className="flex items-center gap-3 rounded-md border border-border bg-secondary px-3 py-2"
-          >
-            <span className="rounded bg-card px-1.5 py-0.5 font-mono text-[11px] uppercase">
+  const list =
+    invoice.receiveAddresses?.length
+      ? invoice.receiveAddresses
+      : [{ family: 'evm' as Family, address: invoice.receiveAddress }]
+
+  return (
+    <div
+      className={
+        list.length > 1
+          ? 'grid grid-cols-1 gap-3 sm:grid-cols-2'
+          : 'grid grid-cols-1 gap-3'
+      }
+    >
+      {list.map((r) => (
+        <div
+          key={r.family + r.address}
+          className="flex flex-col items-center gap-2.5 rounded-md border border-border bg-card p-3"
+        >
+          <div className="flex w-full items-center justify-between gap-2">
+            <span className="rounded-full border border-border bg-[var(--bg-2)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--fg-2)]">
               {r.family}
             </span>
-            <Addr value={r.address} truncated={false} />
+            <CopyButton value={r.address} />
           </div>
-        ))}
-      </div>
-    )
-  }
-  return (
-    <div className="rounded-md border border-border bg-secondary px-3 py-2">
-      <Addr value={invoice.receiveAddress} truncated={false} />
+          <QrCode value={r.address} size={152} />
+          <div className="w-full break-all text-center font-mono text-[11px] text-[var(--fg-2)]">
+            {r.address}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -619,6 +637,7 @@ function TransactionsTab({ data }: { data: InvoiceDetails }) {
       </div>
     )
   }
+  const invoiceToken = data.invoice.token
   return (
     <div className="overflow-hidden rounded-md border border-border">
       <table className="w-full border-separate border-spacing-0 text-sm">
@@ -628,23 +647,48 @@ function TransactionsTab({ data }: { data: InvoiceDetails }) {
             <Th>Status</Th>
             <Th>Token</Th>
             <Th>Amount</Th>
+            <Th>USD</Th>
             <Th>Conf</Th>
           </tr>
         </thead>
         <tbody>
-          {data.transactions.map((t) => (
-            <tr key={t.id}>
-              <Td>
-                <Addr value={t.txHash} />
-              </Td>
-              <Td>
-                <StatusBadge status={t.status} />
-              </Td>
-              <Td className="font-mono text-[12.5px]">{t.token}</Td>
-              <Td className="font-mono text-[12.5px]">{fmtNum(t.amount)}</Td>
-              <Td className="font-mono text-[12.5px]">{t.confirmations}</Td>
-            </tr>
-          ))}
+          {data.transactions.map((t) => {
+            const uncounted =
+              t.amountUsd == null && t.token.toUpperCase() !== invoiceToken.toUpperCase()
+            return (
+              <tr
+                key={t.id}
+                className={uncounted ? 'opacity-55' : ''}
+                title={
+                  uncounted
+                    ? `Wrong token — this transfer of ${t.token} doesn't count toward a ${invoiceToken} invoice. Logged for audit only.`
+                    : undefined
+                }
+              >
+                <Td>
+                  <Addr value={t.txHash} />
+                </Td>
+                <Td>
+                  <StatusBadge status={t.status} />
+                </Td>
+                <Td className="font-mono text-[12.5px]">
+                  <span className="inline-flex items-center gap-1.5">
+                    {t.token}
+                    {uncounted && (
+                      <span className="rounded border border-border bg-[var(--bg-2)] px-1 py-0 text-[9.5px] uppercase tracking-wider text-[var(--fg-3)]">
+                        uncounted
+                      </span>
+                    )}
+                  </span>
+                </Td>
+                <Td className="font-mono text-[12.5px]">{fmtNum(t.amount)}</Td>
+                <Td className="font-mono text-[12.5px] text-[var(--fg-2)]">
+                  {t.amountUsd ? fmtUsd(t.amountUsd) : '—'}
+                </Td>
+                <Td className="font-mono text-[12.5px]">{t.confirmations}</Td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -987,6 +1031,24 @@ function CreateInvoiceDialog({
   const [acceptedFamilies, setAcceptedFamilies] = React.useState<Family[]>([
     'evm',
   ])
+  const [webhookUrl, setWebhookUrl] = React.useState('')
+  const [webhookSecret, setWebhookSecret] = React.useState('')
+  const [tolUnder, setTolUnder] = React.useState('')
+  const [tolOver, setTolOver] = React.useState('')
+  const [created, setCreated] = React.useState<GatewayInvoice | null>(null)
+
+  React.useEffect(() => {
+    if (!open) setCreated(null)
+  }, [open])
+
+  const webhookMismatch =
+    (webhookUrl.trim() !== '' && webhookSecret.trim() === '') ||
+    (webhookUrl.trim() === '' && webhookSecret.trim() !== '')
+  const tolUnderValid =
+    tolUnder === '' ||
+    (/^\d+$/.test(tolUnder) && parseInt(tolUnder, 10) <= 2000)
+  const tolOverValid =
+    tolOver === '' || (/^\d+$/.test(tolOver) && parseInt(tolOver, 10) <= 2000)
 
   const create = useMutation({
     mutationFn: () => {
@@ -1012,7 +1074,14 @@ function CreateInvoiceDialog({
         body.fiatAmount = fiatAmount
         body.fiatCurrency = fiatCurrency
       }
-      return api<{ invoice: { id: string } }>(
+      if (webhookUrl.trim()) {
+        body.webhookUrl = webhookUrl.trim()
+        body.webhookSecret = webhookSecret.trim()
+      }
+      if (tolUnder !== '')
+        body.paymentToleranceUnderBps = parseInt(tolUnder, 10)
+      if (tolOver !== '') body.paymentToleranceOverBps = parseInt(tolOver, 10)
+      return api<{ invoice: GatewayInvoice }>(
         `/api/mg/${encodeURIComponent(merchantId)}/invoices`,
         { method: 'POST', body: JSON.stringify(body) },
       )
@@ -1020,8 +1089,7 @@ function CreateInvoiceDialog({
     onSuccess: (res) => {
       toast.success('Invoice created')
       qc.invalidateQueries({ queryKey: ['invoices', 'list', merchantId] })
-      onOpenChange(false)
-      onCreated(res.invoice.id)
+      setCreated(res.invoice)
     },
     onError: (e: ApiError | Error) =>
       toast.error(e.message || 'Could not create invoice'),
@@ -1035,11 +1103,27 @@ function CreateInvoiceDialog({
         : /^\d+(\.\d+)?$/.test(fiatAmount) &&
           /^[A-Z]{3}$/.test(fiatCurrency)) &&
     /^\d+$/.test(chainId) &&
-    /^[A-Z0-9]+$/.test(token)
+    /^[A-Z0-9]+$/.test(token) &&
+    !webhookMismatch &&
+    (webhookUrl.trim() === '' ||
+      (webhookSecret.trim().length >= 16 && webhookSecret.trim().length <= 512)) &&
+    tolUnderValid &&
+    tolOverValid
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
+        {created ? (
+          <InvoiceCreatedView
+            invoice={created}
+            onGoToInvoice={() => {
+              onCreated(created.id)
+              onOpenChange(false)
+            }}
+            onClose={() => onOpenChange(false)}
+          />
+        ) : (
+          <>
         <DialogHeader>
           <DialogTitle>Create invoice</DialogTitle>
           <DialogDescription>
@@ -1179,16 +1263,78 @@ function CreateInvoiceDialog({
           </div>
 
           <Field
-            label="Metadata (JSON, optional)"
-            hint='{"orderId": "…"}'
+            label="Metadata (optional)"
+            hint="Attach arbitrary key/value pairs the gateway echoes back in webhooks. Toggle Raw JSON for nested values."
           >
-            <Textarea
+            <MetadataEditor
               value={metadataJson}
-              onChange={(e) => setMetadataJson(e.target.value)}
-              placeholder='{"orderId":"42"}'
-              rows={3}
+              onChange={setMetadataJson}
             />
           </Field>
+
+          <details className="rounded-md border border-border bg-[var(--bg-2)] open:pb-3">
+            <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-[var(--fg-2)]">
+              Advanced — per-invoice webhook &amp; tolerance overrides
+            </summary>
+            <div className="space-y-3 px-3 pt-1">
+              <Field
+                label="Webhook URL (override)"
+                hint="Events for this invoice dispatch here instead of the merchant default. Requires a secret."
+              >
+                <Input
+                  value={webhookUrl}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                  placeholder="https://merchant.example.com/hooks/invoice"
+                  type="url"
+                  className="font-mono"
+                />
+              </Field>
+              <Field
+                label="Webhook secret"
+                hint="16–512 chars. Paired HMAC secret — required when URL is set."
+              >
+                <Input
+                  value={webhookSecret}
+                  onChange={(e) => setWebhookSecret(e.target.value)}
+                  placeholder="whs_…"
+                  className="font-mono"
+                  minLength={16}
+                  maxLength={512}
+                />
+              </Field>
+              {webhookMismatch && (
+                <div className="-mt-1 text-[11.5px] text-destructive">
+                  Webhook URL and secret must be provided together.
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <Field
+                  label="Under-pay override (bps)"
+                  hint="0–2000. 1 bps = 0.01% (50 = 0.5%). Omit to inherit merchant default."
+                >
+                  <Input
+                    value={tolUnder}
+                    onChange={(e) => setTolUnder(e.target.value)}
+                    placeholder="—"
+                    inputMode="numeric"
+                    className="font-mono"
+                  />
+                </Field>
+                <Field
+                  label="Over-pay override (bps)"
+                  hint="0–2000. 1 bps = 0.01%."
+                >
+                  <Input
+                    value={tolOver}
+                    onChange={(e) => setTolOver(e.target.value)}
+                    placeholder="—"
+                    inputMode="numeric"
+                    className="font-mono"
+                  />
+                </Field>
+              </div>
+            </div>
+          </details>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -1199,7 +1345,90 @@ function CreateInvoiceDialog({
             </Button>
           </DialogFooter>
         </form>
+          </>
+        )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+function InvoiceCreatedView({
+  invoice,
+  onGoToInvoice,
+  onClose,
+}: {
+  invoice: GatewayInvoice
+  onGoToInvoice: () => void
+  onClose: () => void
+}) {
+  const addresses =
+    invoice.receiveAddresses && invoice.receiveAddresses.length > 0
+      ? invoice.receiveAddresses
+      : [{ family: 'evm' as Family, address: invoice.receiveAddress }]
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Invoice created</DialogTitle>
+        <DialogDescription>
+          Share the receive address{addresses.length > 1 ? 'es' : ''} or have
+          the payer scan a QR. The invoice updates live as transactions
+          confirm.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2 text-xs">
+          <span className="font-mono text-[11.5px] text-[var(--fg-2)]">
+            {truncateAddr(invoice.id, 10, 8)}
+          </span>
+          <CopyButton value={invoice.id} />
+          <span className="flex-1" />
+          <span className="text-[var(--fg-2)]">
+            {invoice.amountUsd ? (
+              <>
+                ${invoice.amountUsd}{' '}
+                <span className="text-[var(--fg-3)]">· {invoice.token}</span>
+              </>
+            ) : (
+              <span className="font-mono">{invoice.token}</span>
+            )}
+          </span>
+        </div>
+
+        <div
+          className={
+            addresses.length > 1
+              ? 'grid grid-cols-1 gap-3 sm:grid-cols-2'
+              : 'grid grid-cols-1'
+          }
+        >
+          {addresses.map((a) => (
+            <div
+              key={a.family + a.address}
+              className="flex flex-col items-center gap-2 rounded-md border border-border bg-card p-3"
+            >
+              <div className="flex w-full items-center justify-between gap-2">
+                <span className="rounded-full border border-border bg-[var(--bg-2)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--fg-2)]">
+                  {a.family}
+                </span>
+                <CopyButton value={a.address} />
+              </div>
+              <QrCode value={a.address} size={152} />
+              <div className="w-full overflow-hidden font-mono text-[11px] break-all text-[var(--fg-2)]">
+                {a.address}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onClose}>
+          Close
+        </Button>
+        <Button type="button" onClick={onGoToInvoice}>
+          Open invoice
+        </Button>
+      </DialogFooter>
+    </>
   )
 }

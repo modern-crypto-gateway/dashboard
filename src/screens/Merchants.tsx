@@ -243,10 +243,17 @@ function MerchantList({
 function MerchantRow({ m, onOpen }: { m: Merchant; onOpen: () => void }) {
   return (
     <li className="group border-b border-border last:border-0">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onOpen}
-        className="grid w-full grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] sm:grid-cols-[1fr_100px_140px_120px_56px] sm:gap-4"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onOpen()
+          }
+        }}
+        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1fr_100px_140px_120px_56px] sm:gap-4"
       >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -285,7 +292,7 @@ function MerchantRow({ m, onOpen }: { m: Merchant; onOpen: () => void }) {
         <div className="justify-self-end" onClick={(e) => e.stopPropagation()}>
           <RowKebab m={m} />
         </div>
-      </button>
+      </div>
     </li>
   )
 }
@@ -651,22 +658,45 @@ function WebhookSection({ m }: { m: Merchant }) {
         </div>
       </form>
 
-      <div className="rounded-lg border border-border bg-[var(--bg-2)] px-4 py-3">
+      <div
+        className={
+          'rounded-lg border px-4 py-3 ' +
+          (m.webhookUrl
+            ? 'border-border bg-[var(--bg-2)]'
+            : 'border-dashed border-border bg-[var(--bg-2)]/50')
+        }
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Webhook className="size-4 text-[var(--fg-2)]" /> Signing secret
             </div>
-            <p className="mt-1 text-xs text-[var(--fg-2)]">
-              Shared HMAC the gateway uses to sign webhook bodies. Rotating
-              invalidates the old secret immediately.
-            </p>
+            {m.webhookUrl ? (
+              <p className="mt-1 text-xs text-[var(--fg-2)]">
+                Shared HMAC the gateway uses to sign webhook bodies. Rotating
+                invalidates the old secret immediately — shown once on success.
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-[var(--fg-2)]">
+                No secret yet. Save a{' '}
+                <span className="font-medium">Webhook URL</span> above first —
+                the gateway auto-mints a 64-hex secret on the first save and
+                reveals it once. Use{' '}
+                <span className="font-mono">Rotate</span> afterwards to issue a
+                new one.
+              </p>
+            )}
           </div>
           <Button
             size="sm"
             variant="outline"
             disabled={!m.webhookUrl || rotate.isPending}
             onClick={() => setConfirmRotate(true)}
+            title={
+              m.webhookUrl
+                ? 'Mint a new signing secret'
+                : 'Save a webhook URL first'
+            }
           >
             <KeyRound className="size-3.5" /> Rotate
           </Button>
@@ -1218,24 +1248,44 @@ function CreateMerchantDialog({
 }) {
   const [name, setName] = React.useState('')
   const [webhookUrl, setWebhookUrl] = React.useState('')
+  const [under, setUnder] = React.useState('')
+  const [over, setOver] = React.useState('')
+  const [cooldown, setCooldown] = React.useState('')
   const qc = useQueryClient()
 
   React.useEffect(() => {
     if (!open) {
       setName('')
       setWebhookUrl('')
+      setUnder('')
+      setOver('')
+      setCooldown('')
     }
   }, [open])
 
+  const underValid = under === '' || /^\d+$/.test(under)
+  const overValid = over === '' || /^\d+$/.test(over)
+  const cooldownValid = cooldown === '' || /^\d+$/.test(cooldown)
+  const tuningValid =
+    underValid &&
+    overValid &&
+    cooldownValid &&
+    (under === '' || parseInt(under, 10) <= 2000) &&
+    (over === '' || parseInt(over, 10) <= 2000) &&
+    (cooldown === '' || parseInt(cooldown, 10) <= 604800)
+
   const create = useMutation({
-    mutationFn: () =>
-      api<{ merchant: Merchant }>('/api/merchants', {
+    mutationFn: () => {
+      const body: Record<string, unknown> = { name }
+      if (webhookUrl) body.webhookUrl = webhookUrl
+      if (under !== '') body.paymentToleranceUnderBps = parseInt(under, 10)
+      if (over !== '') body.paymentToleranceOverBps = parseInt(over, 10)
+      if (cooldown !== '') body.addressCooldownSeconds = parseInt(cooldown, 10)
+      return api<{ merchant: Merchant }>('/api/merchants', {
         method: 'POST',
-        body: JSON.stringify({
-          name,
-          ...(webhookUrl ? { webhookUrl } : {}),
-        }),
-      }),
+        body: JSON.stringify(body),
+      })
+    },
     onSuccess: () => {
       toast.success('Merchant created')
       qc.invalidateQueries({ queryKey: merchantsQuery.queryKey })
@@ -1283,6 +1333,53 @@ function CreateMerchantDialog({
               className="font-mono"
             />
           </Field>
+
+          <details className="rounded-md border border-border bg-[var(--bg-2)] open:pb-3">
+            <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-[var(--fg-2)]">
+              Advanced — payment tolerances &amp; cooldown
+            </summary>
+            <div className="space-y-3 px-3 pt-1">
+              <div className="grid grid-cols-2 gap-3">
+                <Field
+                  label="Under-pay tolerance (bps)"
+                  hint="0–2000. 1 bps = 0.01% (50 = 0.5%, 100 = 1%). Default 0 (strict)."
+                >
+                  <Input
+                    value={under}
+                    onChange={(e) => setUnder(e.target.value)}
+                    placeholder="0"
+                    inputMode="numeric"
+                    className="font-mono"
+                  />
+                </Field>
+                <Field
+                  label="Over-pay tolerance (bps)"
+                  hint="0–2000. 1 bps = 0.01%. Default 0."
+                >
+                  <Input
+                    value={over}
+                    onChange={(e) => setOver(e.target.value)}
+                    placeholder="0"
+                    inputMode="numeric"
+                    className="font-mono"
+                  />
+                </Field>
+              </div>
+              <Field
+                label="Address cooldown (seconds)"
+                hint="0–604800 (7 days). Default 0 — immediate reuse."
+              >
+                <Input
+                  value={cooldown}
+                  onChange={(e) => setCooldown(e.target.value)}
+                  placeholder="0"
+                  inputMode="numeric"
+                  className="font-mono"
+                />
+              </Field>
+            </div>
+          </details>
+
           <DialogFooter>
             <Button
               type="button"
@@ -1291,7 +1388,10 @@ function CreateMerchantDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={create.isPending || name.length === 0}>
+            <Button
+              type="submit"
+              disabled={create.isPending || name.length === 0 || !tuningValid}
+            >
               {create.isPending ? 'Creating…' : 'Create merchant'}
             </Button>
           </DialogFooter>

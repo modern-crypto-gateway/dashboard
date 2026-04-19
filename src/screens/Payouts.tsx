@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
+  AlertTriangle,
   ArrowUpDown,
   ChevronDown,
   KeyRound,
@@ -18,9 +19,19 @@ import {
 
 import { api, ApiError } from '@/lib/api'
 import { chainInfo } from '@/lib/chains'
-import { fmtRel, truncateAddr } from '@/lib/format'
+import {
+  decimalPlaces,
+  fmtNum,
+  fmtRel,
+  fmtUsd,
+  formatUnits,
+  truncateAddr,
+} from '@/lib/format'
 import { useActiveMerchant, useMerchants } from '@/lib/merchants'
 import type {
+  BalancesSnapshot,
+  ChainInventoryEntry,
+  ChainToken,
   GatewayPayout,
   Merchant,
   PayoutListResponse,
@@ -58,6 +69,59 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 
 import { StatusBadge } from './Invoices'
+
+function useTokenAvailable(
+  chainId: number | null,
+  token: string,
+  enabled: boolean,
+) {
+  const q = useQuery({
+    enabled,
+    queryKey: ['gw', 'balances', 'db'] as const,
+    queryFn: () =>
+      api<{ snapshot: BalancesSnapshot; cached: boolean }>(
+        '/api/gw/admin/balances',
+      ),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  })
+
+  const match = React.useMemo(() => {
+    if (!chainId || !token || !q.data) return null
+    for (const f of q.data.snapshot.families) {
+      for (const c of f.chains) {
+        if (c.chainId !== chainId) continue
+        const tok = c.tokens.find(
+          (t) => t.token.toUpperCase() === token.toUpperCase(),
+        )
+        if (tok) return tok
+      }
+    }
+    return null
+  }, [chainId, token, q.data])
+
+  return { match, loading: q.isLoading }
+}
+
+function useChainTokenLookup() {
+  const q = useQuery({
+    queryKey: ['gw', 'chains'] as const,
+    queryFn: () =>
+      api<{ chains: ChainInventoryEntry[] }>('/api/gw/admin/chains'),
+    refetchInterval: 120_000,
+    staleTime: 30_000,
+  })
+  const lookup = React.useCallback(
+    (chainId: number, symbol: string): ChainToken | undefined => {
+      const chain = q.data?.chains.find((c) => c.chainId === chainId)
+      return chain?.tokens.find(
+        (t) => t.symbol.toUpperCase() === symbol.toUpperCase(),
+      )
+    },
+    [q.data],
+  )
+  return lookup
+}
 
 type PayoutFilter = 'all' | 'pending' | 'confirmed' | 'failed'
 
@@ -264,6 +328,7 @@ function PayoutList({
   rows: GatewayPayout[]
   onOpen: (id: string) => void
 }) {
+  const lookup = useChainTokenLookup()
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
       <div className="hidden grid-cols-[1fr_120px_160px_170px_100px_90px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
@@ -276,7 +341,12 @@ function PayoutList({
       </div>
       <ul>
         {rows.map((po) => (
-          <PayoutRow key={po.id} po={po} onOpen={() => onOpen(po.id)} />
+          <PayoutRow
+            key={po.id}
+            po={po}
+            lookup={lookup}
+            onOpen={() => onOpen(po.id)}
+          />
         ))}
       </ul>
     </div>
@@ -288,13 +358,30 @@ function unixOf(iso: string): number {
   return isFinite(t) ? Math.floor(t / 1000) : 0
 }
 
-function PayoutRow({ po, onOpen }: { po: GatewayPayout; onOpen: () => void }) {
+function PayoutRow({
+  po,
+  lookup,
+  onOpen,
+}: {
+  po: GatewayPayout
+  lookup: (chainId: number, symbol: string) => ChainToken | undefined
+  onOpen: () => void
+}) {
+  const meta = lookup(po.chainId, po.token)
+  const formatted = meta ? formatUnits(po.amountRaw, meta.decimals) : po.amountRaw
   return (
     <li className="border-b border-border last:border-0">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onOpen}
-        className="grid w-full grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] sm:grid-cols-[1fr_120px_160px_170px_100px_90px] sm:gap-4"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onOpen()
+          }
+        }}
+        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1fr_120px_160px_170px_100px_90px] sm:gap-4"
       >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -310,10 +397,15 @@ function PayoutRow({ po, onOpen }: { po: GatewayPayout; onOpen: () => void }) {
         <ChainPill chainId={po.chainId} />
 
         <div className="min-w-0">
-          <div className="truncate font-mono text-[12.5px]">{po.amountRaw}</div>
-          <div className="font-mono text-[11px] text-[var(--fg-3)]">
-            {po.token}
+          <div className="truncate font-mono text-[12.5px] tabular-nums">
+            {formatted}{' '}
+            <span className="text-[var(--fg-3)]">{po.token}</span>
           </div>
+          {po.quotedAmountUsd && (
+            <div className="font-mono text-[11px] text-[var(--fg-3)]">
+              quoted {fmtUsd(po.quotedAmountUsd)}
+            </div>
+          )}
         </div>
 
         <div className="min-w-0 font-mono text-[12.5px] text-[var(--fg-2)]">
@@ -327,7 +419,7 @@ function PayoutRow({ po, onOpen }: { po: GatewayPayout; onOpen: () => void }) {
         <div className="text-xs text-[var(--fg-3)]">
           {fmtRel(unixOf(po.updatedAt))}
         </div>
-      </button>
+      </div>
     </li>
   )
 }
@@ -357,6 +449,7 @@ function PayoutDetailSheet({
   onOpenChange: (open: boolean) => void
 }) {
   const open = payoutId !== null
+  const lookup = useChainTokenLookup()
   const detail = useQuery({
     enabled: open,
     queryKey: ['payout', merchantId, payoutId] as const,
@@ -368,6 +461,7 @@ function PayoutDetailSheet({
   })
 
   const po = detail.data?.payout
+  const meta = po ? lookup(po.chainId, po.token) : undefined
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -398,9 +492,36 @@ function PayoutDetailSheet({
                 <KVItem label="Token">
                   <span className="font-mono">{po.token}</span>
                 </KVItem>
-                <KVItem label="Amount (raw)">
-                  <span className="font-mono">{po.amountRaw}</span>
+                <KVItem label="Amount">
+                  <div className="space-y-0.5">
+                    <div className="font-mono tabular-nums">
+                      {meta
+                        ? `${formatUnits(po.amountRaw, meta.decimals)} ${po.token}`
+                        : `${po.amountRaw} (raw)`}
+                    </div>
+                    <div className="font-mono text-[11px] text-[var(--fg-3)]">
+                      raw {po.amountRaw}
+                    </div>
+                  </div>
                 </KVItem>
+                {po.quotedAmountUsd && (
+                  <KVItem label="Quoted" wide>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+                      <span className="font-mono font-semibold">
+                        {fmtUsd(po.quotedAmountUsd)}
+                      </span>
+                      {po.quotedRate && (
+                        <span className="text-[11px] text-[var(--fg-2)]">
+                          quoted at{' '}
+                          <span className="font-mono">
+                            ${po.quotedRate}/{po.token}
+                          </span>{' '}
+                          at create time
+                        </span>
+                      )}
+                    </div>
+                  </KVItem>
+                )}
                 <KVItem label="Fee estimate">
                   <span className="font-mono">
                     {po.feeEstimateNative ?? '—'}
@@ -614,6 +735,11 @@ function NoMerchants() {
 
 /* ── create payout ──────────────────────────────────────── */
 
+type PayoutAmountMode = 'raw' | 'amount' | 'usd'
+
+const DECIMAL_RE = /^(0|[1-9]\d*)(\.\d+)?$/
+const RAW_RE = /^\d+$/
+
 function CreatePayoutDialog({
   open,
   onOpenChange,
@@ -626,29 +752,73 @@ function CreatePayoutDialog({
   onCreated: (id: string) => void
 }) {
   const qc = useQueryClient()
-  const [chainId, setChainId] = React.useState('1')
-  const [token, setToken] = React.useState('USDC')
-  const [amountRaw, setAmountRaw] = React.useState('')
+  const [chainId, setChainId] = React.useState('')
+  const [token, setToken] = React.useState('')
+  const [tokenMeta, setTokenMeta] = React.useState<ChainToken | null>(null)
+  const [mode, setMode] = React.useState<PayoutAmountMode>('amount')
+  const [amount, setAmount] = React.useState('')
   const [destinationAddress, setDestinationAddress] = React.useState('')
+  const [webhookUrl, setWebhookUrl] = React.useState('')
+  const [webhookSecret, setWebhookSecret] = React.useState('')
+
+  const webhookMismatch =
+    (webhookUrl.trim() !== '' && webhookSecret.trim() === '') ||
+    (webhookUrl.trim() === '' && webhookSecret.trim() !== '')
+  const webhookSecretValid =
+    webhookUrl.trim() === '' ||
+    (webhookSecret.trim().length >= 16 && webhookSecret.trim().length <= 512)
+
+  const amountFormatError = React.useMemo(() => {
+    if (amount === '') return null
+    if (mode === 'raw') {
+      return RAW_RE.test(amount)
+        ? null
+        : 'Raw amount must be a non-negative integer.'
+    }
+    if (!DECIMAL_RE.test(amount)) {
+      return 'Enter a non-negative decimal (e.g. 1.5).'
+    }
+    if (mode === 'amount' && tokenMeta) {
+      const places = decimalPlaces(amount)
+      if (places > tokenMeta.decimals) {
+        return `${token} allows at most ${tokenMeta.decimals} decimal places.`
+      }
+    }
+    return null
+  }, [amount, mode, tokenMeta, token])
+
+  const showRateDrift =
+    mode === 'usd' && tokenMeta != null && !tokenMeta.isStable
+
+  const available = useTokenAvailable(
+    chainId ? parseInt(chainId, 10) : null,
+    token,
+    open && !!chainId && !!token,
+  )
 
   const create = useMutation({
-    mutationFn: () =>
-      api<{ payout: { id: string } }>(
+    mutationFn: () => {
+      const body: Record<string, unknown> = {
+        chainId: parseInt(chainId, 10),
+        token: token.toUpperCase(),
+        destinationAddress: destinationAddress.trim(),
+      }
+      if (mode === 'raw') body.amountRaw = amount
+      else if (mode === 'amount') body.amount = amount
+      else body.amountUSD = amount
+      if (webhookUrl.trim()) {
+        body.webhookUrl = webhookUrl.trim()
+        body.webhookSecret = webhookSecret.trim()
+      }
+      return api<{ payout: { id: string } }>(
         `/api/mg/${encodeURIComponent(merchantId)}/payouts`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            chainId: parseInt(chainId, 10),
-            token: token.toUpperCase(),
-            amountRaw,
-            destinationAddress,
-          }),
-        },
-      ),
+        { method: 'POST', body: JSON.stringify(body) },
+      )
+    },
     onSuccess: (res) => {
       toast.success('Payout planned')
       qc.invalidateQueries({ queryKey: ['payouts', 'list', merchantId] })
-      setAmountRaw('')
+      setAmount('')
       setDestinationAddress('')
       onOpenChange(false)
       onCreated(res.payout.id)
@@ -657,10 +827,40 @@ function CreatePayoutDialog({
   })
 
   const canSubmit =
-    /^\d+$/.test(chainId) &&
+    RAW_RE.test(chainId) &&
     /^[A-Z0-9]+$/.test(token) &&
-    /^\d+$/.test(amountRaw) &&
-    destinationAddress.trim().length > 0
+    amount !== '' &&
+    amountFormatError === null &&
+    destinationAddress.trim().length > 0 &&
+    !webhookMismatch &&
+    webhookSecretValid
+
+  const amountLabel =
+    mode === 'raw'
+      ? `Amount (raw integer${tokenMeta ? `, ${tokenMeta.decimals} decimals` : ''})`
+      : mode === 'amount'
+        ? `Amount (${token || 'token'})`
+        : 'Amount (USD)'
+
+  const amountHint =
+    mode === 'raw'
+      ? 'Smallest on-chain unit (wei / satoshi-equivalent).'
+      : mode === 'amount'
+        ? tokenMeta
+          ? `Human decimal. Max ${tokenMeta.decimals} decimal places.`
+          : 'Human decimal.'
+        : 'USD value. Gateway locks the rate at create time via the price oracle.'
+
+  const placeholder =
+    mode === 'raw' ? '1000000' : mode === 'amount' ? '1.5' : '10.00'
+
+  const useMax = () => {
+    const m = available.match
+    if (!m) return
+    if (mode === 'raw') setAmount(m.amountRaw)
+    else if (mode === 'amount') setAmount(m.amountDecimal)
+    else setAmount(m.usd)
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -683,22 +883,97 @@ function CreatePayoutDialog({
           <ChainTokenPicker
             chainId={chainId}
             token={token}
-            onChange={({ chainId: c, token: t }) => {
+            onChange={({ chainId: c, token: t, tokenMeta: m }) => {
               setChainId(c)
               setToken(t)
+              setTokenMeta(m ?? null)
             }}
             filter={(c) => c.bootstrapReady}
             emptyHint="No bootstrap-ready chains. Register a fee wallet from Chains first."
           />
-          <Field label="Amount (raw integer, smallest units)">
+
+          <Field label="Amount mode">
+            <div className="inline-flex rounded-md border border-border bg-[var(--bg-2)] p-0.5">
+              {(
+                [
+                  { k: 'amount', label: 'Token amount' },
+                  { k: 'raw', label: 'Raw' },
+                  { k: 'usd', label: 'USD' },
+                ] as Array<{ k: PayoutAmountMode; label: string }>
+              ).map((opt) => {
+                const active = mode === opt.k
+                return (
+                  <button
+                    key={opt.k}
+                    type="button"
+                    onClick={() => {
+                      setMode(opt.k)
+                      setAmount('')
+                    }}
+                    className={
+                      'rounded px-3 py-1 text-xs font-medium transition-colors ' +
+                      (active
+                        ? 'bg-card text-[var(--fg-1)] shadow-sm'
+                        : 'text-[var(--fg-2)] hover:text-[var(--fg-1)]')
+                    }
+                  >
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
+          </Field>
+
+          <Field label={amountLabel} hint={amountHint}>
             <Input
-              value={amountRaw}
-              onChange={(e) => setAmountRaw(e.target.value)}
-              placeholder="1000000"
-              inputMode="numeric"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={placeholder}
+              inputMode={mode === 'raw' ? 'numeric' : 'decimal'}
               className="font-mono"
             />
           </Field>
+          {available.match ? (
+            <div className="-mt-2 flex items-center justify-between gap-2 text-[11.5px] text-[var(--fg-2)]">
+              <span>
+                Available{' '}
+                <span className="font-mono tabular-nums">
+                  {fmtNum(available.match.amountDecimal)} {token}
+                </span>
+                <span className="ml-1 text-[var(--fg-3)]">
+                  (~{fmtUsd(available.match.usd)})
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={useMax}
+                className="font-medium text-primary hover:underline"
+              >
+                Use max
+              </button>
+            </div>
+          ) : available.loading ? (
+            <div className="-mt-2 text-[11.5px] text-[var(--fg-3)]">
+              Checking available balance…
+            </div>
+          ) : chainId && token ? (
+            <div className="-mt-2 text-[11.5px] text-[var(--fg-3)]">
+              No {token} balance on this chain in the gateway pool.
+            </div>
+          ) : null}
+          {amountFormatError && (
+            <div className="-mt-2 text-[11.5px] text-destructive">
+              {amountFormatError}
+            </div>
+          )}
+          {showRateDrift && (
+            <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[11.5px] text-warn">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              USD pegging snapshots at create time; {token} price can drift
+              before broadcast.
+            </div>
+          )}
+
           <Field label="Destination address">
             <Input
               value={destinationAddress}
@@ -707,6 +982,45 @@ function CreatePayoutDialog({
               className="font-mono"
             />
           </Field>
+
+          <details className="rounded-md border border-border bg-[var(--bg-2)] open:pb-3">
+            <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-[var(--fg-2)]">
+              Advanced — per-payout webhook override
+            </summary>
+            <div className="space-y-3 px-3 pt-1">
+              <Field
+                label="Webhook URL"
+                hint="Events for this payout dispatch here instead of the merchant default. Requires a secret."
+              >
+                <Input
+                  value={webhookUrl}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                  placeholder="https://merchant.example.com/hooks/payout"
+                  type="url"
+                  className="font-mono"
+                />
+              </Field>
+              <Field
+                label="Webhook secret"
+                hint="16–512 chars. Paired HMAC secret — required when URL is set."
+              >
+                <Input
+                  value={webhookSecret}
+                  onChange={(e) => setWebhookSecret(e.target.value)}
+                  placeholder="whs_…"
+                  className="font-mono"
+                  minLength={16}
+                  maxLength={512}
+                />
+              </Field>
+              {webhookMismatch && (
+                <div className="-mt-1 text-[11.5px] text-destructive">
+                  Webhook URL and secret must be provided together.
+                </div>
+              )}
+            </div>
+          </details>
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel

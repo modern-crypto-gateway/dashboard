@@ -67,6 +67,7 @@ import {
   getPayout,
   listPayouts,
 } from './routes/payouts'
+import { getAvatar } from './routes/avatar'
 
 const router = new Router()
 
@@ -83,6 +84,7 @@ async function guardAuthAndCsrf(req: Request, env: Bindings) {
 /* ── public / unauthenticated ─────────────────────────────── */
 router.get('/api/auth/setup-status', getSetupStatus)
 router.get('/api/auth/session', getSession)
+router.get('/api/avatar', getAvatar)
 router.get('/api/health', async (_req, env) => {
   const done = await kvGet(env, K.setupComplete, 'text')
   return json({ ok: true, setup: done === '1' })

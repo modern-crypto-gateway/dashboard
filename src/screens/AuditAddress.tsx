@@ -1,21 +1,48 @@
 import * as React from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Search, Shield } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
-import type { AuditResult } from '@/lib/types'
+import type { AuditResult, ChainInventoryEntry } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
 import { Field } from '@/components/Field'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 export function AuditAddressPage() {
-  const [chainId, setChainId] = React.useState('1')
+  const [chainId, setChainId] = React.useState('')
   const [address, setAddress] = React.useState('')
   const [sinceDays, setSinceDays] = React.useState('30')
+
+  const chainsQ = useQuery({
+    queryKey: ['gw', 'chains'] as const,
+    queryFn: () =>
+      api<{ chains: ChainInventoryEntry[] }>('/api/gw/admin/chains'),
+    refetchInterval: 120_000,
+    staleTime: 30_000,
+  })
+  const chainOptions = React.useMemo(
+    () =>
+      (chainsQ.data?.chains ?? [])
+        .filter((c) => c.wired)
+        .slice()
+        .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    [chainsQ.data],
+  )
+  React.useEffect(() => {
+    if (chainId || chainOptions.length === 0) return
+    setChainId(String(chainOptions[0].chainId))
+  }, [chainId, chainOptions])
 
   const audit = useMutation({
     mutationFn: () => {
@@ -70,13 +97,36 @@ export function AuditAddressPage() {
             }}
           >
             <div className="grid grid-cols-[1fr_1fr] gap-3">
-              <Field label="Chain ID">
-                <Input
+              <Field label="Chain">
+                <Select
                   value={chainId}
-                  onChange={(e) => setChainId(e.target.value)}
-                  inputMode="numeric"
-                  className="font-mono"
-                />
+                  onValueChange={setChainId}
+                  disabled={chainsQ.isLoading || chainOptions.length === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        chainsQ.isLoading
+                          ? 'Loading…'
+                          : chainOptions.length === 0
+                            ? 'No wired chains'
+                            : 'Select chain'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chainOptions.map((c) => (
+                      <SelectItem key={c.chainId} value={String(c.chainId)}>
+                        <span className="flex items-center gap-2">
+                          <span>{c.displayName}</span>
+                          <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                            {c.chainId}
+                          </span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
               <Field label="Lookback (days)" hint="Adapter-clamped; default 30.">
                 <Input

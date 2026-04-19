@@ -127,6 +127,8 @@ export type GatewayPayout = {
   chainId: number
   token: string
   amountRaw: string
+  quotedAmountUsd: string | null
+  quotedRate: string | null
   destinationAddress: string
   sourceAddress: string | null
   txHash: string | null

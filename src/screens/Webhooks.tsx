@@ -197,10 +197,17 @@ function DeliveryRow({
 }) {
   return (
     <li className="border-b border-border last:border-0">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onOpen}
-        className="grid w-full grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] sm:grid-cols-[1fr_180px_140px_80px_100px] sm:gap-4"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onOpen()
+          }
+        }}
+        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1fr_180px_140px_80px_100px] sm:gap-4"
       >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -229,7 +236,7 @@ function DeliveryRow({
         <div className="font-mono text-[12.5px]">{d.attempts}</div>
 
         <div className="text-xs text-[var(--fg-3)]">{formatAt(d)}</div>
-      </button>
+      </div>
     </li>
   )
 }

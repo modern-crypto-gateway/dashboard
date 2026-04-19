@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Fuel } from 'lucide-react'
 
 import { api } from '@/lib/api'
 import type { ChainInventoryEntry, ChainToken } from '@/lib/types'
@@ -179,21 +179,30 @@ export function ChainTokenPicker({
               <SelectValue placeholder="Select token" />
             </SelectTrigger>
             <SelectContent>
-              {tokens.map((t) => (
-                <SelectItem key={t.symbol} value={t.symbol}>
-                  <span className="flex items-center gap-2">
-                    <span className="font-mono">{t.symbol}</span>
-                    {t.isStable && (
-                      <span className="rounded-full border border-[var(--success-border)] bg-[var(--success-bg)] px-1.5 py-0.5 text-[9.5px] uppercase tracking-wider text-success">
-                        stable
+              {tokens.map((t) => {
+                const isNative = !t.contractAddress
+                return (
+                  <SelectItem key={t.symbol} value={t.symbol}>
+                    <span className="flex items-center gap-2">
+                      <span className="font-mono">{t.symbol}</span>
+                      {isNative && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-[9.5px] uppercase tracking-wider text-[var(--fg-2)]">
+                          <Fuel className="size-2.5" />
+                          gas
+                        </span>
+                      )}
+                      {t.isStable && (
+                        <span className="rounded-full border border-[var(--success-border)] bg-[var(--success-bg)] px-1.5 py-0.5 text-[9.5px] uppercase tracking-wider text-success">
+                          stable
+                        </span>
+                      )}
+                      <span className="text-[11px] text-[var(--fg-3)]">
+                        {t.displayName}
                       </span>
-                    )}
-                    <span className="text-[11px] text-[var(--fg-3)]">
-                      {t.displayName}
                     </span>
-                  </span>
-                </SelectItem>
-              ))}
+                  </SelectItem>
+                )
+              })}
             </SelectContent>
           </Select>
         </Field>

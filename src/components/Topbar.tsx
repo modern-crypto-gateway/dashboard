@@ -13,7 +13,6 @@ import {
   Monitor,
 } from 'lucide-react'
 
-import { cn } from '@/lib/utils'
 import { useTheme, type Accent, type ThemeMode } from '@/lib/theme'
 import { api } from '@/lib/api'
 import { sessionQuery } from '@/lib/session'
@@ -56,6 +55,9 @@ export function Topbar({ username, onMobileMenu, onOpenCommandPalette }: TopbarP
   }
 
   const initials = username.slice(0, 2).toUpperCase()
+  const accentBg = ACCENT_AVATAR_BG[accent]
+  const avatarUrl =
+    `/api/avatar?seed=${encodeURIComponent(username)}&bg=${encodeURIComponent(accentBg)}`
 
   return (
     <div className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-md md:px-6">
@@ -154,13 +156,15 @@ export function Topbar({ username, onMobileMenu, onOpenCommandPalette }: TopbarP
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="gap-2">
-              <span
-                className={cn(
-                  'grid size-[22px] place-items-center rounded-[5px] bg-primary text-primary-foreground font-semibold text-[11px]',
-                )}
-              >
-                {initials}
-              </span>
+              <img
+                src={avatarUrl}
+                alt=""
+                width={22}
+                height={22}
+                className="size-[22px] rounded-full border border-border bg-[var(--bg-2)]"
+                loading="lazy"
+              />
+              <span className="sr-only">{initials}</span>
               <span className="hidden md:inline">{username}</span>
               <ChevronDown className="size-3" />
             </Button>
@@ -183,6 +187,12 @@ export function Topbar({ username, onMobileMenu, onOpenCommandPalette }: TopbarP
       </div>
     </div>
   )
+}
+
+const ACCENT_AVATAR_BG: Record<Accent, string> = {
+  blue: 'd0e1ff,bfd3ff',
+  violet: 'e6d4ff,d3baff',
+  mint: 'c8f2e0,b0ecd3',
 }
 
 function AccentSwatch({ color }: { color: string }) {

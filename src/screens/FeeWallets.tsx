@@ -240,7 +240,7 @@ function FeeWalletsList({ refreshKey }: { refreshKey?: string }) {
         if (!w.active) return false
         const fam = chainInfo(w.chainId).family
         const bal = nativeBalanceDecimal(w.nativeBalance, w.nativeDecimals)
-        return isLowGas(fam, bal)
+        return isLowGas(fam, bal, w.nativeSymbol)
       }).length,
     [rows],
   )
@@ -252,18 +252,17 @@ function FeeWalletsList({ refreshKey }: { refreshKey?: string }) {
           <CardTitle>Fleet</CardTitle>
           <CardDescription>
             Every registered fee wallet, with its current CAS reservation and
-            gas balance. Thresholds:{' '}
-            <span className="font-mono">
-              EVM&nbsp;&lt;&nbsp;{LOW_GAS_THRESHOLD.evm}
-            </span>
-            {' · '}
-            <span className="font-mono">
-              Tron&nbsp;&lt;&nbsp;{LOW_GAS_THRESHOLD.tron}
-            </span>
-            {' · '}
-            <span className="font-mono">
-              Solana&nbsp;&lt;&nbsp;{LOW_GAS_THRESHOLD.solana}
-            </span>
+            gas balance. Low-gas cutoffs:{' '}
+            {Object.entries(LOW_GAS_THRESHOLD)
+              .filter(([s]) => s !== 'MATIC')
+              .map(([sym, t], i, arr) => (
+                <React.Fragment key={sym}>
+                  <span className="font-mono">
+                    {sym}&nbsp;&lt;&nbsp;{t}
+                  </span>
+                  {i < arr.length - 1 ? ' · ' : ''}
+                </React.Fragment>
+              ))}
             .
           </CardDescription>
         </div>
@@ -385,7 +384,7 @@ function GasCell({ row, family }: { row: FeeWalletRow; family: Family }) {
   if (bal == null) {
     return <span className="text-[11px] text-[var(--fg-3)]">—</span>
   }
-  const low = isLowGas(family, bal)
+  const low = isLowGas(family, bal, row.nativeSymbol)
   const formatted =
     bal >= 1 ? bal.toFixed(4) : bal >= 0.0001 ? bal.toFixed(6) : bal.toExponential(2)
   return (

@@ -19,21 +19,7 @@
       rel="stylesheet"
     />
 
-    <script>
-      // Pre-hydrate theme + accent from localStorage before first paint to avoid flash.
-      (function () {
-        try {
-          var mode = localStorage.getItem('gw:theme') || 'system';
-          var accent = localStorage.getItem('gw:accent') || 'blue';
-          var isDark =
-            mode === 'dark' ||
-            (mode === 'system' &&
-              window.matchMedia('(prefers-color-scheme: dark)').matches);
-          if (isDark) document.documentElement.classList.add('dark');
-          document.documentElement.setAttribute('data-accent', accent);
-        } catch (e) {}
-      })();
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

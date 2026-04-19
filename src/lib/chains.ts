@@ -44,10 +44,31 @@ export function chainInfo(chainId: number) {
   )
 }
 
-export const LOW_GAS_THRESHOLD: Record<Family, number> = {
+export const LOW_GAS_THRESHOLD: Record<string, number> = {
+  ETH: 0.01,
+  BNB: 0.05,
+  POL: 10,
+  MATIC: 10,
+  AVAX: 0.5,
+  TRX: 100,
+  SOL: 0.1,
+}
+
+const FAMILY_FALLBACK_THRESHOLD: Record<Family, number> = {
   evm: 0.01,
   tron: 100,
   solana: 0.1,
+}
+
+export function gasThreshold(
+  symbol: string | null | undefined,
+  family: Family,
+): number {
+  if (symbol) {
+    const s = symbol.toUpperCase()
+    if (s in LOW_GAS_THRESHOLD) return LOW_GAS_THRESHOLD[s]
+  }
+  return FAMILY_FALLBACK_THRESHOLD[family]
 }
 
 export function nativeBalanceDecimal(
@@ -62,7 +83,8 @@ export function nativeBalanceDecimal(
 export function isLowGas(
   family: Family,
   balance: number | null,
+  symbol?: string | null,
 ): boolean {
   if (balance == null) return false
-  return balance < LOW_GAS_THRESHOLD[family]
+  return balance < gasThreshold(symbol, family)
 }
