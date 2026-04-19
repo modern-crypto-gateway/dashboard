@@ -108,13 +108,13 @@ export function SetupScreen() {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    onSuccess: async (res) => {
+    onSuccess: (res) => {
+      // Do NOT invalidate setupStatus/session here — the Bootstrap guard would
+      // see setupComplete+authenticated and redirect away from /setup before
+      // the user can read their recovery codes. Invalidation is deferred to
+      // the "Go to dashboard" button.
       setRecoveryCodes(res.recoveryCodes)
       setStep(4)
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: setupStatusQuery.queryKey }),
-        qc.invalidateQueries({ queryKey: sessionQuery.queryKey }),
-      ])
     },
     onError: (e: ApiError) => {
       toast.error(e.message || 'Invalid code')
@@ -346,7 +346,16 @@ export function SetupScreen() {
 
               <RecoveryCodes codes={recoveryCodes} />
 
-              <Button className="w-full" onClick={() => navigate('/', { replace: true })}>
+              <Button
+                className="w-full"
+                onClick={async () => {
+                  await Promise.all([
+                    qc.invalidateQueries({ queryKey: setupStatusQuery.queryKey }),
+                    qc.invalidateQueries({ queryKey: sessionQuery.queryKey }),
+                  ])
+                  navigate('/', { replace: true })
+                }}
+              >
                 Go to dashboard <ChevronRight className="size-3.5" />
               </Button>
             </div>
