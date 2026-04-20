@@ -63,7 +63,9 @@ import {
   listInvoices,
 } from './routes/invoices'
 import {
+  batchPayouts,
   createPayout,
+  estimatePayout,
   getPayout,
   listPayouts,
 } from './routes/payouts'
@@ -266,8 +268,17 @@ async function dispatchMerchant(
         await cfLimit(env.GW_RL, clientId(req), 'gw')
         return createPayout(req, env, merchantId)
       }
-    } else if (rest.length === 1 && method === 'GET') {
-      return getPayout(req, env, merchantId, rest[0])
+    } else if (rest.length === 1) {
+      if (method === 'GET') return getPayout(req, env, merchantId, rest[0])
+      // Sub-actions that sit at /payouts/<action> rather than /payouts/<id>.
+      if (method === 'POST' && rest[0] === 'estimate') {
+        await cfLimit(env.GW_RL, clientId(req), 'gw')
+        return estimatePayout(req, env, merchantId)
+      }
+      if (method === 'POST' && rest[0] === 'batch') {
+        await cfLimit(env.GW_RL, clientId(req), 'gw')
+        return batchPayouts(req, env, merchantId)
+      }
     }
   } else if (resource === 'raw' && rest.length > 0) {
     await cfLimit(env.GW_RL, clientId(req), 'gw')

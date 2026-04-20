@@ -32,6 +32,9 @@ const InvoicesPage = lazy(() =>
 const PayoutsPage = lazy(() =>
   import('@/screens/Payouts').then((m) => ({ default: m.PayoutsPage })),
 )
+const PayoutsBatchPage = lazy(() =>
+  import('@/screens/PayoutsBatch').then((m) => ({ default: m.PayoutsBatchPage })),
+)
 const WebhooksPage = lazy(() =>
   import('@/screens/Webhooks').then((m) => ({ default: m.WebhooksPage })),
 )
@@ -168,6 +171,14 @@ export default function App() {
                     element={
                       <Suspense fallback={<Spinner />}>
                         <PayoutsPage />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="/payouts/batch"
+                    element={
+                      <Suspense fallback={<Spinner />}>
+                        <PayoutsBatchPage />
                       </Suspense>
                     }
                   />

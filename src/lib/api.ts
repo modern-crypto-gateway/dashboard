@@ -1,3 +1,5 @@
+import { recordRateLimit } from '@/lib/rateLimit'
+
 export class ApiError extends Error {
   status: number
   code?: string
@@ -33,6 +35,11 @@ export async function api<T = unknown>(
   }
 
   const res = await fetch(path, { ...init, headers, credentials: 'same-origin' })
+  // Record merchant-scoped rate-limit headers on success AND failure — the
+  // batch page uses these for a pre-submit quota warning and a 429 response
+  // is exactly when the numbers are most useful.
+  recordRateLimit(path, res.headers)
+
   const ct = res.headers.get('content-type') || ''
   const body = ct.includes('application/json') ? await res.json().catch(() => ({})) : null
 

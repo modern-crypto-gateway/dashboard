@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   useInfiniteQuery,
   useMutation,
@@ -39,7 +39,6 @@ import type {
   FeeTier,
   GatewayPayout,
   Merchant,
-  PayoutBatchResponse,
   PayoutEstimate,
   PayoutListResponse,
 } from '@/lib/types'
@@ -75,7 +74,6 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Textarea } from '@/components/ui/textarea'
 
 import { StatusBadge } from './Invoices'
 
@@ -153,11 +151,26 @@ export function PayoutsPage() {
   const merchants = useMerchants()
   const { active } = useActiveMerchant()
 
+  const [searchParams, setSearchParams] = useSearchParams()
+  const batchIdFilter = searchParams.get('batchId')
+  const setBatchIdFilter = React.useCallback(
+    (bid: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          if (bid) next.set('batchId', bid)
+          else next.delete('batchId')
+          return next
+        },
+        { replace: true },
+      )
+    },
+    [setSearchParams],
+  )
+
   const [query, setQuery] = React.useState('')
   const [filter, setFilter] = React.useState<PayoutFilter>('all')
-  const [batchIdFilter, setBatchIdFilter] = React.useState<string | null>(null)
   const [createOpen, setCreateOpen] = React.useState(false)
-  const [batchOpen, setBatchOpen] = React.useState(false)
   const [detailId, setDetailId] = React.useState<string | null>(null)
 
   const canList =
@@ -223,9 +236,17 @@ export function PayoutsPage() {
             size="sm"
             variant="outline"
             disabled={!canList}
-            onClick={() => setBatchOpen(true)}
+            asChild={canList}
           >
-            <Layers className="size-3.5" /> Batch create
+            {canList ? (
+              <Link to="/payouts/batch">
+                <Layers className="size-3.5" /> Batch create
+              </Link>
+            ) : (
+              <span>
+                <Layers className="size-3.5" /> Batch create
+              </span>
+            )}
           </Button>
           <Button size="sm" disabled={!canList} onClick={() => setCreateOpen(true)}>
             <Plus className="size-3.5" /> Plan payout
@@ -288,16 +309,6 @@ export function PayoutsPage() {
             onOpenChange={setCreateOpen}
             merchantId={active.id}
             onCreated={(id) => setDetailId(id)}
-          />
-          <BatchPayoutDialog
-            open={batchOpen}
-            onOpenChange={setBatchOpen}
-            merchantId={active.id}
-            onViewBatch={(bid) => {
-              setBatchIdFilter(bid)
-              setFilter('all')
-              setBatchOpen(false)
-            }}
           />
           <PayoutDetailSheet
             merchantId={active.id}
@@ -1545,426 +1556,5 @@ function CreatePayoutDialog({
         </form>
       </DialogContent>
     </Dialog>
-  )
-}
-
-/* ── batch payout dialog ───────────────────────────────── */
-
-type BatchCsvRow = {
-  lineNo: number
-  chainId: number
-  token: string
-  amount: string
-  destinationAddress: string
-}
-
-type BatchParseError = {
-  lineNo: number
-  message: string
-  raw: string
-}
-
-const BATCH_MAX = 100
-
-function parseBatchCsv(csv: string): {
-  rows: BatchCsvRow[]
-  errors: BatchParseError[]
-} {
-  const rows: BatchCsvRow[] = []
-  const errors: BatchParseError[] = []
-  const lines = csv.split(/\r?\n/)
-
-  lines.forEach((rawLine, idx) => {
-    const lineNo = idx + 1
-    const line = rawLine.trim()
-    if (!line) return
-    if (line.startsWith('#')) return
-
-    // Skip a header row if present.
-    const lc = line.toLowerCase()
-    if (
-      idx === 0 &&
-      lc.includes('chainid') &&
-      lc.includes('token') &&
-      lc.includes('amount') &&
-      lc.includes('destination')
-    ) {
-      return
-    }
-
-    const cols = line.split(',').map((c) => c.trim())
-    if (cols.length !== 4) {
-      errors.push({
-        lineNo,
-        message: `Expected 4 columns, got ${cols.length}.`,
-        raw: line,
-      })
-      return
-    }
-    const [chainIdStr, tokenStr, amountStr, destStr] = cols
-    const chainId = parseInt(chainIdStr, 10)
-    if (!/^\d+$/.test(chainIdStr) || !isFinite(chainId) || chainId <= 0) {
-      errors.push({
-        lineNo,
-        message: 'chainId must be a positive integer.',
-        raw: line,
-      })
-      return
-    }
-    if (!/^[A-Za-z0-9]+$/.test(tokenStr)) {
-      errors.push({ lineNo, message: 'Invalid token symbol.', raw: line })
-      return
-    }
-    if (!DECIMAL_RE.test(amountStr)) {
-      errors.push({
-        lineNo,
-        message: 'amount must be a non-negative decimal (e.g. 1.5).',
-        raw: line,
-      })
-      return
-    }
-    if (destStr.length === 0) {
-      errors.push({
-        lineNo,
-        message: 'destinationAddress is required.',
-        raw: line,
-      })
-      return
-    }
-    rows.push({
-      lineNo,
-      chainId,
-      token: tokenStr.toUpperCase(),
-      amount: amountStr,
-      destinationAddress: destStr,
-    })
-  })
-
-  return { rows, errors }
-}
-
-function BatchPayoutDialog({
-  open,
-  onOpenChange,
-  merchantId,
-  onViewBatch,
-}: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  merchantId: string
-  onViewBatch: (batchId: string) => void
-}) {
-  const qc = useQueryClient()
-  const [csv, setCsv] = React.useState('')
-  const [result, setResult] = React.useState<PayoutBatchResponse | null>(null)
-
-  // Reset when the dialog closes. Done in the close handler (not an effect)
-  // so lint stays happy and the reset runs exactly once per close.
-  const handleOpenChange = (v: boolean) => {
-    if (!v) {
-      setCsv('')
-      setResult(null)
-    }
-    onOpenChange(v)
-  }
-
-  const { rows, errors } = React.useMemo(() => parseBatchCsv(csv), [csv])
-  const oversize = rows.length > BATCH_MAX
-
-  const submit = useMutation({
-    mutationFn: () =>
-      api<PayoutBatchResponse>(
-        `/api/mg/${encodeURIComponent(merchantId)}/payouts/batch`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            payouts: rows.map((r) => ({
-              chainId: r.chainId,
-              token: r.token,
-              amount: r.amount,
-              destinationAddress: r.destinationAddress,
-            })),
-          }),
-        },
-      ),
-    onSuccess: (res) => {
-      setResult(res)
-      qc.invalidateQueries({ queryKey: ['payouts', 'list', merchantId] })
-      const { planned, failed } = res.summary
-      if (failed === 0) {
-        toast.success(`Batch planned: ${planned} rows`)
-      } else {
-        toast.warning(
-          `Batch partial: ${planned} planned, ${failed} failed. Review per-row errors below.`,
-        )
-      }
-    },
-    onError: (e: unknown) => toast.error(payoutErrorMessage(e)),
-  })
-
-  const canSubmit = rows.length > 0 && !oversize && errors.length === 0
-
-  return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:!max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Batch payout</DialogTitle>
-          <DialogDescription>
-            Paste up to {BATCH_MAX} rows as CSV. Columns: <span className="font-mono">chainId,token,amount,destinationAddress</span>.
-            Partial success is normal — per-row errors don&rsquo;t abort the
-            batch.
-          </DialogDescription>
-        </DialogHeader>
-
-        {!result ? (
-          <form
-            className="space-y-4"
-            onSubmit={(e) => {
-              e.preventDefault()
-              submit.mutate()
-            }}
-          >
-            <Field
-              label="CSV"
-              hint="One payout per line. Blank lines and lines starting with '#' are ignored. A header row is optional."
-            >
-              <Textarea
-                value={csv}
-                onChange={(e) => setCsv(e.target.value)}
-                rows={10}
-                placeholder={
-                  'chainId,token,amount,destinationAddress\n42161,USDC,1.5,0x1111111111111111111111111111111111111111\n1,ETH,0.01,0x3333333333333333333333333333333333333333'
-                }
-                className="font-mono text-[12px]"
-              />
-            </Field>
-
-            <div className="flex flex-wrap items-center gap-3 text-[11.5px]">
-              <span>
-                <span className="font-mono tabular-nums">{rows.length}</span>{' '}
-                parsed
-              </span>
-              {errors.length > 0 && (
-                <span className="text-destructive">
-                  <span className="font-mono tabular-nums">{errors.length}</span>{' '}
-                  parse error{errors.length === 1 ? '' : 's'}
-                </span>
-              )}
-              {oversize && (
-                <span className="inline-flex items-center gap-1 text-destructive">
-                  <AlertTriangle className="size-3" />
-                  Exceeds {BATCH_MAX}-row limit — split the file.
-                </span>
-              )}
-            </div>
-
-            {errors.length > 0 && (
-              <div className="max-h-40 overflow-auto rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[11.5px]">
-                <ul className="space-y-1">
-                  {errors.slice(0, 20).map((e) => (
-                    <li key={e.lineNo} className="flex items-start gap-2">
-                      <span className="mt-0.5 font-mono text-[10.5px] text-destructive">
-                        L{e.lineNo}
-                      </span>
-                      <span className="text-destructive">{e.message}</span>
-                      <span className="flex-1" />
-                      <span className="truncate font-mono text-[10.5px] text-[var(--fg-3)]">
-                        {e.raw}
-                      </span>
-                    </li>
-                  ))}
-                  {errors.length > 20 && (
-                    <li className="text-destructive/80">
-                      …and {errors.length - 20} more
-                    </li>
-                  )}
-                </ul>
-              </div>
-            )}
-
-            {rows.length > 0 && errors.length === 0 && !oversize && (
-              <BatchPreview rows={rows} />
-            )}
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => handleOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={submit.isPending || !canSubmit}>
-                {submit.isPending
-                  ? 'Submitting…'
-                  : `Plan ${rows.length} payout${rows.length === 1 ? '' : 's'}`}
-              </Button>
-            </DialogFooter>
-          </form>
-        ) : (
-          <BatchResultView
-            result={result}
-            onViewBatch={() => onViewBatch(result.batchId)}
-            onClose={() => handleOpenChange(false)}
-            onReset={() => {
-              setCsv('')
-              setResult(null)
-            }}
-          />
-        )}
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function BatchPreview({ rows }: { rows: BatchCsvRow[] }) {
-  const preview = rows.slice(0, 6)
-  return (
-    <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2">
-      <div className="eyebrow mb-1">Preview</div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-[11.5px]">
-          <thead className="text-[10px] uppercase tracking-wider text-[var(--fg-3)]">
-            <tr>
-              <th className="py-1 pr-3 text-left">L</th>
-              <th className="py-1 pr-3 text-left">Chain</th>
-              <th className="py-1 pr-3 text-left">Token</th>
-              <th className="py-1 pr-3 text-left">Amount</th>
-              <th className="py-1 text-left">Destination</th>
-            </tr>
-          </thead>
-          <tbody>
-            {preview.map((r) => (
-              <tr key={r.lineNo} className="border-t border-border">
-                <td className="py-1 pr-3 font-mono text-[10.5px] text-[var(--fg-3)]">
-                  {r.lineNo}
-                </td>
-                <td className="py-1 pr-3">
-                  <ChainPill chainId={r.chainId} />
-                </td>
-                <td className="py-1 pr-3 font-mono">{r.token}</td>
-                <td className="py-1 pr-3 font-mono tabular-nums">
-                  {r.amount}
-                </td>
-                <td className="py-1 font-mono text-[11px] text-[var(--fg-2)]">
-                  {truncateAddr(r.destinationAddress, 8, 6)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {rows.length > preview.length && (
-        <div className="mt-1 text-[11px] text-[var(--fg-3)]">
-          + {rows.length - preview.length} more
-        </div>
-      )}
-    </div>
-  )
-}
-
-function BatchResultView({
-  result,
-  onViewBatch,
-  onClose,
-  onReset,
-}: {
-  result: PayoutBatchResponse
-  onViewBatch: () => void
-  onClose: () => void
-  onReset: () => void
-}) {
-  const { summary, results, batchId } = result
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-[12px]">
-        <Layers className="size-3.5 text-primary" />
-        <span className="font-mono text-[11px] text-[var(--fg-2)]">
-          {truncateAddr(batchId, 10, 6)}
-        </span>
-        <CopyButton value={batchId} />
-        <span className="flex-1" />
-        <Badge variant="success">
-          {summary.planned} planned
-        </Badge>
-        {summary.failed > 0 && (
-          <Badge variant="danger">{summary.failed} failed</Badge>
-        )}
-      </div>
-
-      <div className="max-h-[360px] overflow-auto rounded-md border border-border">
-        <table className="w-full text-[11.5px]">
-          <thead className="sticky top-0 bg-[var(--bg-2)] text-[10px] uppercase tracking-wider text-[var(--fg-3)]">
-            <tr>
-              <th className="py-1.5 pl-3 pr-2 text-left">#</th>
-              <th className="py-1.5 pr-2 text-left">Status</th>
-              <th className="py-1.5 pr-2 text-left">Payout</th>
-              <th className="py-1.5 pr-3 text-left">Detail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((row) => (
-              <tr key={row.index} className="border-t border-border align-top">
-                <td className="py-1.5 pl-3 pr-2 font-mono text-[10.5px] text-[var(--fg-3)]">
-                  {row.index}
-                </td>
-                <td className="py-1.5 pr-2">
-                  {row.status === 'planned' ? (
-                    <Badge variant="success">planned</Badge>
-                  ) : (
-                    <Badge variant="danger">failed</Badge>
-                  )}
-                </td>
-                <td className="py-1.5 pr-2">
-                  {row.status === 'planned' ? (
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-[10.5px]">
-                        {truncateAddr(row.payout.id, 8, 6)}
-                      </span>
-                      <CopyButton value={row.payout.id} />
-                    </div>
-                  ) : (
-                    <span className="text-[var(--fg-3)]">—</span>
-                  )}
-                </td>
-                <td className="py-1.5 pr-3">
-                  {row.status === 'planned' ? (
-                    <span className="text-[var(--fg-2)]">
-                      <ChainPill chainId={row.payout.chainId} />{' '}
-                      <span className="font-mono">{row.payout.token}</span>
-                    </span>
-                  ) : (
-                    <div className="space-y-0.5">
-                      {row.error.code && (
-                        <div className="font-mono text-[10px] uppercase tracking-wider text-destructive">
-                          {row.error.code}
-                        </div>
-                      )}
-                      <div className="break-all text-destructive">
-                        {row.error.message}
-                      </div>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onReset}>
-          Submit another
-        </Button>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Close
-        </Button>
-        {summary.planned > 0 && (
-          <Button type="button" onClick={onViewBatch}>
-            <Layers className="size-3.5" /> View batch
-          </Button>
-        )}
-      </DialogFooter>
-    </div>
   )
 }

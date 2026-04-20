@@ -1,14 +1,19 @@
 /**
  * Payout routes — merchant-scoped, proxied through the merchant's API key.
  *
- *   GET  /api/mg/:merchantId/payouts           → list via gateway /api/v1/payouts
- *   POST /api/mg/:merchantId/payouts           → plan a payout via gateway
- *   GET  /api/mg/:merchantId/payouts/:id       → fetch detail via gateway
+ *   GET  /api/mg/:merchantId/payouts             → list via gateway /api/v1/payouts
+ *   POST /api/mg/:merchantId/payouts             → plan a payout via gateway
+ *   GET  /api/mg/:merchantId/payouts/:id         → fetch detail via gateway
+ *   POST /api/mg/:merchantId/payouts/estimate    → tier-fee quote
+ *   POST /api/mg/:merchantId/payouts/batch       → mass-create up to 100 rows
+ *
+ * Rate-limit headers from the gateway are forwarded through so the browser's
+ * rate-limit store can show a pre-flight quota warning on the batch page.
  */
 
 import { merchantKeyPlain } from './merchants'
 import type { Bindings } from '../lib/env'
-import { error, HttpError, json, readJson } from '../lib/http'
+import { HttpError, json, readJson } from '../lib/http'
 import { kvGet, K } from '../lib/kv'
 
 const LIST_PASSTHROUGH = [
@@ -17,11 +22,30 @@ const LIST_PASSTHROUGH = [
   'token',
   'destinationAddress',
   'sourceAddress',
+  'batchId',
   'createdFrom',
   'createdTo',
   'limit',
   'offset',
 ] as const
+
+// Headers we forward from the upstream gateway response to the browser. The
+// browser's rate-limit store keys on these to gate batch submit before 429.
+const FORWARD_UPSTREAM_HEADERS = [
+  'X-RateLimit-Limit',
+  'X-RateLimit-Remaining',
+  'X-RateLimit-Reset',
+  'Retry-After',
+]
+
+function rateLimitHeaders(upstream: Response): Headers {
+  const h = new Headers()
+  for (const name of FORWARD_UPSTREAM_HEADERS) {
+    const v = upstream.headers.get(name)
+    if (v !== null) h.set(name, v)
+  }
+  return h
+}
 
 async function gwFetch(
   env: Bindings,
@@ -47,6 +71,20 @@ async function gwFetch(
   })
 }
 
+/** Forwarded upstream error shape re-built on the dashboard side so browsers see a consistent envelope. */
+function errorWithHeaders(
+  upstream: Response,
+  code: string,
+  message: string,
+  details?: unknown,
+): Response {
+  const body = { error: { code, message, details } }
+  return json(body, {
+    status: upstream.status || 502,
+    headers: rateLimitHeaders(upstream),
+  })
+}
+
 export async function listPayouts(
   req: Request,
   env: Bindings,
@@ -69,14 +107,17 @@ export async function listPayouts(
     error?: { code?: string; message?: string; details?: unknown }
   }
   if (!upstream.ok) {
-    return error(
+    return errorWithHeaders(
+      upstream,
       payload.error?.code ?? 'UPSTREAM_ERROR',
       payload.error?.message ?? 'Gateway rejected list',
-      upstream.status || 502,
       payload.error?.details,
     )
   }
-  return json(payload, { status: upstream.status })
+  return json(payload, {
+    status: upstream.status,
+    headers: rateLimitHeaders(upstream),
+  })
 }
 
 export async function createPayout(
@@ -92,14 +133,17 @@ export async function createPayout(
     error?: { code?: string; message?: string; details?: unknown }
   }
   if (!upstream.ok || !payload.payout) {
-    return error(
+    return errorWithHeaders(
+      upstream,
       payload.error?.code ?? 'UPSTREAM_ERROR',
       payload.error?.message ?? 'Gateway rejected create',
-      upstream.status || 502,
       payload.error?.details,
     )
   }
-  return json({ payout: payload.payout }, { status: upstream.status })
+  return json(
+    { payout: payload.payout },
+    { status: upstream.status, headers: rateLimitHeaders(upstream) },
+  )
 }
 
 export async function getPayout(
@@ -120,11 +164,80 @@ export async function getPayout(
     error?: { code?: string; message?: string; details?: unknown }
   }
   if (!upstream.ok || !payload.payout) {
-    return error(
+    return errorWithHeaders(
+      upstream,
       payload.error?.code ?? 'UPSTREAM_ERROR',
       payload.error?.message ?? 'Payout not found',
-      upstream.status || 502,
     )
   }
-  return json(payload, { status: upstream.status })
+  return json(payload, {
+    status: upstream.status,
+    headers: rateLimitHeaders(upstream),
+  })
+}
+
+export async function estimatePayout(
+  req: Request,
+  env: Bindings,
+  merchantId: string,
+): Promise<Response> {
+  const body = await readJson<Record<string, unknown>>(req)
+  const { apiKey } = await merchantKeyPlain(env, merchantId)
+  const upstream = await gwFetch(
+    env,
+    apiKey,
+    'POST',
+    '/api/v1/payouts/estimate',
+    body,
+  )
+  const payload = (await upstream.json().catch(() => ({}))) as {
+    error?: { code?: string; message?: string; details?: unknown }
+    [k: string]: unknown
+  }
+  if (!upstream.ok) {
+    return errorWithHeaders(
+      upstream,
+      payload.error?.code ?? 'UPSTREAM_ERROR',
+      payload.error?.message ?? 'Gateway rejected estimate',
+      payload.error?.details,
+    )
+  }
+  return json(payload, {
+    status: upstream.status,
+    headers: rateLimitHeaders(upstream),
+  })
+}
+
+export async function batchPayouts(
+  req: Request,
+  env: Bindings,
+  merchantId: string,
+): Promise<Response> {
+  const body = await readJson<Record<string, unknown>>(req)
+  const { apiKey } = await merchantKeyPlain(env, merchantId)
+  const upstream = await gwFetch(
+    env,
+    apiKey,
+    'POST',
+    '/api/v1/payouts/batch',
+    body,
+  )
+  const payload = (await upstream.json().catch(() => ({}))) as {
+    batchId?: string
+    results?: unknown[]
+    summary?: { planned: number; failed: number }
+    error?: { code?: string; message?: string; details?: unknown }
+  }
+  if (!upstream.ok || !payload.batchId) {
+    return errorWithHeaders(
+      upstream,
+      payload.error?.code ?? 'UPSTREAM_ERROR',
+      payload.error?.message ?? 'Gateway rejected batch',
+      payload.error?.details,
+    )
+  }
+  return json(payload, {
+    status: upstream.status,
+    headers: rateLimitHeaders(upstream),
+  })
 }
