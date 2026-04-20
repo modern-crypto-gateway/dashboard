@@ -172,11 +172,47 @@ export type PayoutFeeTiers = {
   high: PayoutFeeTierQuote
 }
 
+/**
+ * Known codes from the v2.1 estimate endpoint. Backend may add more — treat as
+ * an open-ended string set and default to "unknown; surface neutrally" for any
+ * value outside this list.
+ */
+export type PayoutEstimateWarning =
+  | 'no_fee_wallet_registered'
+  | 'fee_wallet_native_balance_zero'
+  | 'rpc_balance_read_failed'
+  | 'fee_quote_unavailable'
+
+export type PayoutFeeWalletSnapshot = {
+  address: string
+  nativeSymbol: string
+  /** Raw smallest-units, or null when the RPC couldn't read it this cycle. */
+  nativeBalance: string | null
+  tokenSymbol: string
+  tokenBalance: string | null
+}
+
+export type PayoutFundingRequired = {
+  /** Raw smallest-units of native to deposit for each tier. "0" means fully funded. */
+  low: string | null
+  medium: string | null
+  high: string | null
+  nativeSymbol: string
+  /** Human-readable note distinguishing native-payout (amount + gas) from token-payout (gas only). */
+  note: string
+}
+
 export type PayoutEstimate = {
   amountRaw: string
   quotedAmountUsd: string | null
   quotedRate: string | null
   tiers: PayoutFeeTiers
+  /** Null when no active fee wallet is registered on the chain yet. */
+  feeWallet: PayoutFeeWalletSnapshot | null
+  /** Null when `feeWallet` is null (nothing to compute against). */
+  fundingRequired: PayoutFundingRequired | null
+  /** Warning codes — see PayoutEstimateWarning for the known set. May contain unknown codes. */
+  warnings: string[]
 }
 
 export type PayoutBatchRowResult =

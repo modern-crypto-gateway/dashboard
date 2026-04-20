@@ -11,12 +11,15 @@ import {
   AlertTriangle,
   ArrowUpDown,
   ChevronDown,
+  Info,
   KeyRound,
   Layers,
   Loader2,
   Plus,
+  RefreshCw,
   Search,
   Split,
+  Wallet,
   X,
 } from 'lucide-react'
 
@@ -40,6 +43,7 @@ import type {
   GatewayPayout,
   Merchant,
   PayoutEstimate,
+  PayoutFeeWalletSnapshot,
   PayoutListResponse,
 } from '@/lib/types'
 
@@ -48,6 +52,7 @@ import { ChainTokenPicker } from '@/components/ChainTokenPicker'
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
 import { MerchantSwitcher } from '@/components/MerchantSwitcher'
+import { QrCode } from '@/components/QrCode'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -989,20 +994,20 @@ function FeeTierPicker({
   estimate,
   nativeDecimals,
   loading,
-  error,
   errorMessage,
   ready,
   selected,
   onSelect,
+  onRefresh,
 }: {
   estimate: PayoutEstimate | null
   nativeDecimals: number | null
   loading: boolean
-  error: string | null | undefined
   errorMessage: string | null
   ready: boolean
   selected: FeeTier
   onSelect: (t: FeeTier) => void
+  onRefresh: () => void
 }) {
   if (!ready) {
     return (
@@ -1021,8 +1026,10 @@ function FeeTierPicker({
     )
   }
 
-  if (error || !estimate) {
-    const retriable = error === 'FEE_ESTIMATE_FAILED'
+  // Real ApiError (400 VALIDATION_FAILED / 503 ORACLE_FAILED / 429 / etc).
+  // v2.1 made operational issues into `warnings` on a 200, so hitting this
+  // branch now means a genuine input or auth problem.
+  if (!estimate) {
     return (
       <div className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2.5 text-[11.5px] text-warn">
         <div className="flex items-center gap-2 font-medium">
@@ -1030,19 +1037,49 @@ function FeeTierPicker({
           {errorMessage ?? 'Could not estimate fees.'}
         </div>
         <div className="mt-1 text-[var(--fg-2)]">
-          {retriable
-            ? 'The planned payout can still go through — the gateway will estimate at broadcast time.'
-            : 'Submitting without an estimate; the gateway will try its default tier.'}
+          Submitting without an estimate; the gateway will try its default tier.
         </div>
       </div>
     )
   }
 
-  const { tiers } = estimate
+  const { tiers, warnings } = estimate
   const fmtNative = (raw: string) =>
     nativeDecimals == null
       ? `${raw} (raw)`
       : `${formatUnits(raw, nativeDecimals)} ${tiers.nativeSymbol}`
+
+  // Operational fallback: RPC couldn't quote tiers. The gateway will still
+  // estimate at broadcast time, so submit is allowed; the tier picker is not.
+  if (warnings.includes('fee_quote_unavailable')) {
+    return (
+      <div className="rounded-md border border-dashed border-border bg-[var(--bg-2)] px-3 py-2.5">
+        <div className="flex items-start gap-2">
+          <Info className="mt-0.5 size-3.5 shrink-0 text-[var(--fg-3)]" />
+          <div className="flex-1 text-[11.5px]">
+            <div className="font-medium text-[var(--fg-1)]">
+              Fee will be calculated at broadcast
+            </div>
+            <div className="mt-0.5 text-[var(--fg-2)]">
+              The chain&rsquo;s RPC couldn&rsquo;t quote tiers right now. The
+              executor will pick a reasonable default when it picks this payout
+              up. Safe to submit; only the preview is missing.
+            </div>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={onRefresh}
+            disabled={loading}
+          >
+            <RefreshCw className={loading ? 'size-3 animate-spin' : 'size-3'} />
+            Retry
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   if (!tiers.tieringSupported) {
     const t = tiers.medium
@@ -1147,14 +1184,20 @@ function payoutErrorMessage(e: unknown): string {
     switch (e.code) {
       case 'INVALID_FEE_TIER':
         return 'Unsupported fee tier for this chain — picking medium.'
-      case 'FEE_ESTIMATE_FAILED':
-        return 'Fee estimate temporarily unavailable. Try again in a moment.'
       case 'BATCH_TOO_LARGE':
         return 'Batch exceeds 100 rows. Split the file and retry.'
       case 'INSUFFICIENT_TOTAL_BALANCE':
         return 'Even the sum of every fee wallet falls short. Top up before retrying.'
       case 'ORACLE_FAILED':
         return 'Price oracle unreachable — USD pegging unavailable right now.'
+      case 'TOKEN_NOT_SUPPORTED':
+        return 'That token is not registered on the selected chain.'
+      case 'INVALID_DESTINATION':
+        return 'Destination address failed the chain\u2019s validator.'
+      case 'BAD_AMOUNT':
+        return 'Amount has more decimals than the token supports.'
+      case 'VALIDATION_FAILED':
+        return e.message || 'Request validation failed.'
       default:
         return e.message
     }
@@ -1185,6 +1228,12 @@ function CreatePayoutDialog({
   const [allowMultiSource, setAllowMultiSource] = React.useState(false)
   const [webhookUrl, setWebhookUrl] = React.useState('')
   const [webhookSecret, setWebhookSecret] = React.useState('')
+  // Operator explicitly opted in to submit despite a funding shortfall. Scoped
+  // to the estimate's identity (see the estimateSignature below) so it resets
+  // automatically whenever inputs change and a fresh quote arrives.
+  const [proceedAnywaySignature, setProceedAnywaySignature] = React.useState<
+    string | null
+  >(null)
 
   const webhookMismatch =
     (webhookUrl.trim() !== '' && webhookSecret.trim() === '') ||
@@ -1223,8 +1272,8 @@ function CreatePayoutDialog({
 
   /* ── fee estimate ───────────────────────────────────── */
 
-  const debouncedAmount = useDebouncedValue(amount, 500)
-  const debouncedDest = useDebouncedValue(destinationAddress.trim(), 500)
+  const debouncedAmount = useDebouncedValue(amount, 300)
+  const debouncedDest = useDebouncedValue(destinationAddress.trim(), 300)
   const estimateReady =
     open &&
     RAW_RE.test(chainId) &&
@@ -1262,7 +1311,7 @@ function CreatePayoutDialog({
         },
       ),
     retry: false,
-    staleTime: 10_000,
+    staleTime: 30_000,
   })
 
   // If the estimate says the chain doesn't tier, the submit body uses this
@@ -1280,6 +1329,44 @@ function CreatePayoutDialog({
     const meta = lookup(cid, tiers.nativeSymbol)
     return meta?.decimals ?? null
   }, [estimate.data, chainId, lookup])
+
+  /* ── v2.1 warnings / funding ─────────────────────────── */
+
+  // Stable reference so downstream useMemos (estimateSignature below) don't
+  // churn on every render when no estimate has landed yet.
+  const warnings = React.useMemo(
+    () => estimate.data?.warnings ?? [],
+    [estimate.data?.warnings],
+  )
+  const feeWallet = estimate.data?.feeWallet ?? null
+  const fundingRequired = estimate.data?.fundingRequired ?? null
+  const noFeeWallet = warnings.includes('no_fee_wallet_registered')
+  const balanceReadFailed = warnings.includes('rpc_balance_read_failed')
+  const balanceZero = warnings.includes('fee_wallet_native_balance_zero')
+
+  const shortfallRaw =
+    fundingRequired && (fundingRequired[effectiveFeeTier] ?? null)
+  const hasShortfall =
+    shortfallRaw !== null && shortfallRaw !== undefined && shortfallRaw !== '0'
+
+  // Identity of the estimate snapshot the operator has acknowledged. Used to
+  // auto-clear the proceed-anyway opt-in whenever a fresh estimate arrives
+  // with different funding math.
+  const estimateSignature = React.useMemo(() => {
+    if (!estimate.data) return null
+    return [
+      feeWallet?.address ?? '',
+      feeWallet?.nativeBalance ?? '',
+      fundingRequired?.low ?? '',
+      fundingRequired?.medium ?? '',
+      fundingRequired?.high ?? '',
+      warnings.join(','),
+    ].join('|')
+  }, [estimate.data, feeWallet, fundingRequired, warnings])
+
+  const proceedAnyway =
+    proceedAnywaySignature !== null &&
+    proceedAnywaySignature === estimateSignature
 
   /* ── submit ──────────────────────────────────────────── */
 
@@ -1325,7 +1412,22 @@ function CreatePayoutDialog({
     amountFormatError === null &&
     destinationAddress.trim().length > 0 &&
     !webhookMismatch &&
-    webhookSecretValid
+    webhookSecretValid &&
+    !noFeeWallet &&
+    (!hasShortfall || proceedAnyway)
+
+  // Guard against stale fee tiers. If the estimate is older than 60s,
+  // refetch before submitting so the operator sees any delta before planning.
+  const handleSubmit = async (ev: React.FormEvent) => {
+    ev.preventDefault()
+    const age = estimate.dataUpdatedAt
+      ? Date.now() - estimate.dataUpdatedAt
+      : Infinity
+    if (estimate.data && age > 60_000 && estimateReady) {
+      await estimate.refetch()
+    }
+    create.mutate()
+  }
 
   const amountLabel =
     mode === 'raw'
@@ -1365,13 +1467,7 @@ function CreatePayoutDialog({
             its next scheduler tick.
           </DialogDescription>
         </DialogHeader>
-        <form
-          className="space-y-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            create.mutate()
-          }}
-        >
+        <form className="space-y-4" onSubmit={handleSubmit}>
           <ChainTokenPicker
             chainId={chainId}
             token={token}
@@ -1479,14 +1575,40 @@ function CreatePayoutDialog({
             estimate={estimate.data ?? null}
             nativeDecimals={nativeDecimals}
             loading={estimate.isFetching}
-            error={estimate.isError ? (estimate.error as ApiError)?.code : null}
             errorMessage={
               estimate.isError ? payoutErrorMessage(estimate.error) : null
             }
             ready={estimateReady}
             selected={feeTier}
             onSelect={setFeeTier}
+            onRefresh={() => {
+              void estimate.refetch()
+            }}
           />
+
+          {noFeeWallet && <NoFeeWalletBanner chainId={chainId} />}
+
+          {feeWallet && (hasShortfall || balanceZero) && (
+            <FundingPanel
+              feeWallet={feeWallet}
+              fundingRequired={fundingRequired}
+              tier={effectiveFeeTier}
+              nativeDecimals={nativeDecimals}
+              proceedAnyway={proceedAnyway}
+              onToggleProceed={(v) =>
+                setProceedAnywaySignature(v ? estimateSignature : null)
+              }
+            />
+          )}
+
+          {balanceReadFailed && (
+            <RpcFlapNotice
+              onRefresh={() => {
+                void estimate.refetch()
+              }}
+              loading={estimate.isFetching}
+            />
+          )}
 
           <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-[12px]">
             <input
@@ -1556,5 +1678,189 @@ function CreatePayoutDialog({
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/* ── estimate warning panels ───────────────────────────── */
+
+function NoFeeWalletBanner({ chainId }: { chainId: string }) {
+  const info = chainId ? chainInfo(parseInt(chainId, 10)) : null
+  const name = info?.name ?? 'this chain'
+  return (
+    <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
+      <div className="flex items-center gap-2 text-destructive">
+        <AlertTriangle className="size-3.5 shrink-0" />
+        <div className="text-sm font-semibold">
+          No fee wallet registered on {name}
+        </div>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11.5px] text-destructive/90">
+        <span>
+          The executor can&rsquo;t sign without a funded wallet. Register one
+          first, then retry this payout.
+        </span>
+        <div className="flex-1" />
+        <Button size="sm" variant="outline" asChild>
+          <Link to="/fee-wallets">
+            <Wallet className="size-3.5" /> Register fee wallet
+          </Link>
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function RpcFlapNotice({
+  onRefresh,
+  loading,
+}: {
+  onRefresh: () => void
+  loading: boolean
+}) {
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-[11.5px] text-[var(--fg-2)]">
+      <Info className="mt-0.5 size-3.5 shrink-0 text-[var(--fg-3)]" />
+      <span className="flex-1">
+        Couldn&rsquo;t verify the fee wallet&rsquo;s balance right now — the
+        tier quote is still valid. Proceed with caution; the executor will
+        re-check at broadcast.
+      </span>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        onClick={onRefresh}
+        disabled={loading}
+      >
+        <RefreshCw className={loading ? 'size-3 animate-spin' : 'size-3'} />
+        Refresh
+      </Button>
+    </div>
+  )
+}
+
+function FundingPanel({
+  feeWallet,
+  fundingRequired,
+  tier,
+  nativeDecimals,
+  proceedAnyway,
+  onToggleProceed,
+}: {
+  feeWallet: PayoutFeeWalletSnapshot
+  fundingRequired: PayoutEstimate['fundingRequired']
+  tier: FeeTier
+  nativeDecimals: number | null
+  proceedAnyway: boolean
+  onToggleProceed: (v: boolean) => void
+}) {
+  const needRaw = fundingRequired?.[tier] ?? null
+  const needsAny = needRaw !== null && needRaw !== '0'
+  const nativeSymbol = fundingRequired?.nativeSymbol ?? feeWallet.nativeSymbol
+  const needFormatted =
+    needRaw && nativeDecimals != null
+      ? formatUnits(needRaw, nativeDecimals)
+      : null
+
+  // BIP-21-style URI: native-symbol as scheme. Spec is the handoff's
+  // recommendation; wallet compatibility varies by chain but the user can
+  // still copy the address manually.
+  const paymentUri =
+    needFormatted && needsAny
+      ? `${nativeSymbol.toLowerCase()}:${feeWallet.address}?amount=${needFormatted}`
+      : null
+
+  const balFormatted =
+    feeWallet.nativeBalance && nativeDecimals != null
+      ? formatUnits(feeWallet.nativeBalance, nativeDecimals)
+      : null
+
+  return (
+    <div className="space-y-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
+      <div className="flex items-start gap-2">
+        <Wallet className="mt-0.5 size-4 shrink-0 text-warn" />
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-warn">
+            Fee wallet needs funding
+          </div>
+          <div className="mt-0.5 text-[11.5px] text-[var(--fg-2)]">
+            {fundingRequired?.note ??
+              'Top up the fee wallet before the executor picks this payout up (next tick ≈ 30s).'}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[11.5px]">
+        <div className="eyebrow">Wallet</div>
+        <div className="min-w-0">
+          <Addr value={feeWallet.address} truncated={false} />
+          <div className="mt-0.5 text-[11px] text-[var(--fg-3)]">
+            balance{' '}
+            <span className="font-mono tabular-nums text-[var(--fg-2)]">
+              {balFormatted ?? '—'} {nativeSymbol}
+            </span>
+            {feeWallet.tokenBalance != null && (
+              <>
+                {' · '}
+                <span className="font-mono tabular-nums text-[var(--fg-2)]">
+                  {feeWallet.tokenBalance} (raw){' '}
+                  {feeWallet.tokenSymbol}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {needsAny && (
+          <>
+            <div className="eyebrow">Deposit</div>
+            <div className="min-w-0">
+              <div className="font-mono text-sm font-semibold tabular-nums">
+                {needFormatted ?? needRaw} {nativeSymbol}
+              </div>
+              {needRaw && needFormatted && (
+                <div className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                  raw {needRaw}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {paymentUri && needFormatted && (
+        <div className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2.5">
+          <QrCode value={paymentUri} size={108} />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="text-[11px] text-[var(--fg-2)]">
+              Send{' '}
+              <span className="font-mono font-semibold">
+                {needFormatted} {nativeSymbol}
+              </span>{' '}
+              to the address above. The executor will pick up the next tick
+              after the deposit confirms.
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-[var(--fg-2)]">
+                {paymentUri}
+              </code>
+              <CopyButton value={paymentUri} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      <label className="flex cursor-pointer items-start gap-2 rounded-md border border-warn/40 bg-card px-3 py-2 text-[11.5px]">
+        <input
+          type="checkbox"
+          checked={proceedAnyway}
+          onChange={(e) => onToggleProceed(e.target.checked)}
+          className="mt-0.5 size-3.5 cursor-pointer accent-warn"
+        />
+        <span className="text-[var(--fg-1)]">
+          I&rsquo;ll fund the wallet before the executor picks this up.
+        </span>
+      </label>
+    </div>
   )
 }
