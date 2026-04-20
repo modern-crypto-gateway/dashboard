@@ -120,6 +120,8 @@ export type PayoutListResponse = {
   hasMore: boolean
 }
 
+export type FeeTier = 'low' | 'medium' | 'high'
+
 export type GatewayPayout = {
   id: string
   merchantId: string
@@ -139,6 +141,52 @@ export type GatewayPayout = {
   submittedAt: string | null
   confirmedAt: string | null
   updatedAt: string
+  /** v2: tier picked at plan time. */
+  feeTier: FeeTier | null
+  /** v2: native-units fee quoted at plan time, before broadcast. Pair with `feeEstimateNative` for drift. */
+  feeQuotedNative: string | null
+  /** v2: when the row was created via POST /payouts/batch. */
+  batchId: string | null
+  /** v2: opt-in split across multiple fee wallets. */
+  allowMultiSource: boolean
+  /** v2: full list of fee wallets that contributed to the broadcast. Only populated on multi-source runs. */
+  sourceAddresses: string[] | null
+  /** v2: one hash per on-chain leg. Single-source payouts still use `txHash`; multi-source populates this array. */
+  txHashes: string[] | null
+  /** v2: set on the first broadcast attempt so ops can distinguish "still planned" from "stuck after a try". */
+  broadcastAttemptedAt: string | null
+}
+
+export type PayoutFeeTierQuote = {
+  tier: FeeTier
+  nativeAmountRaw: string
+  usdAmount: string | null
+}
+
+export type PayoutFeeTiers = {
+  tieringSupported: boolean
+  nativeSymbol: string
+  nativeDecimals?: number
+  low: PayoutFeeTierQuote
+  medium: PayoutFeeTierQuote
+  high: PayoutFeeTierQuote
+}
+
+export type PayoutEstimate = {
+  amountRaw: string
+  quotedAmountUsd: string | null
+  quotedRate: string | null
+  tiers: PayoutFeeTiers
+}
+
+export type PayoutBatchRowResult =
+  | { index: number; status: 'planned'; payout: GatewayPayout }
+  | { index: number; status: 'failed'; error: { code?: string; message: string } }
+
+export type PayoutBatchResponse = {
+  batchId: string
+  results: PayoutBatchRowResult[]
+  summary: { planned: number; failed: number }
 }
 
 export type WebhookDelivery = {
@@ -191,9 +239,10 @@ export type AlchemyBootstrapResult = {
 }
 
 export type FeeWalletResult = {
-  chainId: number
   address: string
   label: string
+  family: Family
+  chainIds: number[]
 }
 
 export type FeeWalletRow = {

@@ -609,8 +609,14 @@ function AddFeeWalletDialog({
                 <CopyButton value={revealed.address} />
               </div>
               <div className="text-xs text-[var(--fg-2)]">
-                <span className="font-mono">{revealed.label}</span> · chain{' '}
-                <span className="font-mono">{revealed.chainId}</span>
+                <span className="font-mono">{revealed.label}</span> ·{' '}
+                <span className="font-mono uppercase">{revealed.family}</span>{' '}
+                ·{' '}
+                <span className="font-mono">
+                  {revealed.chainIds.length === 1
+                    ? `chain ${revealed.chainIds[0]}`
+                    : `${revealed.chainIds.length} chains`}
+                </span>
               </div>
             </div>
             <DialogFooter>

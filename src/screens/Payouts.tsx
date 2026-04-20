@@ -12,9 +12,12 @@ import {
   ArrowUpDown,
   ChevronDown,
   KeyRound,
+  Layers,
   Loader2,
   Plus,
   Search,
+  Split,
+  X,
 } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
@@ -33,8 +36,11 @@ import type {
   BalancesSnapshot,
   ChainInventoryEntry,
   ChainToken,
+  FeeTier,
   GatewayPayout,
   Merchant,
+  PayoutBatchResponse,
+  PayoutEstimate,
   PayoutListResponse,
 } from '@/lib/types'
 
@@ -43,6 +49,7 @@ import { ChainTokenPicker } from '@/components/ChainTokenPicker'
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
 import { MerchantSwitcher } from '@/components/MerchantSwitcher'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -68,6 +75,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
 
 import { StatusBadge } from './Invoices'
 
@@ -135,8 +143,11 @@ const STATUS_CSV: Record<PayoutFilter, string | undefined> = {
 
 const PAGE_SIZE = 50
 
-const payoutsQueryKey = (merchantId: string | null, filter: PayoutFilter) =>
-  ['payouts', 'list', merchantId, filter] as const
+const payoutsQueryKey = (
+  merchantId: string | null,
+  filter: PayoutFilter,
+  batchId: string | null,
+) => ['payouts', 'list', merchantId, filter, batchId] as const
 
 export function PayoutsPage() {
   const merchants = useMerchants()
@@ -144,7 +155,9 @@ export function PayoutsPage() {
 
   const [query, setQuery] = React.useState('')
   const [filter, setFilter] = React.useState<PayoutFilter>('all')
+  const [batchIdFilter, setBatchIdFilter] = React.useState<string | null>(null)
   const [createOpen, setCreateOpen] = React.useState(false)
+  const [batchOpen, setBatchOpen] = React.useState(false)
   const [detailId, setDetailId] = React.useState<string | null>(null)
 
   const canList =
@@ -152,7 +165,7 @@ export function PayoutsPage() {
 
   const list = useInfiniteQuery({
     enabled: canList,
-    queryKey: payoutsQueryKey(active?.id ?? null, filter),
+    queryKey: payoutsQueryKey(active?.id ?? null, filter, batchIdFilter),
     initialPageParam: 0,
     queryFn: ({ pageParam }) => {
       const qs = new URLSearchParams({
@@ -161,6 +174,7 @@ export function PayoutsPage() {
       })
       const s = STATUS_CSV[filter]
       if (s) qs.set('status', s)
+      if (batchIdFilter) qs.set('batchId', batchIdFilter)
       return api<PayoutListResponse>(
         `/api/mg/${encodeURIComponent(active!.id)}/payouts?${qs}`,
       )
@@ -205,6 +219,14 @@ export function PayoutsPage() {
         </div>
         <div className="flex items-center gap-2">
           <MerchantSwitcher />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!canList}
+            onClick={() => setBatchOpen(true)}
+          >
+            <Layers className="size-3.5" /> Batch create
+          </Button>
           <Button size="sm" disabled={!canList} onClick={() => setCreateOpen(true)}>
             <Plus className="size-3.5" /> Plan payout
           </Button>
@@ -220,6 +242,8 @@ export function PayoutsPage() {
             setQuery={setQuery}
             filter={filter}
             setFilter={setFilter}
+            batchIdFilter={batchIdFilter}
+            clearBatchFilter={() => setBatchIdFilter(null)}
             loaded={all.length}
           />
 
@@ -265,10 +289,25 @@ export function PayoutsPage() {
             merchantId={active.id}
             onCreated={(id) => setDetailId(id)}
           />
+          <BatchPayoutDialog
+            open={batchOpen}
+            onOpenChange={setBatchOpen}
+            merchantId={active.id}
+            onViewBatch={(bid) => {
+              setBatchIdFilter(bid)
+              setFilter('all')
+              setBatchOpen(false)
+            }}
+          />
           <PayoutDetailSheet
             merchantId={active.id}
             payoutId={detailId}
             onOpenChange={(v) => !v && setDetailId(null)}
+            onOpenBatch={(bid) => {
+              setBatchIdFilter(bid)
+              setFilter('all')
+              setDetailId(null)
+            }}
           />
         </>
       )}
@@ -283,41 +322,65 @@ function Toolbar({
   setQuery,
   filter,
   setFilter,
+  batchIdFilter,
+  clearBatchFilter,
   loaded,
 }: {
   query: string
   setQuery: (v: string) => void
   filter: PayoutFilter
   setFilter: (v: PayoutFilter) => void
+  batchIdFilter: string | null
+  clearBatchFilter: () => void
   loaded: number
 }) {
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-      <div className="relative flex-1">
-        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[var(--fg-3)]" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search loaded by id, destination, token…"
-          className="pl-8"
-        />
-      </div>
-      <div className="flex items-center gap-2">
-        <Select value={filter} onValueChange={(v) => setFilter(v as PayoutFilter)}>
-          <SelectTrigger className="h-9 w-[150px] text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="confirmed">Confirmed</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-          </SelectContent>
-        </Select>
-        <div className="hidden text-xs text-[var(--fg-3)] sm:block">
-          {loaded} loaded
+    <div className="space-y-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[var(--fg-3)]" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search loaded by id, destination, token…"
+            className="pl-8"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Select value={filter} onValueChange={(v) => setFilter(v as PayoutFilter)}>
+            <SelectTrigger className="h-9 w-[150px] text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="confirmed">Confirmed</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="hidden text-xs text-[var(--fg-3)] sm:block">
+            {loaded} loaded
+          </div>
         </div>
       </div>
+      {batchIdFilter && (
+        <div className="flex items-center gap-2 rounded-md border border-[var(--accent-border)] bg-[var(--accent-bg)] px-3 py-1.5 text-[11.5px]">
+          <Layers className="size-3.5 text-primary" />
+          <span className="text-[var(--fg-2)]">Scoped to batch</span>
+          <span className="font-mono text-primary">
+            {truncateAddr(batchIdFilter, 10, 6)}
+          </span>
+          <CopyButton value={batchIdFilter} />
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={clearBatchFilter}
+            className="inline-flex items-center gap-1 text-[11.5px] font-medium text-primary hover:underline"
+          >
+            <X className="size-3" /> Clear
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -392,6 +455,23 @@ function PayoutRow({
             <span onClick={(e) => e.stopPropagation()}>
               <CopyButton value={po.id} />
             </span>
+            {po.feeTier && <FeeTierBadge tier={po.feeTier} />}
+            {po.allowMultiSource && (
+              <span
+                className="inline-flex items-center text-[var(--fg-3)]"
+                title="allowMultiSource: may split across wallets"
+              >
+                <Split className="size-3" />
+              </span>
+            )}
+            {po.batchId && (
+              <span
+                className="inline-flex items-center text-[var(--fg-3)]"
+                title={`batch ${po.batchId}`}
+              >
+                <Layers className="size-3" />
+              </span>
+            )}
           </div>
         </div>
 
@@ -425,6 +505,17 @@ function PayoutRow({
   )
 }
 
+function FeeTierBadge({ tier }: { tier: FeeTier }) {
+  const label = tier === 'low' ? 'low' : tier === 'medium' ? 'med' : 'high'
+  const variant =
+    tier === 'high' ? 'warn' : tier === 'low' ? 'outline' : 'default'
+  return (
+    <Badge variant={variant} className="px-1.5 py-0 text-[9.5px] tracking-wider uppercase">
+      {label}
+    </Badge>
+  )
+}
+
 function ChainPill({ chainId }: { chainId: number }) {
   const info = chainInfo(chainId)
   return (
@@ -444,10 +535,12 @@ function PayoutDetailSheet({
   merchantId,
   payoutId,
   onOpenChange,
+  onOpenBatch,
 }: {
   merchantId: string
   payoutId: string | null
   onOpenChange: (open: boolean) => void
+  onOpenBatch: (batchId: string) => void
 }) {
   const open = payoutId !== null
   const lookup = useChainTokenLookup()
@@ -464,6 +557,25 @@ function PayoutDetailSheet({
   const po = detail.data?.payout
   const meta = po ? lookup(po.chainId, po.token) : undefined
 
+  // Multi-leg: prefer explicit txHashes[]; fall back to the single-leg txHash scalar.
+  const legHashes = po
+    ? po.txHashes && po.txHashes.length > 0
+      ? po.txHashes
+      : po.txHash
+        ? [po.txHash]
+        : []
+    : []
+  const legSources = po
+    ? po.sourceAddresses && po.sourceAddresses.length > 0
+      ? po.sourceAddresses
+      : po.sourceAddress
+        ? [po.sourceAddress]
+        : []
+    : []
+  const isMultiLeg = legHashes.length > 1 || legSources.length > 1
+  const orphanLegs =
+    po?.status === 'failed' && (po.txHashes?.length ?? 0) > 0
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent>
@@ -474,6 +586,7 @@ function PayoutDetailSheet({
             </SheetTitle>
             {payoutId && <CopyButton value={payoutId} />}
             {po && <StatusBadge status={po.status} />}
+            {po?.feeTier && <FeeTierBadge tier={po.feeTier} />}
           </div>
         </SheetHeader>
 
@@ -486,6 +599,23 @@ function PayoutDetailSheet({
             </div>
           ) : (
             <div className="space-y-5">
+              {orphanLegs && (
+                <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
+                  <div className="flex items-center gap-2 text-destructive">
+                    <AlertTriangle className="size-4 shrink-0" />
+                    <div className="text-sm font-semibold">
+                      Orphan on-chain legs detected
+                    </div>
+                  </div>
+                  <div className="mt-1.5 text-[11.5px] text-destructive/90">
+                    This payout failed, but {po.txHashes!.length} leg
+                    {po.txHashes!.length === 1 ? ' was' : 's were'} already
+                    broadcast on-chain. Manual reconciliation required —{' '}
+                    <span className="font-semibold">do not retry</span>.
+                  </div>
+                </div>
+              )}
+
               <KV>
                 <KVItem label="Chain">
                   <ChainPill chainId={po.chainId} />
@@ -523,36 +653,119 @@ function PayoutDetailSheet({
                     </div>
                   </KVItem>
                 )}
+
+                <KVItem label="Fee tier">
+                  {po.feeTier ? (
+                    <FeeTierBadge tier={po.feeTier} />
+                  ) : (
+                    <span className="text-[var(--fg-3)]">—</span>
+                  )}
+                </KVItem>
+                <KVItem label="Multi-source">
+                  <span className="font-mono text-xs">
+                    {po.allowMultiSource ? 'enabled' : 'off'}
+                  </span>
+                </KVItem>
+
                 <KVItem label="Fee estimate">
                   <span className="font-mono">
                     {po.feeEstimateNative ?? '—'}
                   </span>
                 </KVItem>
+                <KVItem label="Fee quoted">
+                  <span className="font-mono">
+                    {po.feeQuotedNative ?? '—'}
+                  </span>
+                </KVItem>
+                {po.feeQuotedNative &&
+                  po.feeEstimateNative &&
+                  po.feeQuotedNative !== po.feeEstimateNative && (
+                    <KVItem label="Gas drift" wide>
+                      <FeeDrift
+                        quoted={po.feeQuotedNative}
+                        actual={po.feeEstimateNative}
+                      />
+                    </KVItem>
+                  )}
+
                 <KVItem label="Destination" wide>
                   <Addr value={po.destinationAddress} truncated={false} />
                 </KVItem>
-                <KVItem label="Source" wide>
-                  {po.sourceAddress ? (
-                    <Addr value={po.sourceAddress} truncated={false} />
-                  ) : (
+
+                <KVItem label={isMultiLeg ? 'Source wallets' : 'Source'} wide>
+                  {legSources.length === 0 ? (
                     <span className="text-[var(--fg-2)]">—</span>
-                  )}
-                </KVItem>
-                <KVItem label="Tx hash" wide>
-                  {po.txHash ? (
-                    <Addr value={po.txHash} truncated={false} />
+                  ) : legSources.length === 1 ? (
+                    <Addr value={legSources[0]} truncated={false} />
                   ) : (
-                    <span className="text-[var(--fg-2)]">pending</span>
+                    <ul className="space-y-1">
+                      {legSources.map((a, i) => (
+                        <li key={`${a}-${i}`} className="flex items-center gap-2">
+                          <span className="text-[11px] text-[var(--fg-3)]">
+                            #{i + 1}
+                          </span>
+                          <Addr value={a} truncated={false} />
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </KVItem>
+
+                <KVItem label={isMultiLeg ? 'Tx hashes' : 'Tx hash'} wide>
+                  {legHashes.length === 0 ? (
+                    <span className="text-[var(--fg-2)]">pending</span>
+                  ) : legHashes.length === 1 ? (
+                    <Addr value={legHashes[0]} truncated={false} />
+                  ) : (
+                    <ul className="space-y-1">
+                      {legHashes.map((h, i) => (
+                        <li key={`${h}-${i}`} className="flex items-center gap-2">
+                          <span className="text-[11px] text-[var(--fg-3)]">
+                            #{i + 1}
+                          </span>
+                          <Addr value={h} truncated={false} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </KVItem>
+
                 <KVItem label="Created">
                   <span className="font-mono text-xs">{fmtLocal(po.createdAt)}</span>
+                </KVItem>
+                <KVItem label="Broadcast attempt">
+                  <span className="font-mono text-xs">
+                    {po.broadcastAttemptedAt
+                      ? fmtLocal(po.broadcastAttemptedAt)
+                      : '—'}
+                  </span>
+                </KVItem>
+                <KVItem label="Submitted">
+                  <span className="font-mono text-xs">
+                    {po.submittedAt ? fmtLocal(po.submittedAt) : '—'}
+                  </span>
                 </KVItem>
                 <KVItem label="Confirmed">
                   <span className="font-mono text-xs">
                     {po.confirmedAt ? fmtLocal(po.confirmedAt) : '—'}
                   </span>
                 </KVItem>
+
+                {po.batchId && (
+                  <KVItem label="Batch" wide>
+                    <button
+                      type="button"
+                      onClick={() => onOpenBatch(po.batchId!)}
+                      className="group inline-flex items-center gap-1.5 font-mono text-xs text-primary hover:underline"
+                    >
+                      <Layers className="size-3.5" />
+                      {truncateAddr(po.batchId, 10, 6)}
+                      <span className="text-[10px] uppercase tracking-wider text-[var(--fg-3)] group-hover:text-primary">
+                        view batch
+                      </span>
+                    </button>
+                  </KVItem>
+                )}
               </KV>
 
               {po.lastError && (
@@ -568,6 +781,30 @@ function PayoutDetailSheet({
         </SheetBody>
       </SheetContent>
     </Sheet>
+  )
+}
+
+function FeeDrift({ quoted, actual }: { quoted: string; actual: string }) {
+  const q = parseFloat(quoted)
+  const a = parseFloat(actual)
+  if (!isFinite(q) || !isFinite(a) || q <= 0) {
+    return (
+      <span className="font-mono text-xs text-[var(--fg-2)]">
+        {quoted} → {actual}
+      </span>
+    )
+  }
+  const pct = ((a - q) / q) * 100
+  const up = pct > 0
+  const color = Math.abs(pct) < 10 ? 'text-[var(--fg-2)]' : up ? 'text-warn' : 'text-success'
+  return (
+    <span className={`font-mono text-xs ${color}`}>
+      {quoted} → {actual}
+      <span className="ml-1.5 text-[10.5px]">
+        ({up ? '+' : ''}
+        {pct.toFixed(1)}%)
+      </span>
+    </span>
   )
 }
 
@@ -737,6 +974,183 @@ type PayoutAmountMode = 'raw' | 'amount' | 'usd'
 const DECIMAL_RE = /^(0|[1-9]\d*)(\.\d+)?$/
 const RAW_RE = /^\d+$/
 
+function FeeTierPicker({
+  estimate,
+  nativeDecimals,
+  loading,
+  error,
+  errorMessage,
+  ready,
+  selected,
+  onSelect,
+}: {
+  estimate: PayoutEstimate | null
+  nativeDecimals: number | null
+  loading: boolean
+  error: string | null | undefined
+  errorMessage: string | null
+  ready: boolean
+  selected: FeeTier
+  onSelect: (t: FeeTier) => void
+}) {
+  if (!ready) {
+    return (
+      <div className="rounded-md border border-dashed border-border bg-[var(--bg-2)] px-3 py-2.5 text-[11.5px] text-[var(--fg-3)]">
+        Fill chain, token, amount, and destination to see fee tiers.
+      </div>
+    )
+  }
+
+  if (loading && !estimate) {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-[11.5px] text-[var(--fg-2)]">
+        <Loader2 className="size-3 animate-spin" />
+        Estimating fees…
+      </div>
+    )
+  }
+
+  if (error || !estimate) {
+    const retriable = error === 'FEE_ESTIMATE_FAILED'
+    return (
+      <div className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2.5 text-[11.5px] text-warn">
+        <div className="flex items-center gap-2 font-medium">
+          <AlertTriangle className="size-3.5" />
+          {errorMessage ?? 'Could not estimate fees.'}
+        </div>
+        <div className="mt-1 text-[var(--fg-2)]">
+          {retriable
+            ? 'The planned payout can still go through — the gateway will estimate at broadcast time.'
+            : 'Submitting without an estimate; the gateway will try its default tier.'}
+        </div>
+      </div>
+    )
+  }
+
+  const { tiers } = estimate
+  const fmtNative = (raw: string) =>
+    nativeDecimals == null
+      ? `${raw} (raw)`
+      : `${formatUnits(raw, nativeDecimals)} ${tiers.nativeSymbol}`
+
+  if (!tiers.tieringSupported) {
+    const t = tiers.medium
+    return (
+      <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5">
+        <div className="eyebrow mb-1">Network fee</div>
+        <div className="flex items-baseline gap-2">
+          <span className="font-mono text-[12.5px] tabular-nums">
+            {fmtNative(t.nativeAmountRaw)}
+          </span>
+          {t.usdAmount && (
+            <span className="text-[11px] text-[var(--fg-3)]">
+              ~{fmtUsd(t.usdAmount)}
+            </span>
+          )}
+        </div>
+        <div className="mt-1 text-[11px] text-[var(--fg-3)]">
+          This chain does not support fee tiering.
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div className="eyebrow">Fee tier</div>
+        {loading && (
+          <Loader2 className="size-3 animate-spin text-[var(--fg-3)]" />
+        )}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {(['low', 'medium', 'high'] as const).map((t) => {
+          const q = tiers[t]
+          const active = selected === t
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => onSelect(t)}
+              className={
+                'rounded-md border px-2.5 py-2 text-left transition-colors ' +
+                (active
+                  ? 'border-primary bg-[var(--accent-bg)] ring-1 ring-primary'
+                  : 'border-border bg-[var(--bg-2)] hover:border-[var(--fg-3)]')
+              }
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10.5px] font-medium uppercase tracking-wider text-[var(--fg-2)]">
+                  {t}
+                </span>
+                {q.usdAmount && (
+                  <span className="font-mono text-[11px] text-[var(--fg-2)]">
+                    {fmtUsd(q.usdAmount)}
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 truncate font-mono text-[11.5px] tabular-nums">
+                {fmtNative(q.nativeAmountRaw)}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [v, setV] = React.useState(value)
+  React.useEffect(() => {
+    const t = setTimeout(() => setV(value), delayMs)
+    return () => clearTimeout(t)
+  }, [value, delayMs])
+  return v
+}
+
+/**
+ * Build the request body for /payouts and /payouts/estimate. Shared because
+ * both endpoints take the same amount-input / destination fields.
+ */
+function buildPayoutBody(args: {
+  chainId: string
+  token: string
+  mode: PayoutAmountMode
+  amount: string
+  destinationAddress: string
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    chainId: parseInt(args.chainId, 10),
+    token: args.token.toUpperCase(),
+    destinationAddress: args.destinationAddress.trim(),
+  }
+  if (args.mode === 'raw') body.amountRaw = args.amount
+  else if (args.mode === 'amount') body.amount = args.amount
+  else body.amountUSD = args.amount
+  return body
+}
+
+function payoutErrorMessage(e: unknown): string {
+  if (e instanceof ApiError) {
+    switch (e.code) {
+      case 'INVALID_FEE_TIER':
+        return 'Unsupported fee tier for this chain — picking medium.'
+      case 'FEE_ESTIMATE_FAILED':
+        return 'Fee estimate temporarily unavailable. Try again in a moment.'
+      case 'BATCH_TOO_LARGE':
+        return 'Batch exceeds 100 rows. Split the file and retry.'
+      case 'INSUFFICIENT_TOTAL_BALANCE':
+        return 'Even the sum of every fee wallet falls short. Top up before retrying.'
+      case 'ORACLE_FAILED':
+        return 'Price oracle unreachable — USD pegging unavailable right now.'
+      default:
+        return e.message
+    }
+  }
+  return e instanceof Error ? e.message : 'Could not plan payout'
+}
+
 function CreatePayoutDialog({
   open,
   onOpenChange,
@@ -749,12 +1163,15 @@ function CreatePayoutDialog({
   onCreated: (id: string) => void
 }) {
   const qc = useQueryClient()
+  const lookup = useChainTokenLookup()
   const [chainId, setChainId] = React.useState('')
   const [token, setToken] = React.useState('')
   const [tokenMeta, setTokenMeta] = React.useState<ChainToken | null>(null)
   const [mode, setMode] = React.useState<PayoutAmountMode>('amount')
   const [amount, setAmount] = React.useState('')
   const [destinationAddress, setDestinationAddress] = React.useState('')
+  const [feeTier, setFeeTier] = React.useState<FeeTier>('medium')
+  const [allowMultiSource, setAllowMultiSource] = React.useState(false)
   const [webhookUrl, setWebhookUrl] = React.useState('')
   const [webhookSecret, setWebhookSecret] = React.useState('')
 
@@ -793,16 +1210,83 @@ function CreatePayoutDialog({
     open && !!chainId && !!token,
   )
 
+  /* ── fee estimate ───────────────────────────────────── */
+
+  const debouncedAmount = useDebouncedValue(amount, 500)
+  const debouncedDest = useDebouncedValue(destinationAddress.trim(), 500)
+  const estimateReady =
+    open &&
+    RAW_RE.test(chainId) &&
+    /^[A-Z0-9]+$/.test(token) &&
+    debouncedAmount !== '' &&
+    amountFormatError === null &&
+    debouncedDest.length > 0
+
+  const estimate = useQuery<PayoutEstimate>({
+    enabled: estimateReady,
+    queryKey: [
+      'payouts',
+      'estimate',
+      merchantId,
+      chainId,
+      token,
+      mode,
+      debouncedAmount,
+      debouncedDest,
+    ] as const,
+    queryFn: () =>
+      api<PayoutEstimate>(
+        `/api/mg/${encodeURIComponent(merchantId)}/payouts/estimate`,
+        {
+          method: 'POST',
+          body: JSON.stringify(
+            buildPayoutBody({
+              chainId,
+              token,
+              mode,
+              amount: debouncedAmount,
+              destinationAddress: debouncedDest,
+            }),
+          ),
+        },
+      ),
+    retry: false,
+    staleTime: 10_000,
+  })
+
+  // If the estimate says the chain doesn't tier, the submit body uses this
+  // derived value instead of whatever is in `feeTier` — belt & braces in case
+  // the user flipped tier before the estimate came back.
+  const tieringSupported = estimate.data?.tiers.tieringSupported !== false
+  const effectiveFeeTier: FeeTier = tieringSupported ? feeTier : 'medium'
+
+  const nativeDecimals = React.useMemo(() => {
+    const tiers = estimate.data?.tiers
+    if (!tiers) return null
+    if (typeof tiers.nativeDecimals === 'number') return tiers.nativeDecimals
+    const cid = parseInt(chainId, 10)
+    if (!isFinite(cid)) return null
+    const meta = lookup(cid, tiers.nativeSymbol)
+    return meta?.decimals ?? null
+  }, [estimate.data, chainId, lookup])
+
+  /* ── submit ──────────────────────────────────────────── */
+
   const create = useMutation({
     mutationFn: () => {
-      const body: Record<string, unknown> = {
-        chainId: parseInt(chainId, 10),
-        token: token.toUpperCase(),
-        destinationAddress: destinationAddress.trim(),
+      const body = buildPayoutBody({
+        chainId,
+        token,
+        mode,
+        amount,
+        destinationAddress,
+      })
+      // Only send a tier when the chain actually supports tiering; otherwise
+      // the backend would reject it or quietly ignore it.
+      if (tieringSupported) {
+        body.feeTier = effectiveFeeTier
       }
-      if (mode === 'raw') body.amountRaw = amount
-      else if (mode === 'amount') body.amount = amount
-      else body.amountUSD = amount
+      if (allowMultiSource) body.allowMultiSource = true
       if (webhookUrl.trim()) {
         body.webhookUrl = webhookUrl.trim()
         body.webhookSecret = webhookSecret.trim()
@@ -820,7 +1304,7 @@ function CreatePayoutDialog({
       onOpenChange(false)
       onCreated(res.payout.id)
     },
-    onError: (e: ApiError) => toast.error(e.message || 'Could not plan payout'),
+    onError: (e: unknown) => toast.error(payoutErrorMessage(e)),
   })
 
   const canSubmit =
@@ -980,6 +1464,38 @@ function CreatePayoutDialog({
             />
           </Field>
 
+          <FeeTierPicker
+            estimate={estimate.data ?? null}
+            nativeDecimals={nativeDecimals}
+            loading={estimate.isFetching}
+            error={estimate.isError ? (estimate.error as ApiError)?.code : null}
+            errorMessage={
+              estimate.isError ? payoutErrorMessage(estimate.error) : null
+            }
+            ready={estimateReady}
+            selected={feeTier}
+            onSelect={setFeeTier}
+          />
+
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-[12px]">
+            <input
+              type="checkbox"
+              checked={allowMultiSource}
+              onChange={(e) => setAllowMultiSource(e.target.checked)}
+              className="mt-0.5 size-3.5 cursor-pointer accent-primary"
+            />
+            <div>
+              <div className="font-medium text-[var(--fg-1)]">
+                Split across fee wallets if needed
+              </div>
+              <div className="mt-0.5 text-[11.5px] text-[var(--fg-2)]">
+                When no single wallet has enough balance, draw from multiple.
+                Recipient sees one on-chain tx per contributing wallet. Leaves
+                an audit trail even on partial failure.
+              </div>
+            </div>
+          </label>
+
           <details className="rounded-md border border-border bg-[var(--bg-2)] open:pb-3">
             <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-[var(--fg-2)]">
               Advanced — per-payout webhook override
@@ -1029,5 +1545,426 @@ function CreatePayoutDialog({
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/* ── batch payout dialog ───────────────────────────────── */
+
+type BatchCsvRow = {
+  lineNo: number
+  chainId: number
+  token: string
+  amount: string
+  destinationAddress: string
+}
+
+type BatchParseError = {
+  lineNo: number
+  message: string
+  raw: string
+}
+
+const BATCH_MAX = 100
+
+function parseBatchCsv(csv: string): {
+  rows: BatchCsvRow[]
+  errors: BatchParseError[]
+} {
+  const rows: BatchCsvRow[] = []
+  const errors: BatchParseError[] = []
+  const lines = csv.split(/\r?\n/)
+
+  lines.forEach((rawLine, idx) => {
+    const lineNo = idx + 1
+    const line = rawLine.trim()
+    if (!line) return
+    if (line.startsWith('#')) return
+
+    // Skip a header row if present.
+    const lc = line.toLowerCase()
+    if (
+      idx === 0 &&
+      lc.includes('chainid') &&
+      lc.includes('token') &&
+      lc.includes('amount') &&
+      lc.includes('destination')
+    ) {
+      return
+    }
+
+    const cols = line.split(',').map((c) => c.trim())
+    if (cols.length !== 4) {
+      errors.push({
+        lineNo,
+        message: `Expected 4 columns, got ${cols.length}.`,
+        raw: line,
+      })
+      return
+    }
+    const [chainIdStr, tokenStr, amountStr, destStr] = cols
+    const chainId = parseInt(chainIdStr, 10)
+    if (!/^\d+$/.test(chainIdStr) || !isFinite(chainId) || chainId <= 0) {
+      errors.push({
+        lineNo,
+        message: 'chainId must be a positive integer.',
+        raw: line,
+      })
+      return
+    }
+    if (!/^[A-Za-z0-9]+$/.test(tokenStr)) {
+      errors.push({ lineNo, message: 'Invalid token symbol.', raw: line })
+      return
+    }
+    if (!DECIMAL_RE.test(amountStr)) {
+      errors.push({
+        lineNo,
+        message: 'amount must be a non-negative decimal (e.g. 1.5).',
+        raw: line,
+      })
+      return
+    }
+    if (destStr.length === 0) {
+      errors.push({
+        lineNo,
+        message: 'destinationAddress is required.',
+        raw: line,
+      })
+      return
+    }
+    rows.push({
+      lineNo,
+      chainId,
+      token: tokenStr.toUpperCase(),
+      amount: amountStr,
+      destinationAddress: destStr,
+    })
+  })
+
+  return { rows, errors }
+}
+
+function BatchPayoutDialog({
+  open,
+  onOpenChange,
+  merchantId,
+  onViewBatch,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  merchantId: string
+  onViewBatch: (batchId: string) => void
+}) {
+  const qc = useQueryClient()
+  const [csv, setCsv] = React.useState('')
+  const [result, setResult] = React.useState<PayoutBatchResponse | null>(null)
+
+  // Reset when the dialog closes. Done in the close handler (not an effect)
+  // so lint stays happy and the reset runs exactly once per close.
+  const handleOpenChange = (v: boolean) => {
+    if (!v) {
+      setCsv('')
+      setResult(null)
+    }
+    onOpenChange(v)
+  }
+
+  const { rows, errors } = React.useMemo(() => parseBatchCsv(csv), [csv])
+  const oversize = rows.length > BATCH_MAX
+
+  const submit = useMutation({
+    mutationFn: () =>
+      api<PayoutBatchResponse>(
+        `/api/mg/${encodeURIComponent(merchantId)}/payouts/batch`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            payouts: rows.map((r) => ({
+              chainId: r.chainId,
+              token: r.token,
+              amount: r.amount,
+              destinationAddress: r.destinationAddress,
+            })),
+          }),
+        },
+      ),
+    onSuccess: (res) => {
+      setResult(res)
+      qc.invalidateQueries({ queryKey: ['payouts', 'list', merchantId] })
+      const { planned, failed } = res.summary
+      if (failed === 0) {
+        toast.success(`Batch planned: ${planned} rows`)
+      } else {
+        toast.warning(
+          `Batch partial: ${planned} planned, ${failed} failed. Review per-row errors below.`,
+        )
+      }
+    },
+    onError: (e: unknown) => toast.error(payoutErrorMessage(e)),
+  })
+
+  const canSubmit = rows.length > 0 && !oversize && errors.length === 0
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:!max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Batch payout</DialogTitle>
+          <DialogDescription>
+            Paste up to {BATCH_MAX} rows as CSV. Columns: <span className="font-mono">chainId,token,amount,destinationAddress</span>.
+            Partial success is normal — per-row errors don&rsquo;t abort the
+            batch.
+          </DialogDescription>
+        </DialogHeader>
+
+        {!result ? (
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              submit.mutate()
+            }}
+          >
+            <Field
+              label="CSV"
+              hint="One payout per line. Blank lines and lines starting with '#' are ignored. A header row is optional."
+            >
+              <Textarea
+                value={csv}
+                onChange={(e) => setCsv(e.target.value)}
+                rows={10}
+                placeholder={
+                  'chainId,token,amount,destinationAddress\n42161,USDC,1.5,0x1111111111111111111111111111111111111111\n1,ETH,0.01,0x3333333333333333333333333333333333333333'
+                }
+                className="font-mono text-[12px]"
+              />
+            </Field>
+
+            <div className="flex flex-wrap items-center gap-3 text-[11.5px]">
+              <span>
+                <span className="font-mono tabular-nums">{rows.length}</span>{' '}
+                parsed
+              </span>
+              {errors.length > 0 && (
+                <span className="text-destructive">
+                  <span className="font-mono tabular-nums">{errors.length}</span>{' '}
+                  parse error{errors.length === 1 ? '' : 's'}
+                </span>
+              )}
+              {oversize && (
+                <span className="inline-flex items-center gap-1 text-destructive">
+                  <AlertTriangle className="size-3" />
+                  Exceeds {BATCH_MAX}-row limit — split the file.
+                </span>
+              )}
+            </div>
+
+            {errors.length > 0 && (
+              <div className="max-h-40 overflow-auto rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[11.5px]">
+                <ul className="space-y-1">
+                  {errors.slice(0, 20).map((e) => (
+                    <li key={e.lineNo} className="flex items-start gap-2">
+                      <span className="mt-0.5 font-mono text-[10.5px] text-destructive">
+                        L{e.lineNo}
+                      </span>
+                      <span className="text-destructive">{e.message}</span>
+                      <span className="flex-1" />
+                      <span className="truncate font-mono text-[10.5px] text-[var(--fg-3)]">
+                        {e.raw}
+                      </span>
+                    </li>
+                  ))}
+                  {errors.length > 20 && (
+                    <li className="text-destructive/80">
+                      …and {errors.length - 20} more
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            {rows.length > 0 && errors.length === 0 && !oversize && (
+              <BatchPreview rows={rows} />
+            )}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleOpenChange(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={submit.isPending || !canSubmit}>
+                {submit.isPending
+                  ? 'Submitting…'
+                  : `Plan ${rows.length} payout${rows.length === 1 ? '' : 's'}`}
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : (
+          <BatchResultView
+            result={result}
+            onViewBatch={() => onViewBatch(result.batchId)}
+            onClose={() => handleOpenChange(false)}
+            onReset={() => {
+              setCsv('')
+              setResult(null)
+            }}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function BatchPreview({ rows }: { rows: BatchCsvRow[] }) {
+  const preview = rows.slice(0, 6)
+  return (
+    <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2">
+      <div className="eyebrow mb-1">Preview</div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[11.5px]">
+          <thead className="text-[10px] uppercase tracking-wider text-[var(--fg-3)]">
+            <tr>
+              <th className="py-1 pr-3 text-left">L</th>
+              <th className="py-1 pr-3 text-left">Chain</th>
+              <th className="py-1 pr-3 text-left">Token</th>
+              <th className="py-1 pr-3 text-left">Amount</th>
+              <th className="py-1 text-left">Destination</th>
+            </tr>
+          </thead>
+          <tbody>
+            {preview.map((r) => (
+              <tr key={r.lineNo} className="border-t border-border">
+                <td className="py-1 pr-3 font-mono text-[10.5px] text-[var(--fg-3)]">
+                  {r.lineNo}
+                </td>
+                <td className="py-1 pr-3">
+                  <ChainPill chainId={r.chainId} />
+                </td>
+                <td className="py-1 pr-3 font-mono">{r.token}</td>
+                <td className="py-1 pr-3 font-mono tabular-nums">
+                  {r.amount}
+                </td>
+                <td className="py-1 font-mono text-[11px] text-[var(--fg-2)]">
+                  {truncateAddr(r.destinationAddress, 8, 6)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > preview.length && (
+        <div className="mt-1 text-[11px] text-[var(--fg-3)]">
+          + {rows.length - preview.length} more
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BatchResultView({
+  result,
+  onViewBatch,
+  onClose,
+  onReset,
+}: {
+  result: PayoutBatchResponse
+  onViewBatch: () => void
+  onClose: () => void
+  onReset: () => void
+}) {
+  const { summary, results, batchId } = result
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-[12px]">
+        <Layers className="size-3.5 text-primary" />
+        <span className="font-mono text-[11px] text-[var(--fg-2)]">
+          {truncateAddr(batchId, 10, 6)}
+        </span>
+        <CopyButton value={batchId} />
+        <span className="flex-1" />
+        <Badge variant="success">
+          {summary.planned} planned
+        </Badge>
+        {summary.failed > 0 && (
+          <Badge variant="danger">{summary.failed} failed</Badge>
+        )}
+      </div>
+
+      <div className="max-h-[360px] overflow-auto rounded-md border border-border">
+        <table className="w-full text-[11.5px]">
+          <thead className="sticky top-0 bg-[var(--bg-2)] text-[10px] uppercase tracking-wider text-[var(--fg-3)]">
+            <tr>
+              <th className="py-1.5 pl-3 pr-2 text-left">#</th>
+              <th className="py-1.5 pr-2 text-left">Status</th>
+              <th className="py-1.5 pr-2 text-left">Payout</th>
+              <th className="py-1.5 pr-3 text-left">Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {results.map((row) => (
+              <tr key={row.index} className="border-t border-border align-top">
+                <td className="py-1.5 pl-3 pr-2 font-mono text-[10.5px] text-[var(--fg-3)]">
+                  {row.index}
+                </td>
+                <td className="py-1.5 pr-2">
+                  {row.status === 'planned' ? (
+                    <Badge variant="success">planned</Badge>
+                  ) : (
+                    <Badge variant="danger">failed</Badge>
+                  )}
+                </td>
+                <td className="py-1.5 pr-2">
+                  {row.status === 'planned' ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[10.5px]">
+                        {truncateAddr(row.payout.id, 8, 6)}
+                      </span>
+                      <CopyButton value={row.payout.id} />
+                    </div>
+                  ) : (
+                    <span className="text-[var(--fg-3)]">—</span>
+                  )}
+                </td>
+                <td className="py-1.5 pr-3">
+                  {row.status === 'planned' ? (
+                    <span className="text-[var(--fg-2)]">
+                      <ChainPill chainId={row.payout.chainId} />{' '}
+                      <span className="font-mono">{row.payout.token}</span>
+                    </span>
+                  ) : (
+                    <div className="space-y-0.5">
+                      {row.error.code && (
+                        <div className="font-mono text-[10px] uppercase tracking-wider text-destructive">
+                          {row.error.code}
+                        </div>
+                      )}
+                      <div className="break-all text-destructive">
+                        {row.error.message}
+                      </div>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onReset}>
+          Submit another
+        </Button>
+        <Button type="button" variant="outline" onClick={onClose}>
+          Close
+        </Button>
+        {summary.planned > 0 && (
+          <Button type="button" onClick={onViewBatch}>
+            <Layers className="size-3.5" /> View batch
+          </Button>
+        )}
+      </DialogFooter>
+    </div>
   )
 }

@@ -196,18 +196,50 @@ export function FeeWalletsPage() {
               Fund this address externally. The same{' '}
               <span className="font-mono">(family, label)</span> always derives
               to the same address.
+              {register.data.feeWallet.family === 'evm' &&
+                register.data.feeWallet.chainIds.length > 1 && (
+                  <>
+                    {' '}
+                    On EVM the same address is registered across every wired
+                    chain — one top-up funds all of them.
+                  </>
+                )}
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <div className="flex items-center gap-3 rounded-md border border-border bg-secondary px-3 py-2.5">
               <Wallet className="size-4 text-[var(--fg-2)]" />
               <span className="font-mono text-[11px] text-[var(--fg-2)]">
-                {register.data.feeWallet.label} · chain{' '}
-                {register.data.feeWallet.chainId}
+                {register.data.feeWallet.label} ·{' '}
+                <span className="uppercase tracking-wider">
+                  {register.data.feeWallet.family}
+                </span>{' '}
+                ·{' '}
+                {register.data.feeWallet.chainIds.length === 1
+                  ? `chain ${register.data.feeWallet.chainIds[0]}`
+                  : `${register.data.feeWallet.chainIds.length} chains`}
               </span>
               <div className="flex-1" />
               <Addr value={register.data.feeWallet.address} truncated={false} />
             </div>
+            {register.data.feeWallet.chainIds.length > 1 && (
+              <div className="flex flex-wrap gap-1.5">
+                {register.data.feeWallet.chainIds.map((cid) => (
+                  <span
+                    key={cid}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-[var(--bg-2)] px-2 py-0.5 text-[11px]"
+                  >
+                    <span
+                      className="size-[6px] rounded-full"
+                      style={{ background: chainInfo(cid).color }}
+                    />
+                    <span className="text-[var(--fg-2)]">
+                      {chainInfo(cid).name}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
