@@ -10,7 +10,9 @@ import { toast } from 'sonner'
 import {
   AlertTriangle,
   ArrowUpDown,
+  Ban,
   ChevronDown,
+  Fuel,
   Info,
   KeyRound,
   Layers,
@@ -18,8 +20,6 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Split,
-  Wallet,
   X,
 } from 'lucide-react'
 
@@ -43,7 +43,7 @@ import type {
   GatewayPayout,
   Merchant,
   PayoutEstimate,
-  PayoutFeeWalletSnapshot,
+  PayoutEstimateSource,
   PayoutListResponse,
 } from '@/lib/types'
 
@@ -52,7 +52,6 @@ import { ChainTokenPicker } from '@/components/ChainTokenPicker'
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
 import { MerchantSwitcher } from '@/components/MerchantSwitcher'
-import { QrCode } from '@/components/QrCode'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -139,7 +138,10 @@ type PayoutFilter = 'all' | 'pending' | 'confirmed' | 'failed'
 
 const STATUS_CSV: Record<PayoutFilter, string | undefined> = {
   all: undefined,
-  pending: 'planned,reserved,submitted',
+  // v2.2: the gateway reserves synchronously at create time, so `planned` is
+  // no longer inserted. `topping-up` is the intermediate state between
+  // `reserved` and `submitted` when gas auto-sponsoring kicks in.
+  pending: 'reserved,topping-up,submitted',
   confirmed: 'confirmed',
   failed: 'failed,canceled',
 }
@@ -189,6 +191,10 @@ export function PayoutsPage() {
       const qs = new URLSearchParams({
         limit: String(PAGE_SIZE),
         offset: String(pageParam),
+        // v2.2: the gateway can insert internal `gas_top_up` sibling rows that
+        // are merchant-noise by default. Filtering to `standard` matches the
+        // merchant API's default and keeps the dashboard's list legible.
+        kind: 'standard',
       })
       const s = STATUS_CSV[filter]
       if (s) qs.set('status', s)
@@ -472,12 +478,12 @@ function PayoutRow({
               <CopyButton value={po.id} />
             </span>
             {po.feeTier && <FeeTierBadge tier={po.feeTier} />}
-            {po.allowMultiSource && (
+            {po.topUpTxHash && (
               <span
                 className="inline-flex items-center text-[var(--fg-3)]"
-                title="allowMultiSource: may split across wallets"
+                title="Gas auto-sponsored by another HD address"
               >
-                <Split className="size-3" />
+                <Fuel className="size-3" />
               </span>
             )}
             {po.batchId && (
@@ -573,36 +579,52 @@ function PayoutDetailSheet({
   const po = detail.data?.payout
   const meta = po ? lookup(po.chainId, po.token) : undefined
 
-  // Multi-leg: prefer explicit txHashes[]; fall back to the single-leg txHash scalar.
-  const legHashes = po
-    ? po.txHashes && po.txHashes.length > 0
-      ? po.txHashes
-      : po.txHash
-        ? [po.txHash]
-        : []
-    : []
-  const legSources = po
-    ? po.sourceAddresses && po.sourceAddresses.length > 0
-      ? po.sourceAddresses
-      : po.sourceAddress
-        ? [po.sourceAddress]
-        : []
-    : []
-  const isMultiLeg = legHashes.length > 1 || legSources.length > 1
-  const orphanLegs =
-    po?.status === 'failed' && (po.txHashes?.length ?? 0) > 0
+  const qc = useQueryClient()
+  const cancel = useMutation({
+    mutationFn: () =>
+      api<{ payout: GatewayPayout }>(
+        `/api/mg/${encodeURIComponent(merchantId)}/payouts/${encodeURIComponent(payoutId!)}/cancel`,
+        { method: 'POST' },
+      ),
+    onSuccess: () => {
+      toast.success('Payout canceled')
+      void detail.refetch()
+      qc.invalidateQueries({ queryKey: ['payouts', 'list', merchantId] })
+    },
+    onError: (e: unknown) => toast.error(payoutErrorMessage(e)),
+  })
+
+  const canCancel = po?.status === 'reserved'
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent>
         <SheetHeader className="space-y-2">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <SheetTitle className="truncate font-mono text-base">
               {payoutId ? truncateAddr(payoutId, 10, 8) : ''}
             </SheetTitle>
             {payoutId && <CopyButton value={payoutId} />}
             {po && <StatusBadge status={po.status} />}
             {po?.feeTier && <FeeTierBadge tier={po.feeTier} />}
+            {po?.kind === 'gas_top_up' && (
+              <Badge variant="outline" className="uppercase tracking-wider">
+                <Fuel className="size-3" /> gas top-up
+              </Badge>
+            )}
+            <div className="flex-1" />
+            {po && canCancel && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={cancel.isPending}
+                onClick={() => cancel.mutate()}
+              >
+                <Ban className="size-3.5" />
+                {cancel.isPending ? 'Canceling…' : 'Cancel'}
+              </Button>
+            )}
           </div>
         </SheetHeader>
 
@@ -615,23 +637,6 @@ function PayoutDetailSheet({
             </div>
           ) : (
             <div className="space-y-5">
-              {orphanLegs && (
-                <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
-                  <div className="flex items-center gap-2 text-destructive">
-                    <AlertTriangle className="size-4 shrink-0" />
-                    <div className="text-sm font-semibold">
-                      Orphan on-chain legs detected
-                    </div>
-                  </div>
-                  <div className="mt-1.5 text-[11.5px] text-destructive/90">
-                    This payout failed, but {po.txHashes!.length} leg
-                    {po.txHashes!.length === 1 ? ' was' : 's were'} already
-                    broadcast on-chain. Manual reconciliation required —{' '}
-                    <span className="font-semibold">do not retry</span>.
-                  </div>
-                </div>
-              )}
-
               <KV>
                 <KVItem label="Chain">
                   <ChainPill chainId={po.chainId} />
@@ -677,10 +682,8 @@ function PayoutDetailSheet({
                     <span className="text-[var(--fg-3)]">—</span>
                   )}
                 </KVItem>
-                <KVItem label="Multi-source">
-                  <span className="font-mono text-xs">
-                    {po.allowMultiSource ? 'enabled' : 'off'}
-                  </span>
+                <KVItem label="Kind">
+                  <span className="font-mono text-xs">{po.kind}</span>
                 </KVItem>
 
                 <KVItem label="Fee estimate">
@@ -708,43 +711,65 @@ function PayoutDetailSheet({
                   <Addr value={po.destinationAddress} truncated={false} />
                 </KVItem>
 
-                <KVItem label={isMultiLeg ? 'Source wallets' : 'Source'} wide>
-                  {legSources.length === 0 ? (
-                    <span className="text-[var(--fg-2)]">—</span>
-                  ) : legSources.length === 1 ? (
-                    <Addr value={legSources[0]} truncated={false} />
+                <KVItem label="Source" wide>
+                  {po.sourceAddress ? (
+                    <Addr value={po.sourceAddress} truncated={false} />
                   ) : (
-                    <ul className="space-y-1">
-                      {legSources.map((a, i) => (
-                        <li key={`${a}-${i}`} className="flex items-center gap-2">
-                          <span className="text-[11px] text-[var(--fg-3)]">
-                            #{i + 1}
-                          </span>
-                          <Addr value={a} truncated={false} />
-                        </li>
-                      ))}
-                    </ul>
+                    <span className="text-[var(--fg-2)]">—</span>
                   )}
                 </KVItem>
 
-                <KVItem label={isMultiLeg ? 'Tx hashes' : 'Tx hash'} wide>
-                  {legHashes.length === 0 ? (
-                    <span className="text-[var(--fg-2)]">pending</span>
-                  ) : legHashes.length === 1 ? (
-                    <Addr value={legHashes[0]} truncated={false} />
+                <KVItem label="Tx hash" wide>
+                  {po.txHash ? (
+                    <Addr value={po.txHash} truncated={false} />
                   ) : (
-                    <ul className="space-y-1">
-                      {legHashes.map((h, i) => (
-                        <li key={`${h}-${i}`} className="flex items-center gap-2">
-                          <span className="text-[11px] text-[var(--fg-3)]">
-                            #{i + 1}
-                          </span>
-                          <Addr value={h} truncated={false} />
-                        </li>
-                      ))}
-                    </ul>
+                    <span className="text-[var(--fg-2)]">pending</span>
                   )}
                 </KVItem>
+
+                {po.topUpTxHash && (
+                  <KVItem label="Gas top-up" wide>
+                    <div className="space-y-1.5 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-[11.5px]">
+                      <div className="flex items-center gap-1.5 text-[var(--fg-2)]">
+                        <Fuel className="size-3.5 text-[var(--fg-3)]" />
+                        <span>
+                          Auto-sponsored before broadcast. Sibling rows of kind{' '}
+                          <span className="font-mono">gas_top_up</span> carry
+                          the full detail.
+                        </span>
+                      </div>
+                      {po.topUpSponsorAddress && (
+                        <div className="flex items-center gap-2">
+                          <span className="eyebrow">sponsor</span>
+                          <Addr
+                            value={po.topUpSponsorAddress}
+                            truncated={false}
+                          />
+                        </div>
+                      )}
+                      {po.topUpAmountRaw && (
+                        <div className="flex items-center gap-2">
+                          <span className="eyebrow">amount</span>
+                          <span className="font-mono text-xs">
+                            {po.topUpAmountRaw} (raw)
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="eyebrow">tx</span>
+                        <Addr value={po.topUpTxHash} truncated={false} />
+                      </div>
+                    </div>
+                  </KVItem>
+                )}
+
+                {po.parentPayoutId && (
+                  <KVItem label="Parent payout" wide>
+                    <span className="font-mono text-xs">
+                      {truncateAddr(po.parentPayoutId, 10, 6)}
+                    </span>
+                  </KVItem>
+                )}
 
                 <KVItem label="Created">
                   <span className="font-mono text-xs">{fmtLocal(po.createdAt)}</span>
@@ -1186,8 +1211,16 @@ function payoutErrorMessage(e: unknown): string {
         return 'Unsupported fee tier for this chain — picking medium.'
       case 'BATCH_TOO_LARGE':
         return 'Batch exceeds 100 rows. Split the file and retry.'
-      case 'INSUFFICIENT_TOTAL_BALANCE':
-        return 'Even the sum of every fee wallet falls short. Top up before retrying.'
+      case 'INSUFFICIENT_BALANCE_ANY_SOURCE':
+        return 'Not enough balance on any source address. Fund one of your HD addresses before retrying.'
+      case 'NO_GAS_SPONSOR_AVAILABLE':
+        return 'The source has the token but no gas sponsor has native. Fund a sponsor address with native gas.'
+      case 'MAX_AMOUNT_EXCEEDS_NET_SPENDABLE':
+        return 'Amount leaves no room for gas. Try the suggested amount or lower it manually.'
+      case 'FEE_ESTIMATE_FAILED':
+        return 'Chain gas estimator is flaky right now — please retry in a few seconds.'
+      case 'PAYOUT_NOT_CANCELABLE':
+        return 'This payout is past the cancelable window — it has already been broadcast.'
       case 'ORACLE_FAILED':
         return 'Price oracle unreachable — USD pegging unavailable right now.'
       case 'TOKEN_NOT_SUPPORTED':
@@ -1225,7 +1258,6 @@ function CreatePayoutDialog({
   const [amount, setAmount] = React.useState('')
   const [destinationAddress, setDestinationAddress] = React.useState('')
   const [feeTier, setFeeTier] = React.useState<FeeTier>('medium')
-  const [allowMultiSource, setAllowMultiSource] = React.useState(false)
   const [webhookUrl, setWebhookUrl] = React.useState('')
   const [webhookSecret, setWebhookSecret] = React.useState('')
   // Operator explicitly opted in to submit despite a funding shortfall. Scoped
@@ -1330,7 +1362,7 @@ function CreatePayoutDialog({
     return meta?.decimals ?? null
   }, [estimate.data, chainId, lookup])
 
-  /* ── v2.1 warnings / funding ─────────────────────────── */
+  /* ── v2.2 source / top-up / warnings ───────────────────── */
 
   // Stable reference so downstream useMemos (estimateSignature below) don't
   // churn on every render when no estimate has landed yet.
@@ -1338,31 +1370,30 @@ function CreatePayoutDialog({
     () => estimate.data?.warnings ?? [],
     [estimate.data?.warnings],
   )
-  const feeWallet = estimate.data?.feeWallet ?? null
-  const fundingRequired = estimate.data?.fundingRequired ?? null
-  const noFeeWallet = warnings.includes('no_fee_wallet_registered')
-  const balanceReadFailed = warnings.includes('rpc_balance_read_failed')
-  const balanceZero = warnings.includes('fee_wallet_native_balance_zero')
+  const source = estimate.data?.source ?? null
+  const topUp = estimate.data?.topUp ?? null
+  const alternatives = estimate.data?.alternatives ?? []
+  const noSourceBalance = warnings.includes(
+    'no_source_address_has_sufficient_token_balance',
+  )
+  const noGasSponsor = warnings.includes('no_gas_sponsor_available')
+  const amountExceedsSpendable = warnings.includes(
+    'max_amount_exceeds_net_spendable',
+  )
 
-  const shortfallRaw =
-    fundingRequired && (fundingRequired[effectiveFeeTier] ?? null)
-  const hasShortfall =
-    shortfallRaw !== null && shortfallRaw !== undefined && shortfallRaw !== '0'
-
-  // Identity of the estimate snapshot the operator has acknowledged. Used to
-  // auto-clear the proceed-anyway opt-in whenever a fresh estimate arrives
-  // with different funding math.
+  // Identity of the estimate snapshot the operator has acknowledged. Scoped
+  // tight so fresh math always re-prompts the "proceed anyway" decision.
   const estimateSignature = React.useMemo(() => {
     if (!estimate.data) return null
     return [
-      feeWallet?.address ?? '',
-      feeWallet?.nativeBalance ?? '',
-      fundingRequired?.low ?? '',
-      fundingRequired?.medium ?? '',
-      fundingRequired?.high ?? '',
+      source?.address ?? '',
+      source?.nativeBalance ?? '',
+      source?.tokenBalance ?? '',
+      topUp?.amountRaw ?? '',
+      topUp?.sponsor?.address ?? '',
       warnings.join(','),
     ].join('|')
-  }, [estimate.data, feeWallet, fundingRequired, warnings])
+  }, [estimate.data, source, topUp, warnings])
 
   const proceedAnyway =
     proceedAnywaySignature !== null &&
@@ -1384,7 +1415,6 @@ function CreatePayoutDialog({
       if (tieringSupported) {
         body.feeTier = effectiveFeeTier
       }
-      if (allowMultiSource) body.allowMultiSource = true
       if (webhookUrl.trim()) {
         body.webhookUrl = webhookUrl.trim()
         body.webhookSecret = webhookSecret.trim()
@@ -1405,6 +1435,41 @@ function CreatePayoutDialog({
     onError: (e: unknown) => toast.error(payoutErrorMessage(e)),
   })
 
+  // Server returns suggestedAmountRaw on MAX_AMOUNT_EXCEEDS_NET_SPENDABLE.
+  // Expose it so the amount field can render a "Use suggested" button that
+  // auto-fills the right value for the current mode.
+  const createErrorCode =
+    create.error instanceof ApiError ? create.error.code ?? null : null
+  const suggestedAmountRaw =
+    create.error instanceof ApiError &&
+    create.error.code === 'MAX_AMOUNT_EXCEEDS_NET_SPENDABLE' &&
+    create.error.details &&
+    typeof (create.error.details as { suggestedAmountRaw?: unknown })
+      .suggestedAmountRaw === 'string'
+      ? ((create.error.details as { suggestedAmountRaw: string })
+          .suggestedAmountRaw as string)
+      : null
+
+  const applySuggestedAmount = () => {
+    if (!suggestedAmountRaw) return
+    if (mode === 'raw') {
+      setAmount(suggestedAmountRaw)
+    } else if (mode === 'amount' && tokenMeta) {
+      setAmount(formatUnits(suggestedAmountRaw, tokenMeta.decimals))
+    } else {
+      // USD mode has no direct raw equivalent — flip the user to raw.
+      setMode('raw')
+      setAmount(suggestedAmountRaw)
+    }
+    create.reset()
+  }
+
+  // Block submit on warnings that make the plan unambiguously impossible.
+  // `no_source_address_has_sufficient_token_balance` and `no_gas_sponsor_available`
+  // are gates; `max_amount_exceeds_net_spendable` requires operator ack.
+  const hardBlocked = noSourceBalance || noGasSponsor
+  const needsAckMaxAmount = amountExceedsSpendable && !proceedAnyway
+
   const canSubmit =
     RAW_RE.test(chainId) &&
     /^[A-Z0-9]+$/.test(token) &&
@@ -1413,8 +1478,8 @@ function CreatePayoutDialog({
     destinationAddress.trim().length > 0 &&
     !webhookMismatch &&
     webhookSecretValid &&
-    !noFeeWallet &&
-    (!hasShortfall || proceedAnyway)
+    !hardBlocked &&
+    !needsAckMaxAmount
 
   // Guard against stale fee tiers. If the estimate is older than 60s,
   // refetch before submitting so the operator sees any delta before planning.
@@ -1458,7 +1523,7 @@ function CreatePayoutDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:!max-w-2xl">
         <DialogHeader>
           <DialogTitle>Plan payout</DialogTitle>
           <DialogDescription>
@@ -1586,14 +1651,16 @@ function CreatePayoutDialog({
             }}
           />
 
-          {noFeeWallet && <NoFeeWalletBanner chainId={chainId} />}
+          {noSourceBalance && (
+            <NoSourceBalanceBanner token={token || 'this token'} />
+          )}
 
-          {feeWallet && (hasShortfall || balanceZero) && (
-            <FundingPanel
-              feeWallet={feeWallet}
-              fundingRequired={fundingRequired}
-              tier={effectiveFeeTier}
-              nativeDecimals={nativeDecimals}
+          {noGasSponsor && <NoGasSponsorBanner />}
+
+          {amountExceedsSpendable && source && (
+            <MaxAmountPanel
+              source={source}
+              tokenMeta={tokenMeta}
               proceedAnyway={proceedAnyway}
               onToggleProceed={(v) =>
                 setProceedAnywaySignature(v ? estimateSignature : null)
@@ -1601,33 +1668,46 @@ function CreatePayoutDialog({
             />
           )}
 
-          {balanceReadFailed && (
-            <RpcFlapNotice
-              onRefresh={() => {
-                void estimate.refetch()
-              }}
-              loading={estimate.isFetching}
+          {createErrorCode === 'MAX_AMOUNT_EXCEEDS_NET_SPENDABLE' &&
+            suggestedAmountRaw && (
+              <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+                  <div className="flex-1 text-[11.5px] text-destructive/90">
+                    <div className="font-semibold text-destructive">
+                      Amount eats the gas headroom.
+                    </div>
+                    <div className="mt-0.5">
+                      Suggested send:{' '}
+                      <span className="font-mono">
+                        {tokenMeta
+                          ? formatUnits(suggestedAmountRaw, tokenMeta.decimals)
+                          : suggestedAmountRaw}
+                      </span>{' '}
+                      {token} (amount − gas).
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={applySuggestedAmount}
+                  >
+                    Use suggested
+                  </Button>
+                </div>
+              </div>
+            )}
+
+          {source && !noSourceBalance && (
+            <SourcePanel
+              source={source}
+              topUp={topUp}
+              alternatives={alternatives}
+              tokenMeta={tokenMeta}
+              nativeDecimals={nativeDecimals}
             />
           )}
-
-          <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-[12px]">
-            <input
-              type="checkbox"
-              checked={allowMultiSource}
-              onChange={(e) => setAllowMultiSource(e.target.checked)}
-              className="mt-0.5 size-3.5 cursor-pointer accent-primary"
-            />
-            <div>
-              <div className="font-medium text-[var(--fg-1)]">
-                Split across fee wallets if needed
-              </div>
-              <div className="mt-0.5 text-[11.5px] text-[var(--fg-2)]">
-                When no single wallet has enough balance, draw from multiple.
-                Recipient sees one on-chain tx per contributing wallet. Leaves
-                an audit trail even on partial failure.
-              </div>
-            </div>
-          </label>
 
           <details className="rounded-md border border-border bg-[var(--bg-2)] open:pb-3">
             <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-[var(--fg-2)]">
@@ -1681,28 +1761,26 @@ function CreatePayoutDialog({
   )
 }
 
-/* ── estimate warning panels ───────────────────────────── */
+/* ── v2.2 estimate panels ───────────────────────────────── */
 
-function NoFeeWalletBanner({ chainId }: { chainId: string }) {
-  const info = chainId ? chainInfo(parseInt(chainId, 10)) : null
-  const name = info?.name ?? 'this chain'
+function NoSourceBalanceBanner({ token }: { token: string }) {
   return (
     <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
-      <div className="flex items-center gap-2 text-destructive">
-        <AlertTriangle className="size-3.5 shrink-0" />
-        <div className="text-sm font-semibold">
-          No fee wallet registered on {name}
+      <div className="flex items-start gap-2 text-destructive">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold">
+            No source address has enough {token}
+          </div>
+          <div className="mt-0.5 text-[11.5px] text-destructive/90">
+            Fund one of your HD addresses with {token} before planning this
+            payout. Any pool address auto-qualifies as a source — see Balances
+            for current holdings.
+          </div>
         </div>
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11.5px] text-destructive/90">
-        <span>
-          The executor can&rsquo;t sign without a funded wallet. Register one
-          first, then retry this payout.
-        </span>
-        <div className="flex-1" />
         <Button size="sm" variant="outline" asChild>
-          <Link to="/fee-wallets">
-            <Wallet className="size-3.5" /> Register fee wallet
+          <Link to="/balances">
+            <Fuel className="size-3.5" /> Open balances
           </Link>
         </Button>
       </div>
@@ -1710,147 +1788,54 @@ function NoFeeWalletBanner({ chainId }: { chainId: string }) {
   )
 }
 
-function RpcFlapNotice({
-  onRefresh,
-  loading,
-}: {
-  onRefresh: () => void
-  loading: boolean
-}) {
+function NoGasSponsorBanner() {
   return (
-    <div className="flex items-start gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-[11.5px] text-[var(--fg-2)]">
-      <Info className="mt-0.5 size-3.5 shrink-0 text-[var(--fg-3)]" />
-      <span className="flex-1">
-        Couldn&rsquo;t verify the fee wallet&rsquo;s balance right now — the
-        tier quote is still valid. Proceed with caution; the executor will
-        re-check at broadcast.
-      </span>
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        onClick={onRefresh}
-        disabled={loading}
-      >
-        <RefreshCw className={loading ? 'size-3 animate-spin' : 'size-3'} />
-        Refresh
-      </Button>
+    <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
+      <div className="flex items-start gap-2 text-destructive">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold">No gas sponsor available</div>
+          <div className="mt-0.5 text-[11.5px] text-destructive/90">
+            A source has enough token, but no other HD address has enough
+            native to cover gas. Fund a pool address with native before the
+            executor can auto-sponsor the top-up.
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
 
-function FundingPanel({
-  feeWallet,
-  fundingRequired,
-  tier,
-  nativeDecimals,
+function MaxAmountPanel({
+  source,
+  tokenMeta,
   proceedAnyway,
   onToggleProceed,
 }: {
-  feeWallet: PayoutFeeWalletSnapshot
-  fundingRequired: PayoutEstimate['fundingRequired']
-  tier: FeeTier
-  nativeDecimals: number | null
+  source: PayoutEstimateSource
+  tokenMeta: ChainToken | null
   proceedAnyway: boolean
   onToggleProceed: (v: boolean) => void
 }) {
-  const needRaw = fundingRequired?.[tier] ?? null
-  const needsAny = needRaw !== null && needRaw !== '0'
-  const nativeSymbol = fundingRequired?.nativeSymbol ?? feeWallet.nativeSymbol
-  const needFormatted =
-    needRaw && nativeDecimals != null
-      ? formatUnits(needRaw, nativeDecimals)
-      : null
-
-  // BIP-21-style URI: native-symbol as scheme. Spec is the handoff's
-  // recommendation; wallet compatibility varies by chain but the user can
-  // still copy the address manually.
-  const paymentUri =
-    needFormatted && needsAny
-      ? `${nativeSymbol.toLowerCase()}:${feeWallet.address}?amount=${needFormatted}`
-      : null
-
-  const balFormatted =
-    feeWallet.nativeBalance && nativeDecimals != null
-      ? formatUnits(feeWallet.nativeBalance, nativeDecimals)
-      : null
-
+  const bal = tokenMeta
+    ? formatUnits(source.tokenBalance, tokenMeta.decimals)
+    : source.tokenBalance
   return (
-    <div className="space-y-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-3">
-      <div className="flex items-start gap-2">
-        <Wallet className="mt-0.5 size-4 shrink-0 text-warn" />
-        <div className="flex-1">
-          <div className="text-sm font-semibold text-warn">
-            Fee wallet needs funding
-          </div>
-          <div className="mt-0.5 text-[11.5px] text-[var(--fg-2)]">
-            {fundingRequired?.note ??
-              'Top up the fee wallet before the executor picks this payout up (next tick ≈ 30s).'}
+    <div className="space-y-2.5 rounded-md border border-warn/40 bg-warn/10 px-3 py-3 text-[11.5px]">
+      <div className="flex items-start gap-2 text-warn">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold">Amount exceeds net spendable</div>
+          <div className="mt-0.5 text-[var(--fg-2)]">
+            Sending this much would leave the source unable to cover gas.
+            Either lower the amount or proceed and let the backend reject with
+            a suggested value. Source holds{' '}
+            <span className="font-mono tabular-nums">{bal}</span>{' '}
+            {source.tokenSymbol}.
           </div>
         </div>
       </div>
-
-      <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[11.5px]">
-        <div className="eyebrow">Wallet</div>
-        <div className="min-w-0">
-          <Addr value={feeWallet.address} truncated={false} />
-          <div className="mt-0.5 text-[11px] text-[var(--fg-3)]">
-            balance{' '}
-            <span className="font-mono tabular-nums text-[var(--fg-2)]">
-              {balFormatted ?? '—'} {nativeSymbol}
-            </span>
-            {feeWallet.tokenBalance != null && (
-              <>
-                {' · '}
-                <span className="font-mono tabular-nums text-[var(--fg-2)]">
-                  {feeWallet.tokenBalance} (raw){' '}
-                  {feeWallet.tokenSymbol}
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-
-        {needsAny && (
-          <>
-            <div className="eyebrow">Deposit</div>
-            <div className="min-w-0">
-              <div className="font-mono text-sm font-semibold tabular-nums">
-                {needFormatted ?? needRaw} {nativeSymbol}
-              </div>
-              {needRaw && needFormatted && (
-                <div className="font-mono text-[10.5px] text-[var(--fg-3)]">
-                  raw {needRaw}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
-      {paymentUri && needFormatted && (
-        <div className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2.5">
-          <QrCode value={paymentUri} size={108} />
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <div className="text-[11px] text-[var(--fg-2)]">
-              Send{' '}
-              <span className="font-mono font-semibold">
-                {needFormatted} {nativeSymbol}
-              </span>{' '}
-              to the address above. The executor will pick up the next tick
-              after the deposit confirms.
-            </div>
-            <div className="flex items-center gap-2">
-              <code className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-[var(--fg-2)]">
-                {paymentUri}
-              </code>
-              <CopyButton value={paymentUri} />
-            </div>
-          </div>
-        </div>
-      )}
-
-      <label className="flex cursor-pointer items-start gap-2 rounded-md border border-warn/40 bg-card px-3 py-2 text-[11.5px]">
+      <label className="flex cursor-pointer items-start gap-2 rounded-md border border-warn/40 bg-card px-3 py-2">
         <input
           type="checkbox"
           checked={proceedAnyway}
@@ -1858,9 +1843,120 @@ function FundingPanel({
           className="mt-0.5 size-3.5 cursor-pointer accent-warn"
         />
         <span className="text-[var(--fg-1)]">
-          I&rsquo;ll fund the wallet before the executor picks this up.
+          I understand — submit anyway and apply the backend&rsquo;s suggested
+          amount if it rejects.
         </span>
       </label>
+    </div>
+  )
+}
+
+function SourcePanel({
+  source,
+  topUp,
+  alternatives,
+  tokenMeta,
+  nativeDecimals,
+}: {
+  source: PayoutEstimateSource
+  topUp: PayoutEstimate['topUp']
+  alternatives: PayoutEstimateSource[]
+  tokenMeta: ChainToken | null
+  nativeDecimals: number | null
+}) {
+  const fmtToken = (raw: string) =>
+    tokenMeta ? formatUnits(raw, tokenMeta.decimals) : raw
+  const fmtNative = (raw: string) =>
+    nativeDecimals != null ? formatUnits(raw, nativeDecimals) : raw
+
+  const sponsorMissing = topUp && topUp.sponsor === null
+  const sponsorNeeded = topUp !== null && !sponsorMissing
+
+  return (
+    <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-3 text-[11.5px]">
+      <div className="eyebrow mb-1.5">Picked source</div>
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Addr value={source.address} truncated={false} />
+        </div>
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[var(--fg-2)]">
+          <span>
+            <span className="font-mono tabular-nums text-[var(--fg-1)]">
+              {fmtToken(source.tokenBalance)}
+            </span>{' '}
+            {source.tokenSymbol}
+          </span>
+          <span className="text-[var(--fg-3)]">·</span>
+          <span>
+            <span className="font-mono tabular-nums text-[var(--fg-1)]">
+              {fmtNative(source.nativeBalance)}
+            </span>{' '}
+            {source.nativeSymbol}
+          </span>
+        </div>
+      </div>
+
+      {sponsorNeeded && topUp && topUp.sponsor && (
+        <div className="mt-2.5 space-y-1.5 rounded-md border border-border bg-card px-3 py-2">
+          <div className="flex items-center gap-1.5 text-[var(--fg-2)]">
+            <Fuel className="size-3.5 text-[var(--fg-3)]" />
+            <span>
+              Gas auto-sponsored:{' '}
+              <span className="font-mono tabular-nums">
+                {fmtNative(topUp.amountRaw)}
+              </span>{' '}
+              {source.nativeSymbol} moved from sponsor before broadcast.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="eyebrow">sponsor</span>
+            <Addr value={topUp.sponsor.address} truncated={false} />
+          </div>
+        </div>
+      )}
+
+      {sponsorMissing && (
+        <div className="mt-2.5 flex items-start gap-2 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-destructive">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            Source lacks gas and no other HD address has enough native to
+            sponsor. Submit will fail with{' '}
+            <span className="font-mono">NO_GAS_SPONSOR_AVAILABLE</span>.
+          </span>
+        </div>
+      )}
+
+      {alternatives.length > 0 && (
+        <details className="mt-2.5">
+          <summary className="cursor-pointer select-none text-[var(--fg-3)] hover:text-[var(--fg-2)]">
+            {alternatives.length} alternative source
+            {alternatives.length === 1 ? '' : 's'}
+          </summary>
+          <ul className="mt-1.5 space-y-1">
+            {alternatives.map((alt) => (
+              <li
+                key={alt.address}
+                className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+              >
+                <span className="font-mono text-[10.5px] text-[var(--fg-2)]">
+                  {truncateAddr(alt.address, 8, 6)}
+                </span>
+                <span className="text-[10.5px] text-[var(--fg-3)]">
+                  <span className="font-mono tabular-nums">
+                    {fmtToken(alt.tokenBalance)}
+                  </span>{' '}
+                  {alt.tokenSymbol}
+                  {' · '}
+                  <span className="font-mono tabular-nums">
+                    {fmtNative(alt.nativeBalance)}
+                  </span>{' '}
+                  {alt.nativeSymbol}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   )
 }

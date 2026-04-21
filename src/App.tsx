@@ -53,9 +53,6 @@ const ActivityPage = lazy(() =>
 const AuditAddressPage = lazy(() =>
   import('@/screens/AuditAddress').then((m) => ({ default: m.AuditAddressPage })),
 )
-const FeeWalletsPage = lazy(() =>
-  import('@/screens/FeeWallets').then((m) => ({ default: m.FeeWalletsPage })),
-)
 const AlchemyWebhooksPage = lazy(() =>
   import('@/screens/AlchemyWebhooks').then((m) => ({ default: m.AlchemyWebhooksPage })),
 )
@@ -219,14 +216,6 @@ export default function App() {
                     element={
                       <Suspense fallback={<Spinner />}>
                         <ChainsPage />
-                      </Suspense>
-                    }
-                  />
-                  <Route
-                    path="/fee-wallets"
-                    element={
-                      <Suspense fallback={<Spinner />}>
-                        <FeeWalletsPage />
                       </Suspense>
                     }
                   />

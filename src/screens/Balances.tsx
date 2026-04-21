@@ -1,49 +1,28 @@
 import * as React from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
+import { useQuery } from '@tanstack/react-query'
 import {
   ChevronDown,
   ChevronRight,
   Database,
   RefreshCw,
   Satellite,
-  Wallet,
 } from 'lucide-react'
 
-import { api, ApiError } from '@/lib/api'
+import { api } from '@/lib/api'
 import { chainInfo, FAMILY_COLOR } from '@/lib/chains'
 import { fmtLocalTime, fmtUsd, fmtNum } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import type { BalancesSnapshot, Family, FeeWalletResult } from '@/lib/types'
+import type { BalancesSnapshot, Family } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
-import { Field } from '@/components/Field'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 
 type Mode = 'db' | 'rpc'
 
-type PromoteTarget = {
-  address: string
-  chainId: number
-  family: Family
-  chainName: string
-  suggestedLabel: string
-}
-
 export function BalancesPage() {
   const [mode, setMode] = React.useState<Mode>('db')
-  const [promote, setPromote] = React.useState<PromoteTarget | null>(null)
   const q = useQuery({
     queryKey: ['balances', mode] as const,
     queryFn: () =>
@@ -116,12 +95,7 @@ export function BalancesPage() {
 
           <div className="space-y-4">
             {snap.families.map((f) => (
-              <FamilyCard
-                key={f.family}
-                family={f}
-                mode={mode}
-                onPromote={setPromote}
-              />
+              <FamilyCard key={f.family} family={f} mode={mode} />
             ))}
             {snap.families.length === 0 && (
               <Card className="p-10 text-center text-sm text-[var(--fg-2)]">
@@ -131,11 +105,6 @@ export function BalancesPage() {
           </div>
         </>
       )}
-
-      <PromotePoolDialog
-        target={promote}
-        onOpenChange={(v) => !v && setPromote(null)}
-      />
     </div>
   )
 }
@@ -222,11 +191,9 @@ function StackedBar({ snapshot }: { snapshot: BalancesSnapshot }) {
 function FamilyCard({
   family,
   mode,
-  onPromote,
 }: {
   family: BalancesSnapshot['families'][number]
   mode: Mode
-  onPromote: (t: PromoteTarget) => void
 }) {
   const [expanded, setExpanded] = React.useState<number | null>(
     family.chains[0]?.chainId ?? null,
@@ -319,24 +286,6 @@ function FamilyCard({
                           <div className="font-mono font-semibold">
                             {fmtUsd(a.totalUsd)}
                           </div>
-                          {a.kind === 'pool' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              title="Promote this pool address into a fee wallet. Keeps funds in place (no transfer)."
-                              onClick={() =>
-                                onPromote({
-                                  address: a.address,
-                                  chainId: c.chainId,
-                                  family: family.family as Family,
-                                  chainName: info.name,
-                                  suggestedLabel: `promoted-${info.short ?? c.chainId}-1`,
-                                })
-                              }
-                            >
-                              <Wallet className="size-3.5" /> Promote
-                            </Button>
-                          )}
                         </div>
                       ))}
                       {c.addresses.length === 0 && (
@@ -355,165 +304,3 @@ function FamilyCard({
     </Card>
   )
 }
-
-/* ── promote pool address ─────────────────────────────── */
-
-function PromotePoolDialog({
-  target,
-  onOpenChange,
-}: {
-  target: PromoteTarget | null
-  onOpenChange: (v: boolean) => void
-}) {
-  const open = target !== null
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Promote to fee wallet</DialogTitle>
-          <DialogDescription>
-            Reuses this pool address as a fee wallet without transferring
-            funds — the gateway already holds the private key. In-flight
-            invoices that point at this address still resolve via{' '}
-            <span className="font-mono">invoice_receive_addresses</span>.
-          </DialogDescription>
-        </DialogHeader>
-
-        {target && (
-          <PromotePoolForm
-            // Remount when the target changes so the label seed refreshes
-            // without needing a setState-in-effect.
-            key={`${target.address}:${target.chainId}`}
-            target={target}
-            onDone={() => onOpenChange(false)}
-          />
-        )}
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function PromotePoolForm({
-  target,
-  onDone,
-}: {
-  target: PromoteTarget
-  onDone: () => void
-}) {
-  const qc = useQueryClient()
-  const [label, setLabel] = React.useState(target.suggestedLabel)
-  const [deactivateSlot, setDeactivateSlot] = React.useState(true)
-
-  const mut = useMutation({
-    mutationFn: () =>
-      api<{
-        feeWallet: FeeWalletResult
-        poolDeactivated: boolean
-      }>('/api/gw/admin/fee-wallets/from-pool-address', {
-        method: 'POST',
-        body: JSON.stringify({
-          family: target.family,
-          address: target.address,
-          label: label.trim(),
-          chainIds: [target.chainId],
-          deactivatePoolSlot: deactivateSlot,
-        }),
-      }),
-    onSuccess: (res) => {
-      if (res.poolDeactivated) {
-        toast.success(`Promoted to fee wallet · ${res.feeWallet.label}`, {
-          description:
-            'Pool slot deactivated. Funds remain on the same address.',
-        })
-      } else {
-        toast.warning(`Promoted · pool slot still active`, {
-          description:
-            'The allocator raced — fee wallet created, but the pool row was handed to a new invoice. Retry the quarantine after that invoice settles.',
-        })
-      }
-      qc.invalidateQueries({ queryKey: ['balances'] })
-      qc.invalidateQueries({ queryKey: ['fee-wallets'] })
-      onDone()
-    },
-    onError: (e: ApiError | Error) =>
-      toast.error(e.message || 'Could not promote'),
-  })
-
-  const canSubmit =
-    label.trim().length > 0 && label.trim().length <= 64
-
-  return (
-    <form
-      className="space-y-4"
-      onSubmit={(e) => {
-        e.preventDefault()
-        mut.mutate()
-      }}
-    >
-            <div className="space-y-1.5 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
-                <span className="eyebrow">address</span>
-                <Addr value={target.address} truncated={false} />
-              </div>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-[var(--fg-2)]">
-                <span>
-                  <span className="eyebrow">family</span>{' '}
-                  <span className="font-mono uppercase">{target.family}</span>
-                </span>
-                <span>
-                  <span className="eyebrow">chain</span>{' '}
-                  <span className="font-mono">{target.chainName}</span>{' '}
-                  <span className="text-[var(--fg-3)]">
-                    ({target.chainId})
-                  </span>
-                </span>
-              </div>
-            </div>
-
-            <Field
-              label="Label"
-              hint="Human-readable scope key. Same label ↔ same derived address is not enforced here since we're pinning to the existing pool index."
-            >
-              <Input
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-                maxLength={64}
-                className="font-mono"
-                autoFocus
-              />
-            </Field>
-
-            <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-[12px]">
-              <input
-                type="checkbox"
-                checked={deactivateSlot}
-                onChange={(e) => setDeactivateSlot(e.target.checked)}
-                className="mt-0.5 size-3.5 cursor-pointer accent-primary"
-              />
-              <div>
-                <div className="font-medium text-[var(--fg-1)]">
-                  Deactivate pool slot (quarantine)
-                </div>
-                <div className="mt-0.5 text-[11.5px] text-[var(--fg-2)]">
-                  Removes this address from the available pool so it won&rsquo;t
-                  be reallocated to a new invoice. Recommended. If the allocator
-                  races and the row was just handed to an invoice, the fee
-                  wallet is still created and the response flags{' '}
-                  <span className="font-mono">poolDeactivated: false</span> so
-                  you can retry later.
-                </div>
-              </div>
-            </label>
-
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onDone}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={mut.isPending || !canSubmit}>
-          {mut.isPending ? 'Promoting…' : 'Promote'}
-        </Button>
-      </DialogFooter>
-    </form>
-  )
-}
-

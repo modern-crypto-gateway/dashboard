@@ -5,12 +5,10 @@ import {
   AlertTriangle,
   CheckCircle2,
   CircleDashed,
-  KeyRound,
   Loader2,
   Radio,
   RefreshCw,
   Rocket,
-  Wallet,
   XCircle,
 } from 'lucide-react'
 
@@ -18,8 +16,6 @@ import { api, ApiError } from '@/lib/api'
 import type {
   AlchemyBootstrapResult,
   ChainInventoryEntry,
-  Family,
-  FeeWalletResult,
 } from '@/lib/types'
 
 import { Badge } from '@/components/ui/badge'
@@ -32,8 +28,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Field } from '@/components/Field'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CopyButton } from '@/components/CopyButton'
 
@@ -60,13 +54,10 @@ export function ChainsPage() {
     const webhookGaps = rows.filter(
       (c) => c.wired && c.webhooksSupported && !c.webhooks,
     ).length
-    const walletGaps = rows.filter((c) => c.wired && !c.feeWallets).length
     const notDeployed = rows.filter((c) => !c.wired).length
-    return { total, ready, webhookGaps, walletGaps, notDeployed }
+    return { total, ready, webhookGaps, notDeployed }
   }, [rows])
 
-  const [feeModalFor, setFeeModalFor] =
-    React.useState<ChainInventoryEntry | null>(null)
   const [revealed, setRevealed] = React.useState<AlchemyBootstrapResult[] | null>(
     null,
   )
@@ -158,7 +149,6 @@ export function ChainsPage() {
         <ChainMatrix
           rows={rows}
           onBootstrapWebhook={(id) => bootstrapWebhooks.mutate([id])}
-          onAddFeeWallet={setFeeModalFor}
           bootstrappingId={
             bootstrapWebhooks.isPending &&
             bootstrapWebhooks.variables?.length === 1
@@ -167,15 +157,6 @@ export function ChainsPage() {
           }
         />
       )}
-
-      <AddFeeWalletDialog
-        chain={feeModalFor}
-        onOpenChange={(v) => !v && setFeeModalFor(null)}
-        onSuccess={() => {
-          qc.invalidateQueries({ queryKey: CHAINS_Q })
-          setFeeModalFor(null)
-        }}
-      />
 
       <SigningKeysDialog
         results={revealed}
@@ -207,14 +188,13 @@ function StatsGrid({
     total: number
     ready: number
     webhookGaps: number
-    walletGaps: number
     notDeployed: number
   }
   loading: boolean
 }) {
   const allReady = !loading && stats.total > 0 && stats.ready === stats.total
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-3 gap-3">
       <StatCard
         icon={<CheckCircle2 className="size-4" />}
         tone={allReady ? 'success' : 'neutral'}
@@ -228,13 +208,6 @@ function StatsGrid({
         label="Webhook gaps"
         value={loading ? '…' : String(stats.webhookGaps)}
         sub="wired, no webhook"
-      />
-      <StatCard
-        icon={<Wallet className="size-4" />}
-        tone={stats.walletGaps > 0 ? 'warn' : 'success'}
-        label="Fee-wallet gaps"
-        value={loading ? '…' : String(stats.walletGaps)}
-        sub="wired, no fee wallet"
       />
       <StatCard
         icon={<CircleDashed className="size-4" />}
@@ -285,12 +258,10 @@ function StatCard({
 function ChainMatrix({
   rows,
   onBootstrapWebhook,
-  onAddFeeWallet,
   bootstrappingId,
 }: {
   rows: ChainInventoryEntry[]
   onBootstrapWebhook: (chainId: number) => void
-  onAddFeeWallet: (chain: ChainInventoryEntry) => void
   bootstrappingId: number | null
 }) {
   return (
@@ -307,7 +278,6 @@ function ChainMatrix({
             key={c.chainId}
             chain={c}
             onBootstrapWebhook={() => onBootstrapWebhook(c.chainId)}
-            onAddFeeWallet={() => onAddFeeWallet(c)}
             bootstrapping={bootstrappingId === c.chainId}
           />
         ))}
@@ -319,17 +289,14 @@ function ChainMatrix({
 function ChainRow({
   chain,
   onBootstrapWebhook,
-  onAddFeeWallet,
   bootstrapping,
 }: {
   chain: ChainInventoryEntry
   onBootstrapWebhook: () => void
-  onAddFeeWallet: () => void
   bootstrapping: boolean
 }) {
   const canBootstrapWebhook =
     chain.wired && chain.webhooksSupported && !chain.webhooks
-  const canAddWallet = chain.wired && !chain.feeWallets
 
   return (
     <li className="border-b border-border last:border-0">
@@ -373,7 +340,6 @@ function ChainRow({
               <Flag label="webhook" ok={chain.webhooks} dim={!chain.wired} />
             </>
           )}
-          <Flag label="fee wallet" ok={chain.feeWallets} dim={!chain.wired} />
         </div>
 
         <div className="flex flex-wrap justify-end gap-1.5">
@@ -383,29 +349,22 @@ function ChainRow({
             </span>
           ) : chain.bootstrapReady ? (
             <span className="text-xs text-[var(--fg-3)]">—</span>
+          ) : canBootstrapWebhook ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onBootstrapWebhook}
+              disabled={bootstrapping}
+            >
+              {bootstrapping ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Rocket className="size-3.5" />
+              )}
+              Webhook
+            </Button>
           ) : (
-            <>
-              {canBootstrapWebhook && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={onBootstrapWebhook}
-                  disabled={bootstrapping}
-                >
-                  {bootstrapping ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Rocket className="size-3.5" />
-                  )}
-                  Webhook
-                </Button>
-              )}
-              {canAddWallet && (
-                <Button size="sm" variant="outline" onClick={onAddFeeWallet}>
-                  <Wallet className="size-3.5" /> Fee wallet
-                </Button>
-              )}
-            </>
+            <span className="text-xs text-[var(--fg-3)]">—</span>
           )}
         </div>
       </div>
@@ -480,152 +439,6 @@ function Flag({
       <Icon className="size-3.5 shrink-0" />
       <span>{label}</span>
     </span>
-  )
-}
-
-/* ── fee wallet add modal ───────────────────────────────── */
-
-function AddFeeWalletDialog({
-  chain,
-  onOpenChange,
-  onSuccess,
-}: {
-  chain: ChainInventoryEntry | null
-  onOpenChange: (v: boolean) => void
-  onSuccess: () => void
-}) {
-  const [label, setLabel] = React.useState('')
-  const [revealed, setRevealed] = React.useState<FeeWalletResult | null>(null)
-
-  React.useEffect(() => {
-    if (chain) {
-      setLabel(`${chain.displayName} Fee`)
-      setRevealed(null)
-    }
-  }, [chain?.chainId, chain?.displayName])
-
-  const register = useMutation({
-    mutationFn: (body: { chainId: number; family: Family; label: string }) =>
-      api<{ feeWallet: FeeWalletResult }>('/api/gw/admin/fee-wallets', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
-    onSuccess: (res) => {
-      setRevealed(res.feeWallet)
-      toast.success(`Fee wallet registered (${res.feeWallet.label})`)
-      onSuccess()
-    },
-    onError: (e: ApiError) => toast.error(e.message || 'Could not register'),
-  })
-
-  const close = () => {
-    if (register.isPending) return
-    onOpenChange(false)
-  }
-
-  return (
-    <Dialog open={!!chain} onOpenChange={close}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            Add fee wallet {chain && `— ${chain.displayName}`}
-          </DialogTitle>
-          <DialogDescription>
-            Derives an address from <span className="font-mono">MASTER_SEED</span>{' '}
-            at an index hashed from{' '}
-            <span className="font-mono">(family, label)</span>. Same label
-            always re-derives the same address — fund it out-of-band so payouts
-            can reserve it.
-          </DialogDescription>
-        </DialogHeader>
-
-        {!revealed ? (
-          <form
-            className="space-y-4"
-            onSubmit={(e) => {
-              e.preventDefault()
-              if (!chain) return
-              register.mutate({
-                chainId: chain.chainId,
-                family: chain.family,
-                label: label.trim(),
-              })
-            }}
-          >
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Chain">
-                <Input
-                  value={chain ? `${chain.displayName} (${chain.chainId})` : ''}
-                  readOnly
-                />
-              </Field>
-              <Field label="Family">
-                <Input value={chain?.family ?? ''} readOnly className="uppercase" />
-              </Field>
-            </div>
-            <Field
-              label="Label"
-              hint="Scope key (e.g. hot-1, cold-archive). Same label → same derived address."
-            >
-              <Input
-                autoFocus
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-                maxLength={64}
-                className="font-mono"
-                required
-              />
-            </Field>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={close}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={register.isPending || label.trim() === ''}
-              >
-                <KeyRound className="size-3.5" />
-                {register.isPending ? 'Deriving…' : 'Register'}
-              </Button>
-            </DialogFooter>
-          </form>
-        ) : (
-          <div className="space-y-4">
-            <div className="rounded-md border border-[var(--success-border)] bg-[var(--success-bg)] p-3">
-              <div className="flex items-center gap-2 text-sm text-success">
-                <CheckCircle2 className="size-4" /> Registered.
-              </div>
-              <div className="mt-2 text-xs text-[var(--fg-2)]">
-                Fund this address externally. The gateway will mark it
-                available for payout reservations once the balance is confirmed.
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <div className="eyebrow">Derived address</div>
-              <div className="flex items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2">
-                <code className="flex-1 truncate font-mono text-xs">
-                  {revealed.address}
-                </code>
-                <CopyButton value={revealed.address} />
-              </div>
-              <div className="text-xs text-[var(--fg-2)]">
-                <span className="font-mono">{revealed.label}</span> ·{' '}
-                <span className="font-mono uppercase">{revealed.family}</span>{' '}
-                ·{' '}
-                <span className="font-mono">
-                  {revealed.chainIds.length === 1
-                    ? `chain ${revealed.chainIds[0]}`
-                    : `${revealed.chainIds.length} chains`}
-                </span>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={close}>Done</Button>
-            </DialogFooter>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
   )
 }
 

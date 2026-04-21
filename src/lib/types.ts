@@ -122,10 +122,29 @@ export type PayoutListResponse = {
 
 export type FeeTier = 'low' | 'medium' | 'high'
 
+/**
+ * v2.2: `planned` is retained for migration safety but no new payout is ever
+ * inserted in that state — the server picks a source + reserves synchronously
+ * on POST, so rows start at `reserved`. `topping-up` is inserted between
+ * `reserved` and `submitted` when the source lacks native gas and the
+ * gateway JIT-sponsors from another HD address.
+ */
+export type PayoutStatus =
+  | 'planned'
+  | 'reserved'
+  | 'topping-up'
+  | 'submitted'
+  | 'confirmed'
+  | 'failed'
+  | 'canceled'
+
+/** `gas_top_up` rows are internal sibling payouts the executor inserts to sponsor gas for a parent token payout. */
+export type PayoutKind = 'standard' | 'gas_top_up'
+
 export type GatewayPayout = {
   id: string
   merchantId: string
-  status: 'planned' | 'reserved' | 'submitted' | 'confirmed' | 'failed' | 'canceled'
+  status: PayoutStatus
   chainId: number
   token: string
   amountRaw: string
@@ -141,20 +160,24 @@ export type GatewayPayout = {
   submittedAt: string | null
   confirmedAt: string | null
   updatedAt: string
-  /** v2: tier picked at plan time. */
+  /** Tier picked at plan time. */
   feeTier: FeeTier | null
-  /** v2: native-units fee quoted at plan time, before broadcast. Pair with `feeEstimateNative` for drift. */
+  /** Native-units fee quoted at plan time, before broadcast. Pair with `feeEstimateNative` for drift. */
   feeQuotedNative: string | null
-  /** v2: when the row was created via POST /payouts/batch. */
+  /** Set when the row was created via POST /payouts/batch. */
   batchId: string | null
-  /** v2: opt-in split across multiple fee wallets. */
-  allowMultiSource: boolean
-  /** v2: full list of fee wallets that contributed to the broadcast. Only populated on multi-source runs. */
-  sourceAddresses: string[] | null
-  /** v2: one hash per on-chain leg. Single-source payouts still use `txHash`; multi-source populates this array. */
-  txHashes: string[] | null
-  /** v2: set on the first broadcast attempt so ops can distinguish "still planned" from "stuck after a try". */
+  /** Set on the first broadcast attempt so ops can distinguish "still reserved" from "stuck after a try". */
   broadcastAttemptedAt: string | null
+  /** v2.2: whether this is a merchant payout or an internal gas top-up. Merchants should filter to `standard`. */
+  kind: PayoutKind
+  /** v2.2: for `gas_top_up` rows, the parent payout they sponsor. */
+  parentPayoutId: string | null
+  /** v2.2: hash of the sponsor → source gas transfer that preceded this payout. */
+  topUpTxHash: string | null
+  /** v2.2: address that sponsored the gas top-up. */
+  topUpSponsorAddress: string | null
+  /** v2.2: raw native amount sent to the source for gas. */
+  topUpAmountRaw: string | null
 }
 
 export type PayoutFeeTierQuote = {
@@ -173,33 +196,41 @@ export type PayoutFeeTiers = {
 }
 
 /**
- * Known codes from the v2.1 estimate endpoint. Backend may add more — treat as
- * an open-ended string set and default to "unknown; surface neutrally" for any
- * value outside this list.
+ * v2.2 estimate warnings. Open-ended string set — backend may add more.
+ * `fee_quote_unavailable` still applies: the tier picker should fall back.
  */
 export type PayoutEstimateWarning =
-  | 'no_fee_wallet_registered'
-  | 'fee_wallet_native_balance_zero'
-  | 'rpc_balance_read_failed'
+  | 'no_source_address_has_sufficient_token_balance'
+  | 'no_gas_sponsor_available'
+  | 'max_amount_exceeds_net_spendable'
   | 'fee_quote_unavailable'
 
-export type PayoutFeeWalletSnapshot = {
+/** The HD address the gateway would draw the payout from, with its live ledger balances. */
+export type PayoutEstimateSource = {
   address: string
-  nativeSymbol: string
-  /** Raw smallest-units, or null when the RPC couldn't read it this cycle. */
-  nativeBalance: string | null
+  /** Raw smallest-units of the target token held by this source. */
+  tokenBalance: string
   tokenSymbol: string
-  tokenBalance: string | null
+  /** Raw smallest-units of native gas currency held by this source. */
+  nativeBalance: string
+  nativeSymbol: string
 }
 
-export type PayoutFundingRequired = {
-  /** Raw smallest-units of native to deposit for each tier. "0" means fully funded. */
-  low: string | null
-  medium: string | null
-  high: string | null
-  nativeSymbol: string
-  /** Human-readable note distinguishing native-payout (amount + gas) from token-payout (gas only). */
-  note: string
+/**
+ * Present only when the picked source is short on native gas. The executor
+ * will JIT-transfer `amountRaw` from the `sponsor` to the source before
+ * broadcasting. `sponsor: null` means no sponsor has enough gas — the plan
+ * will fail with NO_GAS_SPONSOR_AVAILABLE if submitted.
+ */
+export type PayoutEstimateTopUp = {
+  required: true
+  sponsor: {
+    address: string
+    /** Raw smallest-units of native gas held by the sponsor. */
+    nativeBalance: string
+  } | null
+  /** Raw native amount the sponsor would transfer to the source. */
+  amountRaw: string
 }
 
 export type PayoutEstimate = {
@@ -207,11 +238,13 @@ export type PayoutEstimate = {
   quotedAmountUsd: string | null
   quotedRate: string | null
   tiers: PayoutFeeTiers
-  /** Null when no active fee wallet is registered on the chain yet. */
-  feeWallet: PayoutFeeWalletSnapshot | null
-  /** Null when `feeWallet` is null (nothing to compute against). */
-  fundingRequired: PayoutFundingRequired | null
-  /** Warning codes — see PayoutEstimateWarning for the known set. May contain unknown codes. */
+  /** v2.2: the HD address picked as payout source. null when no source qualifies. */
+  source: PayoutEstimateSource | null
+  /** v2.2: only present when gas top-up is needed. */
+  topUp: PayoutEstimateTopUp | null
+  /** v2.2: up to 4 next-best candidates for operator visibility. */
+  alternatives: PayoutEstimateSource[]
+  /** Warning codes — may contain unknown future codes. */
   warnings: string[]
 }
 
@@ -274,28 +307,6 @@ export type AlchemyBootstrapResult = {
   error?: string
 }
 
-export type FeeWalletResult = {
-  address: string
-  label: string
-  family: Family
-  chainIds: number[]
-}
-
-export type FeeWalletRow = {
-  id: string
-  chainId: number
-  chain?: string | null
-  address: string
-  label: string
-  active: boolean
-  reservedByPayoutId: string | null
-  reservedAt: string | null
-  createdAt: string
-  nativeSymbol?: string | null
-  nativeDecimals?: number | null
-  nativeBalance?: string | null
-  nativeBalanceError?: 'chain_not_wired' | 'rpc_error' | null
-}
 
 export type ChainToken = {
   symbol: string

@@ -64,6 +64,7 @@ import {
 } from './routes/invoices'
 import {
   batchPayouts,
+  cancelPayout,
   createPayout,
   estimatePayout,
   getPayout,
@@ -279,6 +280,9 @@ async function dispatchMerchant(
         await cfLimit(env.GW_RL, clientId(req), 'gw')
         return batchPayouts(req, env, merchantId)
       }
+    } else if (rest.length === 2 && method === 'POST' && rest[1] === 'cancel') {
+      await cfLimit(env.GW_RL, clientId(req), 'gw')
+      return cancelPayout(req, env, merchantId, rest[0])
     }
   } else if (resource === 'raw' && rest.length > 0) {
     await cfLimit(env.GW_RL, clientId(req), 'gw')

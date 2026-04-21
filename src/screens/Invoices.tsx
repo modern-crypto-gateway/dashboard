@@ -78,6 +78,7 @@ export function StatusBadge({ status }: { status: string }) {
       case 'partial':
       case 'submitted':
       case 'reserved':
+      case 'topping-up':
       case 'planned':
         return 'warn'
       case 'expired':

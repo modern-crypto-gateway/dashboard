@@ -1,11 +1,12 @@
 /**
  * Payout routes — merchant-scoped, proxied through the merchant's API key.
  *
- *   GET  /api/mg/:merchantId/payouts             → list via gateway /api/v1/payouts
- *   POST /api/mg/:merchantId/payouts             → plan a payout via gateway
- *   GET  /api/mg/:merchantId/payouts/:id         → fetch detail via gateway
- *   POST /api/mg/:merchantId/payouts/estimate    → tier-fee quote
- *   POST /api/mg/:merchantId/payouts/batch       → mass-create up to 100 rows
+ *   GET  /api/mg/:merchantId/payouts                → list via gateway /api/v1/payouts
+ *   POST /api/mg/:merchantId/payouts                → plan a payout via gateway
+ *   GET  /api/mg/:merchantId/payouts/:id            → fetch detail via gateway
+ *   POST /api/mg/:merchantId/payouts/estimate       → tier-fee quote
+ *   POST /api/mg/:merchantId/payouts/batch          → mass-create up to 100 rows
+ *   POST /api/mg/:merchantId/payouts/:id/cancel     → cancel a reserved payout (v2.2)
  *
  * Rate-limit headers from the gateway are forwarded through so the browser's
  * rate-limit store can show a pre-flight quota warning on the batch page.
@@ -18,6 +19,7 @@ import { kvGet, K } from '../lib/kv'
 
 const LIST_PASSTHROUGH = [
   'status',
+  'kind',
   'chainId',
   'token',
   'destinationAddress',
@@ -206,6 +208,37 @@ export async function estimatePayout(
     status: upstream.status,
     headers: rateLimitHeaders(upstream),
   })
+}
+
+export async function cancelPayout(
+  _req: Request,
+  env: Bindings,
+  merchantId: string,
+  id: string,
+): Promise<Response> {
+  const { apiKey } = await merchantKeyPlain(env, merchantId)
+  const upstream = await gwFetch(
+    env,
+    apiKey,
+    'POST',
+    `/api/v1/payouts/${encodeURIComponent(id)}/cancel`,
+  )
+  const payload = (await upstream.json().catch(() => ({}))) as {
+    payout?: Record<string, unknown>
+    error?: { code?: string; message?: string; details?: unknown }
+  }
+  if (!upstream.ok || !payload.payout) {
+    return errorWithHeaders(
+      upstream,
+      payload.error?.code ?? 'UPSTREAM_ERROR',
+      payload.error?.message ?? 'Gateway rejected cancel',
+      payload.error?.details,
+    )
+  }
+  return json(
+    { payout: payload.payout },
+    { status: upstream.status, headers: rateLimitHeaders(upstream) },
+  )
 }
 
 export async function batchPayouts(
