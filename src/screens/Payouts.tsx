@@ -1204,6 +1204,36 @@ function buildPayoutBody(args: {
   return body
 }
 
+/**
+ * `MAX_AMOUNT_EXCEEDS_NET_SPENDABLE` carries a ready-to-use suggestion in
+ * the error `details`. Pulls it out regardless of which endpoint threw.
+ * Returns null when the error doesn't match or the payload is malformed.
+ */
+type AmountSuggestion = {
+  raw: string
+  decimal: string | null
+  usd: string | null
+}
+
+function readAmountSuggestion(err: unknown): AmountSuggestion | null {
+  if (!(err instanceof ApiError)) return null
+  if (err.code !== 'MAX_AMOUNT_EXCEEDS_NET_SPENDABLE') return null
+  const d = err.details as
+    | {
+        suggestedAmountRaw?: unknown
+        suggestedAmount?: unknown
+        suggestedAmountUsd?: unknown
+      }
+    | undefined
+  const raw = typeof d?.suggestedAmountRaw === 'string' ? d.suggestedAmountRaw : null
+  if (!raw) return null
+  return {
+    raw,
+    decimal: typeof d?.suggestedAmount === 'string' ? d.suggestedAmount : null,
+    usd: typeof d?.suggestedAmountUsd === 'string' ? d.suggestedAmountUsd : null,
+  }
+}
+
 function payoutErrorMessage(e: unknown): string {
   if (e instanceof ApiError) {
     switch (e.code) {
@@ -1435,31 +1465,31 @@ function CreatePayoutDialog({
     onError: (e: unknown) => toast.error(payoutErrorMessage(e)),
   })
 
-  // Server returns suggestedAmountRaw on MAX_AMOUNT_EXCEEDS_NET_SPENDABLE.
-  // Expose it so the amount field can render a "Use suggested" button that
-  // auto-fills the right value for the current mode.
-  const createErrorCode =
-    create.error instanceof ApiError ? create.error.code ?? null : null
-  const suggestedAmountRaw =
-    create.error instanceof ApiError &&
-    create.error.code === 'MAX_AMOUNT_EXCEEDS_NET_SPENDABLE' &&
-    create.error.details &&
-    typeof (create.error.details as { suggestedAmountRaw?: unknown })
-      .suggestedAmountRaw === 'string'
-      ? ((create.error.details as { suggestedAmountRaw: string })
-          .suggestedAmountRaw as string)
-      : null
+  // MAX_AMOUNT_EXCEEDS_NET_SPENDABLE can fire from either /estimate or the
+  // real POST. Either way the backend returns a ready-to-apply suggestion —
+  // prefer the create error (most recent) but fall back to the estimate.
+  const suggestion =
+    readAmountSuggestion(create.error) ??
+    readAmountSuggestion(estimate.error)
 
-  const applySuggestedAmount = () => {
-    if (!suggestedAmountRaw) return
+  const applySuggestion = () => {
+    if (!suggestion) return
     if (mode === 'raw') {
-      setAmount(suggestedAmountRaw)
-    } else if (mode === 'amount' && tokenMeta) {
-      setAmount(formatUnits(suggestedAmountRaw, tokenMeta.decimals))
+      setAmount(suggestion.raw)
+    } else if (mode === 'amount') {
+      setAmount(
+        suggestion.decimal ??
+          (tokenMeta ? formatUnits(suggestion.raw, tokenMeta.decimals) : suggestion.raw),
+      )
     } else {
-      // USD mode has no direct raw equivalent — flip the user to raw.
-      setMode('raw')
-      setAmount(suggestedAmountRaw)
+      // USD mode: use the USD-pegged suggestion if the backend supplied it;
+      // otherwise fall back to raw mode since we can't safely reverse-convert.
+      if (suggestion.usd) {
+        setAmount(suggestion.usd)
+      } else {
+        setMode('raw')
+        setAmount(suggestion.raw)
+      }
     }
     create.reset()
   }
@@ -1619,6 +1649,22 @@ function CreatePayoutDialog({
               {amountFormatError}
             </div>
           )}
+          {suggestion && (
+            <SuggestedAmountCard
+              suggestion={suggestion}
+              mode={mode}
+              tokenSymbol={token}
+              tokenMeta={tokenMeta}
+              errorMessage={
+                create.error instanceof ApiError
+                  ? create.error.message
+                  : estimate.error instanceof ApiError
+                    ? estimate.error.message
+                    : null
+              }
+              onApply={applySuggestion}
+            />
+          )}
           {showRateDrift && (
             <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[11.5px] text-warn">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
@@ -1657,7 +1703,9 @@ function CreatePayoutDialog({
 
           {noGasSponsor && <NoGasSponsorBanner />}
 
-          {amountExceedsSpendable && source && (
+          {amountExceedsSpendable && !suggestion && source && (
+            // No concrete suggestion yet (warning without details) — keep the
+            // soft-gate so the operator can acknowledge and submit.
             <MaxAmountPanel
               source={source}
               tokenMeta={tokenMeta}
@@ -1667,37 +1715,6 @@ function CreatePayoutDialog({
               }
             />
           )}
-
-          {createErrorCode === 'MAX_AMOUNT_EXCEEDS_NET_SPENDABLE' &&
-            suggestedAmountRaw && (
-              <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-                  <div className="flex-1 text-[11.5px] text-destructive/90">
-                    <div className="font-semibold text-destructive">
-                      Amount eats the gas headroom.
-                    </div>
-                    <div className="mt-0.5">
-                      Suggested send:{' '}
-                      <span className="font-mono">
-                        {tokenMeta
-                          ? formatUnits(suggestedAmountRaw, tokenMeta.decimals)
-                          : suggestedAmountRaw}
-                      </span>{' '}
-                      {token} (amount − gas).
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={applySuggestedAmount}
-                  >
-                    Use suggested
-                  </Button>
-                </div>
-              </div>
-            )}
 
           {source && !noSourceBalance && (
             <SourcePanel
@@ -1957,6 +1974,99 @@ function SourcePanel({
           </ul>
         </details>
       )}
+    </div>
+  )
+}
+
+function SuggestedAmountCard({
+  suggestion,
+  mode,
+  tokenSymbol,
+  tokenMeta,
+  errorMessage,
+  onApply,
+}: {
+  suggestion: AmountSuggestion
+  mode: PayoutAmountMode
+  tokenSymbol: string
+  tokenMeta: ChainToken | null
+  errorMessage: string | null
+  onApply: () => void
+}) {
+  // Show the value in the same unit the user is typing in, so clicking
+  // "Use" is predictable. Keep token + USD on the line regardless as extra
+  // context.
+  const primary = (() => {
+    if (mode === 'raw') {
+      return { value: suggestion.raw, suffix: `${tokenSymbol} raw` }
+    }
+    if (mode === 'usd' && suggestion.usd) {
+      return { value: suggestion.usd, suffix: 'USD' }
+    }
+    const decimal =
+      suggestion.decimal ??
+      (tokenMeta ? formatUnits(suggestion.raw, tokenMeta.decimals) : suggestion.raw)
+    return { value: decimal, suffix: tokenSymbol || 'token' }
+  })()
+
+  return (
+    <div className="rounded-md border border-[var(--accent-border)] bg-[var(--accent-bg)] px-3 py-3">
+      <div className="flex items-start gap-2">
+        <Info className="mt-0.5 size-4 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-[var(--fg-1)]">
+            Amount leaves no room for gas
+          </div>
+          {errorMessage && (
+            <div className="mt-0.5 text-[11.5px] text-[var(--fg-2)]">
+              {errorMessage}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-2.5 flex flex-wrap items-end gap-3 rounded-md border border-border bg-card px-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <div className="eyebrow mb-0.5">Suggested</div>
+          <div className="flex flex-wrap items-baseline gap-1.5">
+            <span className="font-mono text-lg font-semibold tabular-nums text-[var(--fg-1)]">
+              {primary.value}
+            </span>
+            <span className="text-[11.5px] text-[var(--fg-2)]">
+              {primary.suffix}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10.5px] text-[var(--fg-3)]">
+            {suggestion.decimal && mode !== 'amount' && (
+              <span>
+                <span className="font-mono tabular-nums">
+                  {suggestion.decimal}
+                </span>{' '}
+                {tokenSymbol}
+              </span>
+            )}
+            {suggestion.usd && mode !== 'usd' && (
+              <span>
+                ~
+                <span className="font-mono tabular-nums">
+                  ${suggestion.usd}
+                </span>
+              </span>
+            )}
+            {mode !== 'raw' && (
+              <span>
+                raw{' '}
+                <span className="font-mono tabular-nums">
+                  {suggestion.raw}
+                </span>
+              </span>
+            )}
+          </div>
+        </div>
+        <Button type="button" onClick={onApply}>
+          Use suggested amount
+        </Button>
+      </div>
     </div>
   )
 }
