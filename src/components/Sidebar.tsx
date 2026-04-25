@@ -5,6 +5,7 @@ import {
   ArrowUpDown,
   CircleDollarSign,
   FileText,
+  Fuel,
   LayoutDashboard,
   Link2,
   Radio,
@@ -64,6 +65,7 @@ const sections: Section[] = [
     group: 'Admin',
     items: [
       { to: '/chains', label: 'Chains', icon: Link2 },
+      { to: '/fee-wallets', label: 'Fee wallets', icon: Fuel },
       { to: '/audit-address', label: 'Audit address', icon: ShieldCheck },
       { to: '/alchemy', label: 'Alchemy webhooks', icon: Radio },
     ],

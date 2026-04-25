@@ -59,6 +59,9 @@ const AlchemyWebhooksPage = lazy(() =>
 const ChainsPage = lazy(() =>
   import('@/screens/Chains').then((m) => ({ default: m.ChainsPage })),
 )
+const FeeWalletsPage = lazy(() =>
+  import('@/screens/FeeWallets').then((m) => ({ default: m.FeeWalletsPage })),
+)
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -216,6 +219,14 @@ export default function App() {
                     element={
                       <Suspense fallback={<Spinner />}>
                         <ChainsPage />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="/fee-wallets"
+                    element={
+                      <Suspense fallback={<Spinner />}>
+                        <FeeWalletsPage />
                       </Suspense>
                     }
                   />

@@ -332,6 +332,27 @@ export type ChainInventoryEntry = {
   tokens: ChainToken[]
 }
 
+export type FeeWalletCapability = 'none' | 'delegate' | 'co-sign'
+export type FeeWalletMode = 'hd-pool' | 'imported'
+
+export type FeeWalletEntry = {
+  family: Family
+  capability: FeeWalletCapability
+  configured: { mode: FeeWalletMode; address: string } | null
+}
+
+export type TronFeeWalletResources = {
+  feeWallet: string
+  resources: {
+    energyAvailable: number
+    energyLimit: number
+    bandwidthAvailable: number
+    bandwidthLimit: number
+  }
+}
+
+export type TronResource = 'ENERGY' | 'BANDWIDTH'
+
 export type AlchemyWebhookEntry = {
   chainId: number
   chain: string | null
