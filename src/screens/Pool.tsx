@@ -1,16 +1,35 @@
 import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, RefreshCw, Waypoints } from 'lucide-react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
+  Plus,
+  RefreshCw,
+  ShieldCheck,
+  Waypoints,
+} from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
 import { FAMILY_COLOR } from '@/lib/chains'
-import type { Family, PoolStatsRow } from '@/lib/types'
+import type {
+  Family,
+  PoolAuditResponse,
+  PoolStatsRow,
+} from '@/lib/types'
 
+import { Addr } from '@/components/Addr'
 import { Field } from '@/components/Field'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -61,6 +80,9 @@ export function PoolPage() {
           />
         </div>
       </div>
+
+      <PoolAuditCard />
+
 
       {q.isLoading ? (
         <Card className="p-10 text-center text-sm text-[var(--fg-2)]">Loading…</Card>
@@ -251,5 +273,227 @@ function SeedDialog({ onSuccess }: { onSuccess: () => void }) {
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/* ── pool audit ──────────────────────────────────────────── */
+
+function PoolAuditCard() {
+  const audit = useMutation({
+    mutationFn: () => api<PoolAuditResponse>('/api/gw/admin/pool/audit'),
+    onSuccess: (res) => {
+      if (res.status === 'healthy') {
+        toast.success('Pool audit clean', {
+          description: 'Every row matches the current MASTER_SEED derivation.',
+        })
+      } else {
+        const total = res.reports.reduce(
+          (n, r) => n + r.mismatches.length,
+          0,
+        )
+        toast.warning(`${total} mismatch${total === 1 ? '' : 'es'} detected`, {
+          description: 'See the breakdown below.',
+        })
+      }
+    },
+    onError: (e: ApiError) => toast.error(e.message || 'Audit failed'),
+  })
+
+  const data = audit.data
+  const totalMismatches =
+    data?.reports.reduce((n, r) => n + r.mismatches.length, 0) ?? 0
+  const totalUnscanned =
+    data?.reports.reduce((n, r) => n + r.unscannedBeyondLimit, 0) ?? 0
+
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="size-4 text-primary" />
+              Seed-derivation audit
+            </CardTitle>
+            <CardDescription className="mt-1 max-w-2xl">
+              Re-derives every pool row's expected address from the current{' '}
+              <span className="font-mono">MASTER_SEED</span> and reports
+              mismatches. Run before funding a fresh pool, after any deploy
+              that might have rotated the seed, or when a payout fails with a
+              signer-mismatch error. Read-only.
+            </CardDescription>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => audit.mutate()}
+            disabled={audit.isPending}
+          >
+            {audit.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <ShieldCheck className="size-3.5" />
+            )}
+            {audit.isPending ? 'Auditing…' : 'Run audit'}
+          </Button>
+        </div>
+      </CardHeader>
+      {data && (
+        <CardContent className="pt-5">
+          <div className="flex flex-wrap items-center gap-3">
+            {data.status === 'healthy' ? (
+              <Badge variant="success">
+                <CheckCircle2 className="size-3" /> healthy
+              </Badge>
+            ) : (
+              <Badge variant="warn">
+                <AlertTriangle className="size-3" /> mismatches detected
+              </Badge>
+            )}
+            <span className="text-xs text-[var(--fg-2)]">
+              <span className="font-mono">{totalMismatches}</span> mismatch
+              {totalMismatches === 1 ? '' : 'es'} ·{' '}
+              <span className="font-mono">scanLimit {data.scanLimit}</span>
+              {totalUnscanned > 0 && (
+                <>
+                  {' '}
+                  ·{' '}
+                  <span className="text-warn">
+                    {totalUnscanned} row{totalUnscanned === 1 ? '' : 's'}{' '}
+                    beyond limit
+                  </span>
+                </>
+              )}
+            </span>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+            {data.reports.map((r) => (
+              <FamilyAuditCard key={r.family} report={r} />
+            ))}
+          </div>
+          {totalMismatches > 0 && <MismatchList data={data} />}
+        </CardContent>
+      )}
+    </Card>
+  )
+}
+
+function FamilyAuditCard({
+  report,
+}: {
+  report: PoolAuditResponse['reports'][number]
+}) {
+  const ok = report.mismatches.length === 0
+  return (
+    <div
+      className={cn(
+        'rounded-md border p-3',
+        ok
+          ? 'border-border bg-[var(--bg-2)]'
+          : 'border-warn/40 bg-warn/10',
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span
+            className="size-2.5 rounded-sm"
+            style={{ background: FAMILY_COLOR[report.family] }}
+          />
+          <span className="font-semibold uppercase tracking-[0.08em] text-[12.5px]">
+            {report.family}
+          </span>
+        </div>
+        {ok ? (
+          <Badge variant="success">
+            <CheckCircle2 className="size-3" /> clean
+          </Badge>
+        ) : (
+          <Badge variant="warn">
+            {report.mismatches.length} bad
+          </Badge>
+        )}
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+        <AuditCell label="scanned" value={report.scanned} />
+        <AuditCell label="matches" value={report.matches} tone="success" />
+        <AuditCell
+          label="beyond"
+          value={report.unscannedBeyondLimit}
+          tone={report.unscannedBeyondLimit > 0 ? 'warn' : undefined}
+        />
+      </div>
+    </div>
+  )
+}
+
+function AuditCell({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number
+  tone?: 'success' | 'warn'
+}) {
+  return (
+    <div className="rounded border border-border bg-card px-2 py-1.5">
+      <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--fg-2)]">
+        {label}
+      </div>
+      <div
+        className={cn(
+          'mt-0.5 font-mono text-sm font-semibold',
+          tone === 'success' && 'text-success',
+          tone === 'warn' && 'text-warn',
+        )}
+      >
+        {value}
+      </div>
+    </div>
+  )
+}
+
+function MismatchList({ data }: { data: PoolAuditResponse }) {
+  const rows = data.reports.flatMap((r) =>
+    r.mismatches.map((m) => ({ ...m, family: r.family })),
+  )
+  if (rows.length === 0) return null
+  return (
+    <div className="mt-5">
+      <div className="eyebrow mb-2">Mismatched rows</div>
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-[var(--bg-2)] text-[10.5px] uppercase tracking-wider text-[var(--fg-3)]">
+              <th className="px-3 py-2 text-left font-medium">Family</th>
+              <th className="px-3 py-2 text-left font-medium">Index</th>
+              <th className="px-3 py-2 text-left font-medium">Stored</th>
+              <th className="px-3 py-2 text-left font-medium">Expected</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((m) => (
+              <tr
+                key={`${m.family}-${m.addressIndex}`}
+                className="border-b border-border last:border-0"
+              >
+                <td className="px-3 py-2 align-top">
+                  <Badge variant="outline" className="uppercase">
+                    {m.family}
+                  </Badge>
+                </td>
+                <td className="px-3 py-2 align-top font-mono text-xs">
+                  {m.addressIndex}
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <Addr value={m.storedAddress} />
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <Addr value={m.expectedAddress} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   )
 }

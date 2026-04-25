@@ -332,6 +332,27 @@ export type ChainInventoryEntry = {
   tokens: ChainToken[]
 }
 
+export type PoolAuditMismatch = {
+  family: Family
+  addressIndex: number
+  storedAddress: string
+  expectedAddress: string
+}
+
+export type PoolAuditFamilyReport = {
+  family: Family
+  scanned: number
+  matches: number
+  unscannedBeyondLimit: number
+  mismatches: PoolAuditMismatch[]
+}
+
+export type PoolAuditResponse = {
+  status: 'healthy' | 'mismatches-detected'
+  scanLimit: number
+  reports: PoolAuditFamilyReport[]
+}
+
 export type FeeWalletCapability = 'none' | 'delegate' | 'co-sign'
 export type FeeWalletMode = 'hd-pool' | 'imported'
 

@@ -442,7 +442,13 @@ function ImportKeyDialog({
       onOpenChange(false)
     },
     onError: (e: ApiError) => {
-      if (e.code === 'INVALID_ADDRESS') {
+      if (e.code === 'ADDRESS_KEY_MISMATCH') {
+        toast.error('Address does not match private key', {
+          description: e.message,
+        })
+      } else if (e.code === 'INVALID_PRIVATE_KEY') {
+        toast.error('Private key could not be parsed for this family')
+      } else if (e.code === 'INVALID_ADDRESS') {
         toast.error('Not a valid address for this family')
       } else if (e.code === 'NO_ADAPTER') {
         toast.error('Adapter not wired for this family')
@@ -459,9 +465,9 @@ function ImportKeyDialog({
           <DialogTitle>Import fee-wallet key</DialogTitle>
           <DialogDescription>
             Encrypted at rest via <span className="font-mono">secretsCipher</span>.
-            The gateway does not yet cross-check that the address is derivable
-            from the key — a mismatch will only surface at the first payout or
-            admin op.
+            The gateway cross-checks that the declared address derives from
+            the private key — a mismatch is rejected at import time, no row
+            is persisted.
           </DialogDescription>
         </DialogHeader>
         <form
