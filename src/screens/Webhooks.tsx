@@ -5,8 +5,13 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
+  ExternalLink,
+  FileText,
+  Hash,
+  Link2,
   RotateCcw,
   Search,
+  Send,
   Webhook,
 } from 'lucide-react'
 
@@ -27,6 +32,23 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+
+function safeHost(url: string | undefined): string | null {
+  if (!url) return null
+  try {
+    return new URL(url).host
+  } catch {
+    return null
+  }
+}
+
+function statusCodeTone(code: number | null | undefined) {
+  if (code == null) return 'text-[var(--fg-3)]'
+  if (code >= 200 && code < 300) return 'text-success'
+  if (code >= 300 && code < 400) return 'text-warn'
+  if (code >= 400) return 'text-destructive'
+  return 'text-[var(--fg-3)]'
+}
 
 type Status = 'pending' | 'delivered' | 'dead'
 
@@ -53,7 +75,9 @@ export function WebhooksPage() {
       (d) =>
         d.id.toLowerCase().includes(q) ||
         d.merchantId.toLowerCase().includes(q) ||
-        d.eventType.toLowerCase().includes(q),
+        d.eventType.toLowerCase().includes(q) ||
+        (d.resourceId?.toLowerCase().includes(q) ?? false) ||
+        (d.targetUrl?.toLowerCase().includes(q) ?? false),
     )
   }, [all, query])
 
@@ -90,7 +114,7 @@ export function WebhooksPage() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by id, merchant, event…"
+            placeholder="Search by id, merchant, event, resource, target…"
             className="pl-8"
           />
         </div>
@@ -172,11 +196,11 @@ function DeliveryList({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden grid-cols-[1fr_180px_140px_80px_100px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
-        <div>Delivery</div>
-        <div>Event</div>
-        <div>Merchant</div>
-        <div>Attempts</div>
+      <div className="hidden grid-cols-[1.7fr_1.3fr_1.3fr_70px_110px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
+        <div>Event &amp; resource</div>
+        <div>Target</div>
+        <div>Last response</div>
+        <div>Tries</div>
         <div>Timing</div>
       </div>
       <ul>
@@ -195,6 +219,7 @@ function DeliveryRow({
   d: WebhookDelivery
   onOpen: () => void
 }) {
+  const targetHost = safeHost(d.targetUrl)
   return (
     <li className="border-b border-border last:border-0">
       <div
@@ -207,30 +232,54 @@ function DeliveryRow({
             onOpen()
           }
         }}
-        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1fr_180px_140px_80px_100px] sm:gap-4"
+        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1.7fr_1.3fr_1.3fr_70px_110px] sm:gap-4"
       >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="truncate font-mono text-[12.5px]">
-              {truncateAddr(d.id, 8, 6)}
+              {d.eventType}
             </span>
-            <span onClick={(e) => e.stopPropagation()}>
-              <CopyButton value={d.id} />
-            </span>
+            {d.resourceType && (
+              <Badge variant="outline" className="text-[10px] uppercase">
+                {d.resourceType}
+              </Badge>
+            )}
           </div>
-          {d.lastStatusCode != null && (
-            <div className="mt-0.5 font-mono text-[11px] text-[var(--fg-3)]">
-              last · {d.lastStatusCode}
+          {d.resourceId && (
+            <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-[var(--fg-3)]">
+              <Hash className="size-3" />
+              <span className="truncate">{truncateAddr(d.resourceId, 6, 4)}</span>
             </div>
           )}
         </div>
 
-        <div className="truncate font-mono text-[12.5px] text-[var(--fg-2)]">
-          {d.eventType}
+        <div className="min-w-0">
+          {targetHost ? (
+            <span className="truncate font-mono text-[12.5px] text-[var(--fg-2)]">
+              {targetHost}
+            </span>
+          ) : (
+            <span className="text-xs text-[var(--fg-3)]">—</span>
+          )}
         </div>
 
-        <div className="truncate font-mono text-[12.5px] text-[var(--fg-2)]">
-          {truncateAddr(d.merchantId, 6, 4)}
+        <div className="min-w-0">
+          {d.lastStatusCode != null ? (
+            <span
+              className={cn(
+                'font-mono text-[12.5px] font-semibold',
+                statusCodeTone(d.lastStatusCode),
+              )}
+            >
+              HTTP {d.lastStatusCode}
+            </span>
+          ) : d.lastError ? (
+            <span className="truncate text-xs text-destructive">
+              {d.lastError}
+            </span>
+          ) : (
+            <span className="text-xs text-[var(--fg-3)]">—</span>
+          )}
         </div>
 
         <div className="font-mono text-[12.5px]">{d.attempts}</div>
@@ -305,16 +354,84 @@ function DeliveryDetailSheet({
                     {delivery.eventType}
                   </span>
                 </KVItem>
-                <KVItem label="Last status">
-                  <span className="font-mono">
-                    {delivery.lastStatusCode ?? '—'}
+                <KVItem label="Last response">
+                  <span
+                    className={cn(
+                      'font-mono text-sm font-semibold',
+                      statusCodeTone(delivery.lastStatusCode),
+                    )}
+                  >
+                    {delivery.lastStatusCode != null
+                      ? `HTTP ${delivery.lastStatusCode}`
+                      : '—'}
                   </span>
                 </KVItem>
                 <KVItem label="Attempts">
                   <span className="font-mono">{delivery.attempts}</span>
                 </KVItem>
                 <KVItem label="Timing">
-                  <span className="font-mono text-xs">{formatAt(delivery)}</span>
+                  <span className="font-mono text-xs">
+                    {formatAt(delivery)}
+                  </span>
+                </KVItem>
+              </KV>
+
+              {(delivery.targetUrl ||
+                delivery.resourceId ||
+                delivery.idempotencyKey) && (
+                <div className="space-y-3 rounded-md border border-border bg-[var(--bg-2)] p-3">
+                  {delivery.targetUrl && (
+                    <DetailLine label="Target" icon={<Link2 className="size-3.5" />}>
+                      <a
+                        href={delivery.targetUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[12.5px] text-primary hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span className="truncate">{delivery.targetUrl}</span>
+                        <ExternalLink className="size-3 shrink-0" />
+                      </a>
+                      <CopyButton value={delivery.targetUrl} />
+                    </DetailLine>
+                  )}
+                  {delivery.resourceId && (
+                    <DetailLine
+                      label={
+                        delivery.resourceType
+                          ? `${delivery.resourceType[0].toUpperCase()}${delivery.resourceType.slice(1)}`
+                          : 'Resource'
+                      }
+                      icon={
+                        delivery.resourceType === 'payout' ? (
+                          <Send className="size-3.5" />
+                        ) : (
+                          <FileText className="size-3.5" />
+                        )
+                      }
+                    >
+                      <span className="truncate font-mono text-[12.5px]">
+                        {delivery.resourceId}
+                      </span>
+                      <CopyButton value={delivery.resourceId} />
+                    </DetailLine>
+                  )}
+                  {delivery.idempotencyKey && (
+                    <DetailLine label="Idempotency" icon={<Hash className="size-3.5" />}>
+                      <span className="truncate font-mono text-[12.5px]">
+                        {delivery.idempotencyKey}
+                      </span>
+                      <CopyButton value={delivery.idempotencyKey} />
+                    </DetailLine>
+                  )}
+                </div>
+              )}
+
+              <KV>
+                <KVItem label="Delivery id" wide>
+                  <span className="break-all font-mono text-[12.5px]">
+                    {delivery.id}
+                  </span>
                 </KVItem>
                 <KVItem label="Merchant" wide>
                   <span className="font-mono text-[12.5px]">
@@ -341,6 +458,8 @@ function DeliveryDetailSheet({
                   </div>
                 </div>
               )}
+
+              {delivery.payload && <PayloadBlock payload={delivery.payload} />}
 
               {delivery.status === 'dead' && (
                 <div className="border-t border-border pt-5">
@@ -414,6 +533,62 @@ function KVItem({
   )
 }
 
+function DetailLine({
+  label,
+  icon,
+  children,
+}: {
+  label: string
+  icon?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="flex w-24 shrink-0 items-center gap-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--fg-3)]">
+        {icon}
+        {label}
+      </span>
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">{children}</span>
+    </div>
+  )
+}
+
+function PayloadBlock({
+  payload,
+}: {
+  payload: NonNullable<WebhookDelivery['payload']>
+}) {
+  const json = React.useMemo(() => JSON.stringify(payload, null, 2), [payload])
+  const [collapsed, setCollapsed] = React.useState(false)
+  return (
+    <div className="rounded-md border border-border bg-card">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <span className="eyebrow">Payload</span>
+          <span className="font-mono text-[11px] text-[var(--fg-2)]">
+            {payload.event}
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setCollapsed((v) => !v)}
+            className="cursor-pointer rounded px-1.5 py-0.5 text-[11px] text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
+          >
+            {collapsed ? 'Expand' : 'Collapse'}
+          </button>
+          <CopyButton value={json} label="Copy JSON" />
+        </div>
+      </div>
+      {!collapsed && (
+        <pre className="max-h-[420px] overflow-auto px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-[var(--fg-1)]">
+          {json}
+        </pre>
+      )}
+    </div>
+  )
+}
+
 /* ── skeletons / empty ─────────────────────────────────── */
 
 function ListSkeleton() {
@@ -422,14 +597,14 @@ function ListSkeleton() {
       {Array.from({ length: 4 }).map((_, i) => (
         <div
           key={i}
-          className="grid grid-cols-[1fr_180px_140px_80px_100px] items-center gap-4 border-b border-border px-5 py-3 last:border-0"
+          className="grid grid-cols-[1.7fr_1.3fr_1.3fr_70px_110px] items-center gap-4 border-b border-border px-5 py-3 last:border-0"
         >
           <div className="space-y-1.5">
             <Skeleton className="h-3 w-40" />
-            <Skeleton className="h-2.5 w-16" />
+            <Skeleton className="h-2.5 w-24" />
           </div>
           <Skeleton className="h-3 w-32" />
-          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-3 w-20" />
           <Skeleton className="h-3 w-6" />
           <Skeleton className="h-3 w-16" />
         </div>

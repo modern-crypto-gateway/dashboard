@@ -88,3 +88,30 @@ export function isLowGas(
   if (balance == null) return false
   return balance < gasThreshold(symbol, family)
 }
+
+/**
+ * Native gas asset (symbol + smallest-unit decimals) for a given chainId.
+ * Used to render `feeEstimateNative` / `feeQuotedNative` / `topUpAmountRaw`,
+ * which the gateway returns as raw smallest units (wei / sun / lamports).
+ */
+const NATIVE_BY_CHAIN: Record<number, { symbol: string; decimals: number }> = {
+  1: { symbol: 'ETH', decimals: 18 },
+  56: { symbol: 'BNB', decimals: 18 },
+  137: { symbol: 'POL', decimals: 18 },
+  8453: { symbol: 'ETH', decimals: 18 },
+  43114: { symbol: 'AVAX', decimals: 18 },
+  728: { symbol: 'TRX', decimals: 6 },
+  900: { symbol: 'SOL', decimals: 9 },
+}
+
+const FAMILY_NATIVE_FALLBACK: Record<Family, { symbol: string; decimals: number }> = {
+  evm: { symbol: 'ETH', decimals: 18 },
+  tron: { symbol: 'TRX', decimals: 6 },
+  solana: { symbol: 'SOL', decimals: 9 },
+}
+
+export function nativeMeta(chainId: number): { symbol: string; decimals: number } {
+  const exact = NATIVE_BY_CHAIN[chainId]
+  if (exact) return exact
+  return FAMILY_NATIVE_FALLBACK[chainInfo(chainId).family]
+}

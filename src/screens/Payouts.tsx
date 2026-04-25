@@ -12,6 +12,7 @@ import {
   ArrowUpDown,
   Ban,
   ChevronDown,
+  ExternalLink,
   Fuel,
   Info,
   KeyRound,
@@ -20,11 +21,12 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Webhook,
   X,
 } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
-import { chainInfo } from '@/lib/chains'
+import { chainInfo, nativeMeta } from '@/lib/chains'
 import {
   decimalPlaces,
   fmtLocal,
@@ -494,7 +496,20 @@ function PayoutRow({
                 <Layers className="size-3" />
               </span>
             )}
+            {po.webhookUrl && (
+              <span
+                className="inline-flex items-center text-[var(--fg-3)]"
+                title="Per-payout webhook URL override"
+              >
+                <Webhook className="size-3" />
+              </span>
+            )}
           </div>
+          {po.sourceAddress && (
+            <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--fg-3)]">
+              from {truncateAddr(po.sourceAddress, 6, 4)}
+            </div>
+          )}
         </div>
 
         <ChainPill chainId={po.chainId} />
@@ -686,21 +701,18 @@ function PayoutDetailSheet({
                   <span className="font-mono text-xs">{po.kind}</span>
                 </KVItem>
 
-                <KVItem label="Fee estimate">
-                  <span className="font-mono">
-                    {po.feeEstimateNative ?? '—'}
-                  </span>
+                <KVItem label="Fee quoted (plan time)">
+                  <NativeAmount chainId={po.chainId} raw={po.feeQuotedNative} />
                 </KVItem>
-                <KVItem label="Fee quoted">
-                  <span className="font-mono">
-                    {po.feeQuotedNative ?? '—'}
-                  </span>
+                <KVItem label="Fee actual (post-broadcast)">
+                  <NativeAmount chainId={po.chainId} raw={po.feeEstimateNative} />
                 </KVItem>
                 {po.feeQuotedNative &&
                   po.feeEstimateNative &&
                   po.feeQuotedNative !== po.feeEstimateNative && (
                     <KVItem label="Gas drift" wide>
                       <FeeDrift
+                        chainId={po.chainId}
                         quoted={po.feeQuotedNative}
                         actual={po.feeEstimateNative}
                       />
@@ -750,9 +762,10 @@ function PayoutDetailSheet({
                       {po.topUpAmountRaw && (
                         <div className="flex items-center gap-2">
                           <span className="eyebrow">amount</span>
-                          <span className="font-mono text-xs">
-                            {po.topUpAmountRaw} (raw)
-                          </span>
+                          <NativeAmount
+                            chainId={po.chainId}
+                            raw={po.topUpAmountRaw}
+                          />
                         </div>
                       )}
                       <div className="flex items-center gap-2">
@@ -807,6 +820,27 @@ function PayoutDetailSheet({
                     </button>
                   </KVItem>
                 )}
+
+                {po.webhookUrl && (
+                  <KVItem label="Webhook URL" wide>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <Webhook className="size-3.5 shrink-0 text-[var(--fg-3)]" />
+                      <a
+                        href={po.webhookUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[12.5px] text-primary hover:underline"
+                      >
+                        <span className="truncate">{po.webhookUrl}</span>
+                        <ExternalLink className="size-3 shrink-0" />
+                      </a>
+                      <CopyButton value={po.webhookUrl} />
+                      <Badge variant="outline" className="shrink-0 text-[9.5px]">
+                        per-payout override
+                      </Badge>
+                    </div>
+                  </KVItem>
+                )}
               </KV>
 
               {po.lastError && (
@@ -825,22 +859,62 @@ function PayoutDetailSheet({
   )
 }
 
-function FeeDrift({ quoted, actual }: { quoted: string; actual: string }) {
+function NativeAmount({
+  chainId,
+  raw,
+}: {
+  chainId: number
+  raw: string | null | undefined
+}) {
+  if (raw == null) return <span className="text-[var(--fg-3)]">—</span>
+  const native = nativeMeta(chainId)
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+      <span className="font-mono tabular-nums">
+        {formatUnits(raw, native.decimals)}
+      </span>
+      <span className="font-mono text-[11px] text-[var(--fg-3)]">
+        {native.symbol}
+      </span>
+      <span className="font-mono text-[10px] text-[var(--fg-3)]">
+        · raw {raw}
+      </span>
+    </span>
+  )
+}
+
+function FeeDrift({
+  chainId,
+  quoted,
+  actual,
+}: {
+  chainId: number
+  quoted: string
+  actual: string
+}) {
+  const native = nativeMeta(chainId)
   const q = parseFloat(quoted)
   const a = parseFloat(actual)
+  const qHuman = formatUnits(quoted, native.decimals)
+  const aHuman = formatUnits(actual, native.decimals)
   if (!isFinite(q) || !isFinite(a) || q <= 0) {
     return (
       <span className="font-mono text-xs text-[var(--fg-2)]">
-        {quoted} → {actual}
+        {qHuman} → {aHuman} {native.symbol}
       </span>
     )
   }
   const pct = ((a - q) / q) * 100
   const up = pct > 0
-  const color = Math.abs(pct) < 10 ? 'text-[var(--fg-2)]' : up ? 'text-warn' : 'text-success'
+  const color =
+    Math.abs(pct) < 10
+      ? 'text-[var(--fg-2)]'
+      : up
+        ? 'text-warn'
+        : 'text-success'
   return (
     <span className={`font-mono text-xs ${color}`}>
-      {quoted} → {actual}
+      {qHuman} → {aHuman} {native.symbol}
       <span className="ml-1.5 text-[10.5px]">
         ({up ? '+' : ''}
         {pct.toFixed(1)}%)

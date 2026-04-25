@@ -52,7 +52,15 @@ export type GatewayInvoice = {
   receiveAddress: string
   addressIndex: number
   acceptedFamilies?: Family[]
-  receiveAddresses?: Array<{ family: Family; address: string }>
+  receiveAddresses?: Array<{
+    family: Family
+    address: string
+    poolAddressId?: string
+  }>
+  /** Pinned USD-per-token rates for this invoice's window (USD-path only). */
+  rates?: Record<string, string> | null
+  /** Wall-clock when the pinned rate window expires (USD-path only). */
+  rateWindowExpiresAt?: string | null
   requiredAmountRaw: string
   receivedAmountRaw: string
   fiatAmount: string | null
@@ -262,6 +270,20 @@ export type WebhookDelivery = {
   id: string
   merchantId: string
   eventType: string
+  /** Stable de-dup key, e.g. `invoice.confirmed:<id>:confirmed`. */
+  idempotencyKey?: string
+  /** Full event body — `{ event, timestamp, data: ... }`. */
+  payload?: {
+    event: string
+    timestamp: string
+    data: Record<string, unknown>
+  }
+  /** Destination URL the dispatcher POSTed to (per-resource override or merchant default). */
+  targetUrl?: string
+  /** Family of the originating resource. */
+  resourceType?: 'invoice' | 'payout' | string
+  /** UUID of the originating invoice / payout. */
+  resourceId?: string
   status: 'pending' | 'delivered' | 'dead'
   attempts: number
   lastStatusCode: number | null

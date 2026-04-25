@@ -4,11 +4,13 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { toast } from 'sonner'
 import {
   ChevronDown,
+  ExternalLink,
   FileText,
   KeyRound,
   Loader2,
   Plus,
   Search,
+  Webhook,
   X,
 } from 'lucide-react'
 
@@ -302,7 +304,7 @@ function InvoiceList({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden grid-cols-[1fr_120px_160px_110px_90px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
+      <div className="hidden grid-cols-[1fr_120px_180px_110px_90px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
         <div>Invoice</div>
         <div>Chain</div>
         <div>Amount</div>
@@ -336,6 +338,11 @@ function InvoiceRow({
   inv: GatewayInvoice
   onOpen: () => void
 }) {
+  const families = inv.acceptedFamilies ?? []
+  const multiFamily = families.length > 1
+  const paid = inv.paidUsd ? parseFloat(inv.paidUsd) : 0
+  const required = inv.amountUsd ? parseFloat(inv.amountUsd) : 0
+  const showPaid = inv.amountUsd != null && paid > 0
   return (
     <li className="border-b border-border last:border-0">
       <div
@@ -348,7 +355,7 @@ function InvoiceRow({
             onOpen()
           }
         }}
-        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1fr_120px_160px_110px_90px] sm:gap-4"
+        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1fr_120px_180px_110px_90px] sm:gap-4"
       >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -358,6 +365,14 @@ function InvoiceRow({
             <span onClick={(e) => e.stopPropagation()}>
               <CopyButton value={inv.id} />
             </span>
+            {inv.webhookUrl && (
+              <span
+                className="inline-flex items-center text-[var(--fg-3)]"
+                title="Per-invoice webhook URL override"
+              >
+                <Webhook className="size-3" />
+              </span>
+            )}
           </div>
           {inv.externalId && (
             <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--fg-3)]">
@@ -366,14 +381,46 @@ function InvoiceRow({
           )}
         </div>
 
-        <ChainPill chainId={inv.chainId} />
+        {multiFamily ? (
+          <div className="flex flex-wrap items-center gap-1">
+            {families.map((f) => (
+              <span
+                key={f}
+                className="rounded border border-border bg-[var(--bg-2)] px-1 py-0 text-[9.5px] uppercase tracking-wider text-[var(--fg-2)]"
+              >
+                {f}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <ChainPill chainId={inv.chainId} />
+        )}
 
         <div className="min-w-0">
           <div className="truncate font-mono text-[12.5px]">
             {amountSpecOf(inv)}
           </div>
-          <div className="font-mono text-[11px] text-[var(--fg-3)]">
-            {inv.token}
+          <div className="flex items-center gap-1 font-mono text-[11px] text-[var(--fg-3)]">
+            {showPaid ? (
+              <>
+                <span
+                  className={
+                    paid >= required
+                      ? 'text-success'
+                      : 'text-[var(--fg-2)]'
+                  }
+                >
+                  {fmtUsd(paid)} paid
+                </span>
+                {inv.overpaidUsd && parseFloat(inv.overpaidUsd) > 0 && (
+                  <span className="text-warn">
+                    · +{fmtUsd(inv.overpaidUsd)} over
+                  </span>
+                )}
+              </>
+            ) : (
+              <span>{inv.token}</span>
+            )}
           </div>
         </div>
 
@@ -545,6 +592,9 @@ function SheetTabs({
 
 function OverviewTab({ data }: { data: InvoiceDetails }) {
   const { invoice, amounts } = data
+  const families = invoice.acceptedFamilies ?? []
+  const showTolerance =
+    invoice.paymentToleranceUnderBps > 0 || invoice.paymentToleranceOverBps > 0
   return (
     <div className="space-y-5">
       <KV grid>
@@ -579,10 +629,82 @@ function OverviewTab({ data }: { data: InvoiceDetails }) {
         <KVItem label="Expires">
           <ExpiresCell iso={invoice.expiresAt} />
         </KVItem>
+        {invoice.confirmedAt && (
+          <KVItem label="Confirmed">
+            <span className="font-mono text-xs">{fmtLocal(invoice.confirmedAt)}</span>
+          </KVItem>
+        )}
+
+        {families.length > 0 && (
+          <KVItem label="Accepted families" wide>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {families.map((f) => (
+                <Badge key={f} variant="outline" className="uppercase">
+                  {f}
+                </Badge>
+              ))}
+              {families.length > 1 && (
+                <span className="text-[10.5px] text-[var(--fg-3)]">
+                  payable from any · USD-aggregated
+                </span>
+              )}
+            </div>
+          </KVItem>
+        )}
+
+        {showTolerance && (
+          <KVItem label="Tolerance" wide>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+              <span className="font-mono text-[var(--fg-2)]">
+                under{' '}
+                <span className="text-foreground">
+                  {bpsLabel(invoice.paymentToleranceUnderBps)}
+                </span>
+              </span>
+              <span className="font-mono text-[var(--fg-2)]">
+                over{' '}
+                <span className="text-foreground">
+                  {bpsLabel(invoice.paymentToleranceOverBps)}
+                </span>
+              </span>
+              <span className="text-[10.5px] text-[var(--fg-3)]">
+                snapshotted at create time
+              </span>
+            </div>
+          </KVItem>
+        )}
+
+        {invoice.webhookUrl && (
+          <KVItem label="Webhook URL" wide>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <Webhook className="size-3.5 shrink-0 text-[var(--fg-3)]" />
+              <a
+                href={invoice.webhookUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[12.5px] text-primary hover:underline"
+              >
+                <span className="truncate">{invoice.webhookUrl}</span>
+                <ExternalLink className="size-3 shrink-0" />
+              </a>
+              <CopyButton value={invoice.webhookUrl} />
+              <Badge variant="outline" className="shrink-0 text-[9.5px]">
+                per-invoice override
+              </Badge>
+            </div>
+          </KVItem>
+        )}
       </KV>
 
       {amounts.requiredUsd != null && (
         <PaymentProgress amounts={amounts} overpaidUsd={invoice.overpaidUsd} />
+      )}
+
+      {invoice.rates && Object.keys(invoice.rates).length > 0 && (
+        <RatesSnapshot
+          rates={invoice.rates}
+          windowExpiresAt={invoice.rateWindowExpiresAt}
+        />
       )}
 
       {invoice.metadata && Object.keys(invoice.metadata).length > 0 && (
@@ -592,6 +714,92 @@ function OverviewTab({ data }: { data: InvoiceDetails }) {
             {JSON.stringify(invoice.metadata, null, 2)}
           </pre>
         </div>
+      )}
+    </div>
+  )
+}
+
+function bpsLabel(bps: number): string {
+  if (bps === 0) return '0%'
+  const pct = bps / 100
+  return pct < 1 ? `${pct.toFixed(2)}%` : `${pct.toFixed(1)}%`
+}
+
+function RatesSnapshot({
+  rates,
+  windowExpiresAt,
+}: {
+  rates: Record<string, string>
+  windowExpiresAt?: string | null
+}) {
+  const [open, setOpen] = React.useState(false)
+  const expiresMs = windowExpiresAt ? Date.parse(windowExpiresAt) : NaN
+  const expired = isFinite(expiresMs) && expiresMs <= Date.now()
+  const sortedEntries = React.useMemo(
+    () => Object.entries(rates).sort(([a], [b]) => a.localeCompare(b)),
+    [rates],
+  )
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="eyebrow shrink-0">Pinned rates</span>
+          <span className="shrink-0 text-[11px] text-[var(--fg-3)]">
+            {sortedEntries.length} token
+            {sortedEntries.length === 1 ? '' : 's'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {windowExpiresAt && (
+            <span
+              className={
+                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px] font-medium ' +
+                (expired
+                  ? 'border-[var(--warn-border)] bg-[var(--warn-bg)] text-warn'
+                  : 'border-border bg-[var(--bg-2)] text-[var(--fg-2)]')
+              }
+              title={fmtLocal(windowExpiresAt, { seconds: true })}
+            >
+              {expired ? 'expired' : 'expires'}{' '}
+              <span className="font-mono">
+                {fmtLocal(windowExpiresAt)}
+              </span>
+            </span>
+          )}
+          <ChevronDown
+            className={`size-3.5 shrink-0 text-[var(--fg-3)] transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </div>
+      </button>
+      {open && (
+        <ul className="grid grid-cols-1 border-t border-border sm:grid-cols-2">
+          {sortedEntries.map(([sym, rate], i) => {
+            const lastInCol =
+              i === sortedEntries.length - 1 ||
+              i === sortedEntries.length - 2
+            return (
+              <li
+                key={sym}
+                className={
+                  'flex items-baseline justify-between gap-3 px-3 py-2 sm:[&:nth-child(odd)]:border-r sm:[&:nth-child(odd)]:border-border ' +
+                  (lastInCol ? '' : 'border-b border-border')
+                }
+              >
+                <span className="rounded bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-[10.5px] uppercase tracking-wider text-[var(--fg-2)]">
+                  {sym}
+                </span>
+                <span className="font-mono text-sm tabular-nums">
+                  <span className="text-[var(--fg-3)]">$</span>
+                  {rate}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
       )}
     </div>
   )
@@ -625,7 +833,8 @@ function ExpiresCell({ iso }: { iso: string }) {
 
 function AddressesTab({ data }: { data: InvoiceDetails }) {
   const { invoice } = data
-  const list =
+  const list:
+    | Array<{ family: Family; address: string; poolAddressId?: string }> =
     invoice.receiveAddresses?.length
       ? invoice.receiveAddresses
       : [{ family: 'evm' as Family, address: invoice.receiveAddress }]
@@ -653,6 +862,15 @@ function AddressesTab({ data }: { data: InvoiceDetails }) {
           <div className="w-full break-all text-center font-mono text-[11px] text-[var(--fg-2)]">
             {r.address}
           </div>
+          {r.poolAddressId && (
+            <div className="flex w-full items-center justify-between gap-2 border-t border-border pt-2 text-[10.5px] text-[var(--fg-3)]">
+              <span className="uppercase tracking-wider">pool row</span>
+              <span className="inline-flex items-center gap-1 font-mono">
+                {truncateAddr(r.poolAddressId, 6, 4)}
+                <CopyButton value={r.poolAddressId} />
+              </span>
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -667,24 +885,34 @@ function TransactionsTab({ data }: { data: InvoiceDetails }) {
       </div>
     )
   }
+  // Multi-family invoices accept any registered token; "wrong token" only
+  // applies to single-token (legacy) invoices, where USD aggregation isn't
+  // in play.
+  const isMultiFamily = (data.invoice.acceptedFamilies?.length ?? 0) > 0 ||
+    data.invoice.amountUsd != null
   const invoiceToken = data.invoice.token
   return (
-    <div className="overflow-hidden rounded-md border border-border">
+    <div className="overflow-x-auto rounded-md border border-border">
       <table className="w-full border-separate border-spacing-0 text-sm">
         <thead>
           <tr className="bg-[var(--bg-2)]">
             <Th>Tx</Th>
+            <Th>Chain</Th>
             <Th>Status</Th>
+            <Th>From</Th>
             <Th>Token</Th>
             <Th>Amount</Th>
             <Th>USD</Th>
             <Th>Conf</Th>
+            <Th>Detected</Th>
           </tr>
         </thead>
         <tbody>
           {data.transactions.map((t) => {
             const uncounted =
-              t.amountUsd == null && t.token.toUpperCase() !== invoiceToken.toUpperCase()
+              !isMultiFamily &&
+              t.amountUsd == null &&
+              t.token.toUpperCase() !== invoiceToken.toUpperCase()
             return (
               <tr
                 key={t.id}
@@ -692,14 +920,22 @@ function TransactionsTab({ data }: { data: InvoiceDetails }) {
                 title={
                   uncounted
                     ? `Wrong token — this transfer of ${t.token} doesn't count toward a ${invoiceToken} invoice. Logged for audit only.`
-                    : undefined
+                    : t.blockNumber != null
+                      ? `block ${t.blockNumber}`
+                      : undefined
                 }
               >
                 <Td>
                   <Addr value={t.txHash} />
                 </Td>
+                <Td className="text-[12.5px]">
+                  <ChainPill chainId={t.chainId} />
+                </Td>
                 <Td>
                   <StatusBadge status={t.status} />
+                </Td>
+                <Td>
+                  <Addr value={t.fromAddress} />
                 </Td>
                 <Td className="font-mono text-[12.5px]">
                   <span className="inline-flex items-center gap-1.5">
@@ -716,6 +952,9 @@ function TransactionsTab({ data }: { data: InvoiceDetails }) {
                   {t.amountUsd ? fmtUsd(t.amountUsd) : '—'}
                 </Td>
                 <Td className="font-mono text-[12.5px]">{t.confirmations}</Td>
+                <Td className="font-mono text-[11px] text-[var(--fg-3)] whitespace-nowrap">
+                  {fmtRel(unixOf(t.detectedAt))}
+                </Td>
               </tr>
             )
           })}
@@ -771,12 +1010,14 @@ function KV({
 function KVItem({
   label,
   children,
+  wide,
 }: {
   label: string
   children: React.ReactNode
+  wide?: boolean
 }) {
   return (
-    <div>
+    <div className={wide ? 'sm:col-span-2' : ''}>
       <dt className="eyebrow mb-1">{label}</dt>
       <dd>{children}</dd>
     </div>
@@ -900,7 +1141,7 @@ function ListSkeleton() {
       {Array.from({ length: 4 }).map((_, i) => (
         <div
           key={i}
-          className="grid grid-cols-[1fr_120px_160px_110px_90px] items-center gap-4 border-b border-border px-5 py-3 last:border-0"
+          className="grid grid-cols-[1fr_120px_180px_110px_90px] items-center gap-4 border-b border-border px-5 py-3 last:border-0"
         >
           <div className="space-y-1.5">
             <Skeleton className="h-3 w-40" />
