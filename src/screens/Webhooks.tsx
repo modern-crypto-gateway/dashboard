@@ -50,6 +50,76 @@ function statusCodeTone(code: number | null | undefined) {
   return 'text-[var(--fg-3)]'
 }
 
+/**
+ * Map a backend event-type string to a friendly label + tone.
+ * Handles both v3 colon-form (`invoice:payment_confirmed`,
+ * `invoice:completed`) and legacy dot-form (`invoice.confirmed`,
+ * `invoice.transfer_detected`, …) so we don't lose history when older
+ * deliveries are replayed.
+ */
+type EventTone = 'success' | 'warn' | 'danger' | 'accent' | 'default'
+
+function describeEventType(eventType: string): {
+  label: string
+  scope: 'invoice' | 'payout' | 'other'
+  /** For per-tx events (`invoice:payment_*` / `invoice.transfer_detected` /
+   * `invoice.payment_received`) we add a tx icon so operators can
+   * immediately tell them apart from whole-invoice events. */
+  perTx: boolean
+  tone: EventTone
+} {
+  // Normalise both `invoice:payment_confirmed` and `invoice.payment_received`
+  // into a tail like `payment_confirmed` for matching.
+  const [scopePart, ...rest] = eventType.split(/[:.]/)
+  const tail = rest.join('.')
+  const scope: 'invoice' | 'payout' | 'other' =
+    scopePart === 'invoice'
+      ? 'invoice'
+      : scopePart === 'payout'
+        ? 'payout'
+        : 'other'
+
+  // v3 invoice events
+  if (scope === 'invoice') {
+    switch (tail) {
+      case 'payment_detected':
+      case 'transfer_detected': // legacy
+        return { label: 'Payment detected', scope, perTx: true, tone: 'warn' }
+      case 'payment_confirmed':
+      case 'payment_received': // legacy
+        return { label: 'Payment confirmed', scope, perTx: true, tone: 'success' }
+      case 'completed':
+      case 'confirmed': // legacy
+        return { label: 'Invoice completed', scope, perTx: false, tone: 'success' }
+      case 'overpaid': // legacy (now folded into completed+extraStatus)
+        return { label: 'Invoice overpaid', scope, perTx: false, tone: 'accent' }
+      case 'partial': // legacy
+        return { label: 'Invoice partial', scope, perTx: false, tone: 'warn' }
+      case 'detected': // legacy whole-invoice "first sighting"
+        return { label: 'Invoice detected', scope, perTx: false, tone: 'warn' }
+      case 'expired':
+        return { label: 'Invoice expired', scope, perTx: false, tone: 'danger' }
+      case 'canceled':
+        return { label: 'Invoice canceled', scope, perTx: false, tone: 'danger' }
+      case 'demoted':
+        return { label: 'Invoice demoted (reorg)', scope, perTx: false, tone: 'danger' }
+    }
+  }
+
+  if (scope === 'payout') {
+    switch (tail) {
+      case 'submitted':
+        return { label: 'Payout submitted', scope, perTx: false, tone: 'warn' }
+      case 'confirmed':
+        return { label: 'Payout confirmed', scope, perTx: false, tone: 'success' }
+      case 'failed':
+        return { label: 'Payout failed', scope, perTx: false, tone: 'danger' }
+    }
+  }
+
+  return { label: eventType, scope, perTx: false, tone: 'default' }
+}
+
 type Status = 'pending' | 'delivered' | 'dead'
 
 export function WebhooksPage() {
@@ -220,6 +290,7 @@ function DeliveryRow({
   onOpen: () => void
 }) {
   const targetHost = safeHost(d.targetUrl)
+  const ev = describeEventType(d.eventType)
   return (
     <li className="border-b border-border last:border-0">
       <div
@@ -236,21 +307,32 @@ function DeliveryRow({
       >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="truncate font-mono text-[12.5px]">
-              {d.eventType}
-            </span>
-            {d.resourceType && (
-              <Badge variant="outline" className="text-[10px] uppercase">
-                {d.resourceType}
-              </Badge>
+            <Badge
+              variant={ev.tone === 'default' ? 'outline' : ev.tone}
+              className="shrink-0 text-[10.5px]"
+            >
+              {ev.label}
+            </Badge>
+            {ev.perTx && (
+              <span
+                className="text-[var(--fg-3)]"
+                title="Per-transaction event"
+              >
+                <Hash className="size-3" />
+              </span>
             )}
           </div>
-          {d.resourceId && (
-            <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-[var(--fg-3)]">
-              <Hash className="size-3" />
-              <span className="truncate">{truncateAddr(d.resourceId, 6, 4)}</span>
-            </div>
-          )}
+          <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-[var(--fg-3)]">
+            <span className="truncate">{d.eventType}</span>
+            {d.resourceId && (
+              <>
+                <span>·</span>
+                <span className="truncate">
+                  {truncateAddr(d.resourceId, 6, 4)}
+                </span>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="min-w-0">
@@ -350,9 +432,29 @@ function DeliveryDetailSheet({
             <div className="space-y-5">
               <KV>
                 <KVItem label="Event">
-                  <span className="font-mono text-[12.5px]">
-                    {delivery.eventType}
-                  </span>
+                  <div className="flex flex-col gap-0.5">
+                    {(() => {
+                      const ev = describeEventType(delivery.eventType)
+                      return (
+                        <>
+                          <span className="flex items-center gap-1.5 text-sm font-medium">
+                            {ev.label}
+                            {ev.perTx && (
+                              <span
+                                className="text-[var(--fg-3)]"
+                                title="Per-transaction event"
+                              >
+                                <Hash className="size-3" />
+                              </span>
+                            )}
+                          </span>
+                          <span className="font-mono text-[11px] text-[var(--fg-3)]">
+                            {delivery.eventType}
+                          </span>
+                        </>
+                      )
+                    })()}
+                  </div>
                 </KVItem>
                 <KVItem label="Last response">
                   <span

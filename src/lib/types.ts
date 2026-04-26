@@ -43,10 +43,33 @@ export type Merchant = {
   updatedAt: number
 }
 
+/**
+ * Invoice lifecycle stage. As of the v3 spec, fidelity (partial /
+ * overpaid) is no longer a status — it lives on the orthogonal
+ * `extraStatus` field.
+ */
+export type InvoiceStatus =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'expired'
+  | 'canceled'
+
+/**
+ * Payment-fidelity signal, orthogonal to status. `null` is the normal flow.
+ * `partial` pairs with `status='processing'`; `overpaid` pairs with
+ * `status='completed'`.
+ */
+export type InvoiceExtraStatus = 'partial' | 'overpaid' | null
+
 export type GatewayInvoice = {
   id: string
   merchantId: string
-  status: string
+  /** v3 lifecycle. Older deployments may still emit legacy values
+   * (`created` / `partial` / `detected` / `confirmed` / `overpaid`); the UI
+   * coerces those to v3 for display. */
+  status: InvoiceStatus | string
+  extraStatus?: InvoiceExtraStatus
   chainId: number
   token: string
   receiveAddress: string

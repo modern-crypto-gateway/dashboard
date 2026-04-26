@@ -29,6 +29,7 @@ import type {
   Family,
   GatewayInvoice,
   InvoiceDetails,
+  InvoiceExtraStatus,
   InvoiceListResponse,
   Merchant,
 } from '@/lib/types'
@@ -69,40 +70,132 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 /* ── public helpers reused by Payouts ───────────────────── */
 
-export function StatusBadge({ status }: { status: string }) {
-  const variant: 'success' | 'accent' | 'warn' | 'danger' | 'default' = (() => {
-    switch (status) {
-      case 'confirmed':
-        return 'success'
-      case 'overpaid':
-        return 'accent'
-      case 'detected':
-      case 'partial':
-      case 'submitted':
-      case 'reserved':
-      case 'topping-up':
-      case 'planned':
-        return 'warn'
-      case 'expired':
-      case 'canceled':
-      case 'failed':
-      case 'reverted':
-        return 'danger'
-      default:
-        return 'default'
-    }
-  })()
-  return <Badge variant={variant}>{status}</Badge>
+/**
+ * Map a (possibly legacy) invoice status onto the v3 lifecycle stages
+ * plus a synthetic extraStatus when the legacy value implied fidelity
+ * (`partial` → processing+partial, `overpaid` → completed+overpaid).
+ * Non-invoice statuses (payouts: planned/reserved/submitted/…/transactions:
+ * detected/confirmed/reverted/orphaned) pass through unchanged.
+ */
+function normalizeInvoiceStatus(
+  status: string,
+): { status: string; extra: InvoiceExtraStatus } {
+  switch (status) {
+    case 'created':
+      return { status: 'pending', extra: null }
+    case 'partial':
+      return { status: 'processing', extra: 'partial' }
+    case 'detected':
+      return { status: 'processing', extra: null }
+    case 'confirmed':
+      return { status: 'completed', extra: null }
+    case 'overpaid':
+      return { status: 'completed', extra: 'overpaid' }
+    default:
+      return { status, extra: null }
+  }
+}
+
+function statusVariant(
+  status: string,
+): 'success' | 'accent' | 'warn' | 'danger' | 'default' {
+  switch (status) {
+    // Invoice lifecycle (v3)
+    case 'completed':
+    case 'confirmed': // payouts + legacy invoices
+      return 'success'
+    case 'processing':
+      return 'warn'
+    case 'pending':
+      return 'default'
+    // Payouts
+    case 'submitted':
+    case 'reserved':
+    case 'topping-up':
+    case 'planned':
+      return 'warn'
+    // Tx ingest
+    case 'detected':
+      return 'warn'
+    case 'reverted':
+    case 'orphaned':
+      return 'danger'
+    // Terminal failures
+    case 'expired':
+    case 'canceled':
+    case 'failed':
+      return 'danger'
+    // Legacy fidelity values, kept for back-compat with old gateways
+    case 'overpaid':
+      return 'accent'
+    case 'partial':
+      return 'warn'
+    default:
+      return 'default'
+  }
+}
+
+export function StatusBadge({
+  status,
+  extraStatus,
+  stack,
+}: {
+  status: string
+  extraStatus?: InvoiceExtraStatus
+  /**
+   * When `true`, render the lifecycle badge on top and the fidelity chip
+   * below as a smaller text affordance — used in narrow list cells to keep
+   * the row from blowing out into the next column.
+   */
+  stack?: boolean
+}) {
+  const norm = normalizeInvoiceStatus(status)
+  const effectiveExtra = extraStatus ?? norm.extra
+  if (stack) {
+    return (
+      <span className="inline-flex flex-col items-start gap-0.5">
+        <Badge variant={statusVariant(norm.status)}>{norm.status}</Badge>
+        {effectiveExtra && (
+          <span
+            className={
+              'text-[10px] font-medium uppercase tracking-wider ' +
+              (effectiveExtra === 'overpaid' ? 'text-primary' : 'text-warn')
+            }
+          >
+            {effectiveExtra}
+          </span>
+        )}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <Badge variant={statusVariant(norm.status)}>{norm.status}</Badge>
+      {effectiveExtra && (
+        <Badge
+          variant={effectiveExtra === 'overpaid' ? 'accent' : 'warn'}
+          className="text-[9.5px]"
+        >
+          {effectiveExtra}
+        </Badge>
+      )}
+    </span>
+  )
 }
 
 /* ── page ────────────────────────────────────────────────── */
 
 type InvoiceFilter = 'all' | 'open' | 'paid' | 'failed'
 
+/**
+ * v3 lifecycle: pending,processing,completed,expired,canceled.
+ * Legacy values (`created`/`partial`/`detected`/`confirmed`/`overpaid`)
+ * are sent too so older gateways still get filtered correctly.
+ */
 const STATUS_CSV: Record<InvoiceFilter, string | undefined> = {
   all: undefined,
-  open: 'created,partial,detected',
-  paid: 'confirmed,overpaid',
+  open: 'pending,processing,created,partial,detected',
+  paid: 'completed,confirmed,overpaid',
   failed: 'expired,canceled',
 }
 
@@ -425,7 +518,11 @@ function InvoiceRow({
         </div>
 
         <div>
-          <StatusBadge status={inv.status} />
+          <StatusBadge
+            status={inv.status}
+            extraStatus={inv.extraStatus ?? null}
+            stack
+          />
         </div>
 
         <div className="text-xs text-[var(--fg-3)]">
@@ -494,8 +591,14 @@ function InvoiceDetailSheet({
   })
 
   const inv = detail.data?.invoice
+  // Terminal statuses: v3 = completed/expired/canceled. Legacy gateways
+  // may still emit confirmed/overpaid for the same idea — block both so
+  // we don't try to force-expire a paid invoice on either schema.
   const canExpire =
-    inv && !['expired', 'canceled', 'confirmed', 'overpaid'].includes(inv.status)
+    inv &&
+    !['completed', 'expired', 'canceled', 'confirmed', 'overpaid'].includes(
+      inv.status,
+    )
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -506,7 +609,9 @@ function InvoiceDetailSheet({
               {invoiceId ? truncateAddr(invoiceId, 10, 8) : ''}
             </SheetTitle>
             {invoiceId && <CopyButton value={invoiceId} />}
-            {inv && <StatusBadge status={inv.status} />}
+            {inv && (
+              <StatusBadge status={inv.status} extraStatus={inv.extraStatus ?? null} />
+            )}
           </div>
           <SheetTabs value={tab} onChange={setTab} />
         </SheetHeader>
