@@ -23,6 +23,7 @@ import {
   fmtRel,
   fmtUsd,
   truncateAddr,
+  useNow,
 } from '@/lib/format'
 import { useActiveMerchant, useMerchants } from '@/lib/merchants'
 import type {
@@ -561,9 +562,12 @@ function InvoiceDetailSheet({
 }) {
   const open = invoiceId !== null
   const [tab, setTab] = React.useState<Tab>('overview')
-  React.useEffect(() => {
+  // Reset to the overview tab whenever a new invoice is opened.
+  const [prevInvoiceId, setPrevInvoiceId] = React.useState<string | null>(invoiceId)
+  if (prevInvoiceId !== invoiceId) {
+    setPrevInvoiceId(invoiceId)
     if (invoiceId) setTab('overview')
-  }, [invoiceId])
+  }
 
   const qc = useQueryClient()
   const detail = useQuery({
@@ -838,8 +842,9 @@ function RatesSnapshot({
   windowExpiresAt?: string | null
 }) {
   const [open, setOpen] = React.useState(false)
+  const now = useNow()
   const expiresMs = windowExpiresAt ? Date.parse(windowExpiresAt) : NaN
-  const expired = isFinite(expiresMs) && expiresMs <= Date.now()
+  const expired = isFinite(expiresMs) && expiresMs <= now
   const sortedEntries = React.useMemo(
     () => Object.entries(rates).sort(([a], [b]) => a.localeCompare(b)),
     [rates],
@@ -1413,9 +1418,12 @@ function CreateInvoiceDialog({
   const [tolOver, setTolOver] = React.useState('')
   const [created, setCreated] = React.useState<GatewayInvoice | null>(null)
 
-  React.useEffect(() => {
+  // Clear the success view on close without an effect.
+  const [prevOpen, setPrevOpen] = React.useState(open)
+  if (prevOpen !== open) {
+    setPrevOpen(open)
     if (!open) setCreated(null)
-  }, [open])
+  }
 
   const webhookMismatch =
     (webhookUrl.trim() !== '' && webhookSecret.trim() === '') ||
@@ -1550,10 +1558,10 @@ function CreateInvoiceDialog({
               </Field>
               <Field
                 label="Accepted families"
-                hint="Each accepted family gets one allocated receive address."
+                hint="Each accepted family gets one allocated receive address. UTXO mints a fresh BIP84 address per invoice (no pool)."
               >
-                <div className="flex gap-2">
-                  {(['evm', 'tron', 'solana'] as const).map((f) => {
+                <div className="flex flex-wrap gap-2">
+                  {(['evm', 'tron', 'solana', 'utxo'] as const).map((f) => {
                     const active = acceptedFamilies.includes(f)
                     return (
                       <button

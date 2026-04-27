@@ -477,9 +477,13 @@ function MerchantSheet({
   onOpenChange: (v: boolean) => void
 }) {
   const [section, setSection] = React.useState<'overview' | 'webhook' | 'tuning' | 'danger'>('overview')
-  React.useEffect(() => {
-    if (merchant) setSection('overview')
-  }, [merchant?.id])
+  // Reset to overview whenever a different merchant is opened.
+  const merchantId = merchant?.id ?? null
+  const [prevMerchantId, setPrevMerchantId] = React.useState<string | null>(merchantId)
+  if (prevMerchantId !== merchantId) {
+    setPrevMerchantId(merchantId)
+    if (merchantId) setSection('overview')
+  }
 
   return (
     <Sheet open={!!merchant} onOpenChange={onOpenChange}>
@@ -576,9 +580,14 @@ function WebhookSection({ m }: { m: Merchant }) {
   const [revealed, setRevealed] = React.useState<string | null>(null)
   const [confirmRotate, setConfirmRotate] = React.useState(false)
 
-  React.useEffect(() => {
+  // Re-sync the URL field when the merchant changes (different sheet) or
+  // when the persisted URL itself changes (rotate-secret response).
+  const syncKey = `${m.id}|${m.webhookUrl ?? ''}`
+  const [prevSyncKey, setPrevSyncKey] = React.useState(syncKey)
+  if (prevSyncKey !== syncKey) {
+    setPrevSyncKey(syncKey)
     setUrl(m.webhookUrl ?? '')
-  }, [m.id, m.webhookUrl])
+  }
 
   const save = useMutation({
     mutationFn: () =>
@@ -738,12 +747,15 @@ function TuningSection({ m }: { m: Merchant }) {
     m.addressCooldownSeconds?.toString() ?? '',
   )
 
-  React.useEffect(() => {
+  // Re-seed inputs when a different merchant is opened.
+  const [prevId, setPrevId] = React.useState(m.id)
+  if (prevId !== m.id) {
+    setPrevId(m.id)
     setName(m.name)
     setUnder(m.paymentToleranceUnderBps?.toString() ?? '')
     setOver(m.paymentToleranceOverBps?.toString() ?? '')
     setCooldown(m.addressCooldownSeconds?.toString() ?? '')
-  }, [m.id])
+  }
 
   const save = useMutation({
     mutationFn: () => {
@@ -1253,7 +1265,10 @@ function CreateMerchantDialog({
   const [cooldown, setCooldown] = React.useState('')
   const qc = useQueryClient()
 
-  React.useEffect(() => {
+  // Clear the form on every open → close transition without an effect.
+  const [prevOpen, setPrevOpen] = React.useState(open)
+  if (prevOpen !== open) {
+    setPrevOpen(open)
     if (!open) {
       setName('')
       setWebhookUrl('')
@@ -1261,7 +1276,7 @@ function CreateMerchantDialog({
       setOver('')
       setCooldown('')
     }
-  }, [open])
+  }
 
   const underValid = under === '' || /^\d+$/.test(under)
   const overValid = over === '' || /^\d+$/.test(over)
@@ -1416,14 +1431,19 @@ function ImportMerchantDialog({
   const [webhookUrl, setWebhookUrl] = React.useState('')
   const qc = useQueryClient()
 
-  React.useEffect(() => {
+  // Re-seed the form on every closed → open transition (or when the
+  // prefilled merchant changes while the dialog is open).
+  const syncKey = open ? `${prefill?.id ?? ''}|${prefill?.name ?? ''}` : '__closed__'
+  const [prevSyncKey, setPrevSyncKey] = React.useState(syncKey)
+  if (prevSyncKey !== syncKey) {
+    setPrevSyncKey(syncKey)
     if (open) {
       setId(prefill?.id ?? '')
       setName(prefill?.name ?? '')
       setApiKey('')
       setWebhookUrl('')
     }
-  }, [open, prefill?.id, prefill?.name])
+  }
 
   const importIt = useMutation({
     mutationFn: () =>

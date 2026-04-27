@@ -1,3 +1,22 @@
+import * as React from 'react'
+
+/**
+ * Snapshot of `Date.now()` that ticks on a fixed interval (default 30s).
+ * Use this anywhere relative-time UI is rendered in a list — keeps labels
+ * fresh without calling the impure `Date.now()` directly during render.
+ *
+ * The initial value is captured lazily so SSR / first paint is deterministic
+ * within a given mount.
+ */
+export function useNow(intervalMs = 30_000): number {
+  const [now, setNow] = React.useState(() => Date.now())
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs)
+    return () => clearInterval(id)
+  }, [intervalMs])
+  return now
+}
+
 export const fmtUsd = (v: string | number | null | undefined): string => {
   const n = typeof v === 'string' ? parseFloat(v) : (v ?? 0)
   if (!isFinite(n)) return '$0.00'

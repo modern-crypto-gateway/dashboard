@@ -71,14 +71,15 @@ function BootstrapCard() {
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
   const [initialized, setInitialized] = React.useState(false)
 
-  // Seed the default selection to the gaps (wired + webhookSupported but !webhooks).
-  React.useEffect(() => {
-    if (initialized || candidates.length === 0) return
+  // Seed the default selection to the gaps (wired + webhookSupported but
+  // !webhooks) the first time candidates load. Done in render rather than
+  // an effect so we don't double-render.
+  if (!initialized && candidates.length > 0) {
+    setInitialized(true)
     setSelected(
       new Set(candidates.filter((c) => !c.webhooks).map((c) => c.chainId)),
     )
-    setInitialized(true)
-  }, [candidates, initialized])
+  }
 
   const toggle = (chainId: number) =>
     setSelected((prev) => {
@@ -343,10 +344,11 @@ function SigningKeyCard() {
     [chainsQ.data],
   )
 
-  React.useEffect(() => {
-    if (chainId || chainOptions.length === 0) return
+  // Default to the first option once chainOptions has loaded. Render-time
+  // setState is safe here: the condition becomes false on the next render.
+  if (!chainId && chainOptions.length > 0) {
     setChainId(String(chainOptions[0].chainId))
-  }, [chainId, chainOptions])
+  }
 
   const save = useMutation({
     mutationFn: () =>

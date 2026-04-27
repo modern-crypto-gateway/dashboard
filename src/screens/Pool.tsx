@@ -171,6 +171,9 @@ function MetricCell({ label, value }: { label: string; value: number }) {
 
 function SeedDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = React.useState(false)
+  // UTXO omitted on purpose: BTC/LTC derive fresh addresses per invoice
+  // (privacy requirement) and don't use a pool. Backend accepts `utxo`
+  // here but returns zero rows, which would only confuse operators.
   const [families, setFamilies] = React.useState<Family[]>(['evm', 'tron', 'solana'])
   const [initialSize, setInitialSize] = React.useState('10')
 

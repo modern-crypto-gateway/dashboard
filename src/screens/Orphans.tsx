@@ -5,7 +5,7 @@ import { AlertTriangle, RefreshCw, Target, X } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
 import { chainInfo } from '@/lib/chains'
-import { fmtUsd, truncateAddr } from '@/lib/format'
+import { fmtUsd, truncateAddr, useNow } from '@/lib/format'
 import type { OrphanTransaction } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
@@ -26,6 +26,7 @@ import { Textarea } from '@/components/ui/textarea'
 
 export function OrphansPage() {
   const qc = useQueryClient()
+  const now = useNow()
   const list = useQuery({
     queryKey: ['orphans'] as const,
     queryFn: () =>
@@ -129,7 +130,7 @@ export function OrphansPage() {
                     </Td>
                     <Td className="font-mono text-[12.5px]">{o.confirmations}</Td>
                     <Td className="font-mono text-xs text-[var(--fg-2)]">
-                      {formatAgo(o.detectedAt)}
+                      {formatAgo(o.detectedAt, now)}
                     </Td>
                     <Td className="text-right">
                       <div className="flex justify-end gap-1.5">
@@ -207,8 +208,8 @@ function ChainPill({ chainId }: { chainId: number }) {
   )
 }
 
-function formatAgo(iso: string): string {
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+function formatAgo(iso: string, nowMs: number): string {
+  const diff = Math.floor((nowMs - new Date(iso).getTime()) / 1000)
   if (diff < 60) return `${diff}s ago`
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`

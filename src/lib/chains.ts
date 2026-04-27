@@ -25,12 +25,28 @@ export const CHAINS: Record<
     family: 'solana',
     color: 'var(--chain-solana)',
   },
+  // UTXO chains — native segwit / taproot. Decimals = 8 (sats / litoshi).
+  800: { name: 'Bitcoin', short: 'BTC', family: 'utxo', color: 'oklch(0.7 0.18 55)' },
+  801: { name: 'Litecoin', short: 'LTC', family: 'utxo', color: 'oklch(0.74 0.02 250)' },
+  802: {
+    name: 'Bitcoin testnet',
+    short: 'tBTC',
+    family: 'utxo',
+    color: 'oklch(0.7 0.1 55)',
+  },
+  803: {
+    name: 'Litecoin testnet',
+    short: 'tLTC',
+    family: 'utxo',
+    color: 'oklch(0.7 0.02 250)',
+  },
 }
 
 export const FAMILY_COLOR: Record<Family, string> = {
   evm: 'var(--chain-evm)',
   tron: 'var(--chain-tron)',
   solana: 'var(--chain-solana)',
+  utxo: 'oklch(0.7 0.18 55)',
 }
 
 export function chainInfo(chainId: number) {
@@ -52,12 +68,17 @@ export const LOW_GAS_THRESHOLD: Record<string, number> = {
   AVAX: 0.5,
   TRX: 100,
   SOL: 0.1,
+  // UTXO: there's no separate gas — these are "running low for a payout"
+  // thresholds expressed in the asset itself (whole BTC / LTC).
+  BTC: 0.001,
+  LTC: 0.05,
 }
 
 const FAMILY_FALLBACK_THRESHOLD: Record<Family, number> = {
   evm: 0.01,
   tron: 100,
   solana: 0.1,
+  utxo: 0.001,
 }
 
 export function gasThreshold(
@@ -102,12 +123,18 @@ const NATIVE_BY_CHAIN: Record<number, { symbol: string; decimals: number }> = {
   43114: { symbol: 'AVAX', decimals: 18 },
   728: { symbol: 'TRX', decimals: 6 },
   900: { symbol: 'SOL', decimals: 9 },
+  // UTXO chains — 8 decimals (sat / litoshi).
+  800: { symbol: 'BTC', decimals: 8 },
+  801: { symbol: 'LTC', decimals: 8 },
+  802: { symbol: 'BTC', decimals: 8 },
+  803: { symbol: 'LTC', decimals: 8 },
 }
 
 const FAMILY_NATIVE_FALLBACK: Record<Family, { symbol: string; decimals: number }> = {
   evm: { symbol: 'ETH', decimals: 18 },
   tron: { symbol: 'TRX', decimals: 6 },
   solana: { symbol: 'SOL', decimals: 9 },
+  utxo: { symbol: 'BTC', decimals: 8 },
 }
 
 export function nativeMeta(chainId: number): { symbol: string; decimals: number } {

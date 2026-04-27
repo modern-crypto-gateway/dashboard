@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
-import { fmtLocal, fmtLocalTime, truncateAddr } from '@/lib/format'
+import { fmtLocal, fmtLocalTime, truncateAddr, useNow } from '@/lib/format'
 import type { WebhookDelivery } from '@/lib/types'
 
 import { CopyButton } from '@/components/CopyButton'
@@ -291,6 +291,7 @@ function DeliveryRow({
 }) {
   const targetHost = safeHost(d.targetUrl)
   const ev = describeEventType(d.eventType)
+  const now = useNow()
   return (
     <li className="border-b border-border last:border-0">
       <div
@@ -366,18 +367,18 @@ function DeliveryRow({
 
         <div className="font-mono text-[12.5px]">{d.attempts}</div>
 
-        <div className="text-xs text-[var(--fg-3)]">{formatAt(d)}</div>
+        <div className="text-xs text-[var(--fg-3)]">{formatAt(d, now)}</div>
       </div>
     </li>
   )
 }
 
-function formatAt(d: WebhookDelivery): string {
+function formatAt(d: WebhookDelivery, nowMs: number): string {
   if (d.status === 'delivered' && d.deliveredAt) {
     return fmtLocalTime(d.deliveredAt)
   }
   if (d.status === 'pending' && d.nextAttemptAt) {
-    const delta = d.nextAttemptAt - Date.now()
+    const delta = d.nextAttemptAt - nowMs
     if (delta < 0) return 'due now'
     if (delta < 60_000) return `in ${Math.ceil(delta / 1000)}s`
     if (delta < 3_600_000) return `in ${Math.ceil(delta / 60_000)}m`
@@ -398,6 +399,7 @@ function DeliveryDetailSheet({
   onReplayed: () => void
 }) {
   const open = delivery !== null
+  const now = useNow()
   const replay = useMutation({
     mutationFn: () =>
       api(
@@ -473,7 +475,7 @@ function DeliveryDetailSheet({
                 </KVItem>
                 <KVItem label="Timing">
                   <span className="font-mono text-xs">
-                    {formatAt(delivery)}
+                    {formatAt(delivery, now)}
                   </span>
                 </KVItem>
               </KV>

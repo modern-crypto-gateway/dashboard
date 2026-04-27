@@ -302,9 +302,12 @@ function UsePoolDialog({
   onDone: () => void
 }) {
   const [address, setAddress] = React.useState('')
-  React.useEffect(() => {
+  // Reset form on every closed → open transition without an effect.
+  const [prevOpen, setPrevOpen] = React.useState(open)
+  if (prevOpen !== open) {
+    setPrevOpen(open)
     if (open) setAddress('')
-  }, [open])
+  }
 
   const mut = useMutation({
     mutationFn: (args: UsePoolArgs) =>
@@ -417,12 +420,15 @@ function ImportKeyDialog({
 }) {
   const [privateKey, setPrivateKey] = React.useState('')
   const [address, setAddress] = React.useState('')
-  React.useEffect(() => {
+  // Reset form on every closed → open transition without an effect.
+  const [prevOpen, setPrevOpen] = React.useState(open)
+  if (prevOpen !== open) {
+    setPrevOpen(open)
     if (open) {
       setPrivateKey('')
       setAddress('')
     }
-  }, [open])
+  }
 
   const mut = useMutation({
     mutationFn: (args: ImportArgs) =>

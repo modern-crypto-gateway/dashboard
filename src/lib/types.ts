@@ -14,7 +14,7 @@ export type Session = {
 
 export type LoginStage = 'creds' | 'totp'
 
-export type Family = 'evm' | 'tron' | 'solana'
+export type Family = 'evm' | 'tron' | 'solana' | 'utxo'
 
 export type PoolStatsRow = {
   family: Family
@@ -209,6 +209,36 @@ export type GatewayPayout = {
   topUpSponsorAddress: string | null
   /** v2.2: raw native amount sent to the source for gas. */
   topUpAmountRaw: string | null
+  /**
+   * UTXO-only. The original tx hash from the very first broadcast,
+   * preserved across RBF replacements. `txHash` always reflects the latest
+   * broadcast; `originalTxHash` is null until the first bump.
+   */
+  originalTxHash?: string | null
+  /** UTXO-only. Number of times the payout has been re-broadcast via RBF. */
+  feeBumpAttempts?: number | null
+  /** UTXO-only. Epoch ms of the most recent RBF bump. */
+  lastFeeBumpAt?: number | null
+}
+
+export type BumpFeeStrategy = 'shrink_change' | 'drop_change' | 'add_inputs'
+
+export type BumpFeeResponse = {
+  bump: {
+    payoutId: string
+    attemptNumber: number
+    txHash: string
+    priorTxHash: string
+    priorFeeSats: string
+    newFeeSats: string
+    priorFeerateSatVb: string
+    newFeerateSatVb: string
+    vsize: number
+    strategy: BumpFeeStrategy
+    changeAddress: string | null
+    changeValueSats: string | null
+    dryRun: boolean
+  }
 }
 
 export type PayoutFeeTierQuote = {

@@ -40,10 +40,11 @@ export function AuditAddressPage() {
         .sort((a, b) => a.displayName.localeCompare(b.displayName)),
     [chainsQ.data],
   )
-  React.useEffect(() => {
-    if (chainId || chainOptions.length === 0) return
+  // Default to the first option once chainOptions loads. Render-time
+  // setState is safe: the condition becomes false on the next render.
+  if (!chainId && chainOptions.length > 0) {
     setChainId(String(chainOptions[0].chainId))
-  }, [chainId, chainOptions])
+  }
 
   const audit = useMutation({
     mutationFn: () => {

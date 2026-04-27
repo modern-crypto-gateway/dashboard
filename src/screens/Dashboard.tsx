@@ -246,7 +246,7 @@ function BalancesCard({
   snapshot?: BalancesSnapshot
   loading: boolean
 }) {
-  const families: Family[] = ['evm', 'tron', 'solana']
+  const families: Family[] = ['evm', 'tron', 'solana', 'utxo']
   const rows =
     snapshot?.families.map((f) => ({
       family: f.family,
@@ -318,7 +318,7 @@ function BalancesCard({
       )}
 
       {/* Family blocks */}
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {families.map((fam) => {
           const r = byFamily[fam]
           const inactive = !r || r.usd === 0
@@ -370,6 +370,8 @@ function PoolCard({
   stats?: PoolStatsRow[]
   loading: boolean
 }) {
+  // UTXO is intentionally omitted: BTC/LTC mint a fresh BIP84 address per
+  // invoice (privacy requirement) and never participate in the pool.
   const families: Family[] = ['evm', 'tron', 'solana']
   const byFamily = Object.fromEntries((stats ?? []).map((s) => [s.family, s]))
 

@@ -458,10 +458,12 @@ function BootstrapPickerDialog({
   onSubmit: (chainIds: number[]) => void
 }) {
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
-
-  React.useEffect(() => {
+  // Re-seed selection on every closed → open transition without an effect.
+  const [prevOpen, setPrevOpen] = React.useState(open)
+  if (prevOpen !== open) {
+    setPrevOpen(open)
     if (open) setSelected(new Set(candidates.map((c) => c.chainId)))
-  }, [open, candidates])
+  }
 
   const toggle = (chainId: number) => {
     setSelected((prev) => {

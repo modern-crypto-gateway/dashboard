@@ -23,6 +23,7 @@ import {
   Search,
   Webhook,
   X,
+  Zap,
 } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
@@ -39,6 +40,7 @@ import {
 import { useActiveMerchant, useMerchants } from '@/lib/merchants'
 import type {
   BalancesSnapshot,
+  BumpFeeResponse,
   ChainInventoryEntry,
   ChainToken,
   FeeTier,
@@ -504,6 +506,17 @@ function PayoutRow({
                 <Webhook className="size-3" />
               </span>
             )}
+            {(po.feeBumpAttempts ?? 0) > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 text-warn"
+                title={`RBF re-broadcast ${po.feeBumpAttempts}×`}
+              >
+                <Zap className="size-3" />
+                <span className="font-mono text-[10px]">
+                  {po.feeBumpAttempts}
+                </span>
+              </span>
+            )}
           </div>
           {po.sourceAddress && (
             <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--fg-3)]">
@@ -610,6 +623,9 @@ function PayoutDetailSheet({
   })
 
   const canCancel = po?.status === 'reserved'
+  const isUtxo = po ? chainInfo(po.chainId).family === 'utxo' : false
+  const canBump = isUtxo && po?.status === 'submitted'
+  const [bumpOpen, setBumpOpen] = React.useState(false)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -627,6 +643,11 @@ function PayoutDetailSheet({
                 <Fuel className="size-3" /> gas top-up
               </Badge>
             )}
+            {(po?.feeBumpAttempts ?? 0) > 0 && (
+              <Badge variant="warn" title="Re-broadcast via RBF">
+                <Zap className="size-3" /> bumped {po!.feeBumpAttempts}×
+              </Badge>
+            )}
             <div className="flex-1" />
             {po && canCancel && (
               <Button
@@ -638,6 +659,17 @@ function PayoutDetailSheet({
               >
                 <Ban className="size-3.5" />
                 {cancel.isPending ? 'Canceling…' : 'Cancel'}
+              </Button>
+            )}
+            {po && canBump && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setBumpOpen(true)}
+              >
+                <Zap className="size-3.5" />
+                Bump fee
               </Button>
             )}
           </div>
@@ -733,11 +765,39 @@ function PayoutDetailSheet({
 
                 <KVItem label="Tx hash" wide>
                   {po.txHash ? (
-                    <Addr value={po.txHash} truncated={false} />
+                    <div className="space-y-1.5">
+                      <Addr value={po.txHash} truncated={false} />
+                      {(po.feeBumpAttempts ?? 0) > 0 && (
+                        <div className="text-[10.5px] text-[var(--fg-3)]">
+                          latest after {po.feeBumpAttempts} RBF bump
+                          {po.feeBumpAttempts === 1 ? '' : 's'}
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <span className="text-[var(--fg-2)]">pending</span>
                   )}
                 </KVItem>
+
+                {po.originalTxHash && po.originalTxHash !== po.txHash && (
+                  <KVItem label="Original tx hash" wide>
+                    <div className="space-y-1.5">
+                      <Addr value={po.originalTxHash} truncated={false} />
+                      <div className="text-[10.5px] text-[var(--fg-3)]">
+                        Replaced by RBF; the original tx is no longer in the
+                        mempool.
+                      </div>
+                    </div>
+                  </KVItem>
+                )}
+
+                {po.lastFeeBumpAt && (
+                  <KVItem label="Last bump">
+                    <span className="font-mono text-xs">
+                      {fmtLocal(po.lastFeeBumpAt)}
+                    </span>
+                  </KVItem>
+                )}
 
                 {po.topUpTxHash && (
                   <KVItem label="Gas top-up" wide>
@@ -855,7 +915,282 @@ function PayoutDetailSheet({
           )}
         </SheetBody>
       </SheetContent>
+      {po && canBump && (
+        <BumpFeeDialog
+          open={bumpOpen}
+          onOpenChange={setBumpOpen}
+          payoutId={po.id}
+          chainId={po.chainId}
+          onBumped={() => {
+            void detail.refetch()
+            qc.invalidateQueries({ queryKey: ['payouts', 'list', merchantId] })
+          }}
+        />
+      )}
     </Sheet>
+  )
+}
+
+function BumpFeeDialog({
+  open,
+  onOpenChange,
+  payoutId,
+  chainId,
+  onBumped,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  payoutId: string
+  chainId: number
+  onBumped: () => void
+}) {
+  const [mode, setMode] = React.useState<'tier' | 'manual'>('tier')
+  const [tier, setTier] = React.useState<FeeTier>('high')
+  const [satPerVb, setSatPerVb] = React.useState('')
+  const [dryRun, setDryRun] = React.useState(false)
+  const [result, setResult] = React.useState<BumpFeeResponse['bump'] | null>(
+    null,
+  )
+
+  // Reset form state on every closed → open transition without an effect:
+  // see https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const [prevOpen, setPrevOpen] = React.useState(open)
+  if (prevOpen !== open) {
+    setPrevOpen(open)
+    if (open) {
+      setResult(null)
+      setMode('tier')
+      setTier('high')
+      setSatPerVb('')
+      setDryRun(false)
+    }
+  }
+
+  const native = nativeMeta(chainId)
+
+  const bump = useMutation({
+    mutationFn: () => {
+      const body: Record<string, unknown> = { dryRun }
+      if (mode === 'tier') {
+        body.tier = tier
+      } else {
+        const n = parseInt(satPerVb, 10)
+        if (!Number.isFinite(n) || n <= 0)
+          throw new ApiError('Enter a positive sat/vB rate', 400)
+        body.satPerVb = n
+      }
+      return api<BumpFeeResponse>(
+        `/api/gw/admin/payouts/${encodeURIComponent(payoutId)}/bump-fee`,
+        { method: 'POST', body: JSON.stringify(body) },
+      )
+    },
+    onSuccess: (res) => {
+      setResult(res.bump)
+      if (res.bump.dryRun) {
+        toast.success('Dry-run preview ready')
+      } else {
+        toast.success(`Re-broadcast (attempt #${res.bump.attemptNumber})`)
+        onBumped()
+      }
+    },
+    onError: (e: ApiError) => {
+      const map: Record<string, string> = {
+        WRONG_FAMILY: 'Not a UTXO payout — bump-fee only applies to BTC/LTC.',
+        WRONG_STATUS: 'Payout is not in submitted status.',
+        ALREADY_CONFIRMED: 'Tx is already confirmed; no bump needed.',
+        MAX_ATTEMPTS: 'Hit the 10-bump cap on this payout.',
+        FEE_NOT_HIGHER:
+          "Replacement fee wouldn't beat the prior — try a higher tier or sat/vB.",
+        CONFLICT: 'Another bump is already in flight.',
+        INSUFFICIENT_FUNDS:
+          'Even adding all spendable UTXOs cannot cover the bumped fee.',
+        BROADCAST_FAILED: 'Relay rejected the replacement tx.',
+        PAYOUT_NOT_FOUND: 'Payout not found.',
+      }
+      toast.error(map[e.code ?? ''] ?? e.message ?? 'Bump failed')
+    },
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Zap className="size-4" /> Bump fee (RBF)
+          </DialogTitle>
+          <DialogDescription>
+            Re-broadcasts this UTXO payout at a higher fee. BIP125-compliant —
+            shares inputs with the prior tx, fee strictly higher, exceeds the
+            relay's incremental-fee threshold. The executor picks the strategy
+            (<span className="font-mono">shrink_change</span> →{' '}
+            <span className="font-mono">drop_change</span> →{' '}
+            <span className="font-mono">add_inputs</span>) automatically.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            bump.mutate()
+          }}
+        >
+          <div className="flex rounded-md border border-border bg-[var(--bg-2)] p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setMode('tier')}
+              className={`flex-1 cursor-pointer rounded px-2.5 py-1.5 ${mode === 'tier' ? 'bg-card font-medium shadow-xs' : 'text-[var(--fg-2)]'}`}
+            >
+              Re-quote tier
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('manual')}
+              className={`flex-1 cursor-pointer rounded px-2.5 py-1.5 ${mode === 'manual' ? 'bg-card font-medium shadow-xs' : 'text-[var(--fg-2)]'}`}
+            >
+              Explicit sat/vB
+            </button>
+          </div>
+
+          {mode === 'tier' ? (
+            <Field
+              label="Fee tier"
+              hint="Re-queries the chain adapter at this tier and clamps up by incremental_relay_fee."
+            >
+              <Select value={tier} onValueChange={(v) => setTier(v as FeeTier)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">low</SelectItem>
+                  <SelectItem value="medium">medium</SelectItem>
+                  <SelectItem value="high">high</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          ) : (
+            <Field
+              label="Target feerate (sat/vB)"
+              hint="Independent feerate target — e.g. from mempool.space."
+            >
+              <Input
+                value={satPerVb}
+                onChange={(e) => setSatPerVb(e.target.value)}
+                inputMode="numeric"
+                className="font-mono"
+                placeholder="50"
+              />
+            </Field>
+          )}
+
+          <label className="flex items-start gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-xs">
+            <input
+              type="checkbox"
+              checked={dryRun}
+              onChange={(e) => setDryRun(e.target.checked)}
+              className="mt-0.5 size-4 accent-[var(--primary)]"
+            />
+            <div>
+              <div className="font-medium text-foreground">Dry-run preview</div>
+              <div className="text-[var(--fg-2)]">
+                Compute the strategy + new fee + change without broadcasting.
+                Use to check feasibility (insufficient funds, no headroom).
+              </div>
+            </div>
+          </label>
+
+          {result && <BumpResult bump={result} symbol={native.symbol} />}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={bump.isPending}
+            >
+              {result ? 'Close' : 'Cancel'}
+            </Button>
+            <Button
+              type="submit"
+              disabled={
+                bump.isPending ||
+                (mode === 'manual' && !/^\d+$/.test(satPerVb.trim()))
+              }
+            >
+              {bump.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Zap className="size-3.5" />
+              )}
+              {bump.isPending
+                ? 'Submitting…'
+                : dryRun
+                  ? 'Preview'
+                  : 'Bump & re-broadcast'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function BumpResult({
+  bump,
+  symbol,
+}: {
+  bump: BumpFeeResponse['bump']
+  symbol: string
+}) {
+  const priorBtc = formatUnits(bump.priorFeeSats, 8)
+  const newBtc = formatUnits(bump.newFeeSats, 8)
+  return (
+    <div className="space-y-2 rounded-md border border-border bg-secondary px-3 py-2.5 text-xs">
+      <div className="flex items-center gap-2">
+        <Badge variant={bump.dryRun ? 'outline' : 'success'}>
+          {bump.dryRun ? 'preview' : `attempt #${bump.attemptNumber}`}
+        </Badge>
+        <Badge variant="default">{bump.strategy.replace('_', ' ')}</Badge>
+        <span className="ml-auto font-mono text-[var(--fg-3)]">
+          {bump.vsize} vB
+        </span>
+      </div>
+      <div className="grid grid-cols-[110px_1fr] items-baseline gap-x-2 gap-y-1 font-mono">
+        <span className="text-[var(--fg-3)]">prior fee</span>
+        <span>
+          {priorBtc} {symbol}{' '}
+          <span className="text-[var(--fg-3)]">
+            · {bump.priorFeerateSatVb} sat/vB
+          </span>
+        </span>
+        <span className="text-[var(--fg-3)]">new fee</span>
+        <span className="text-success">
+          {newBtc} {symbol}{' '}
+          <span className="text-[var(--fg-3)]">
+            · {bump.newFeerateSatVb} sat/vB
+          </span>
+        </span>
+        {bump.changeAddress && bump.changeValueSats && (
+          <>
+            <span className="text-[var(--fg-3)]">change</span>
+            <span>
+              {formatUnits(bump.changeValueSats, 8)} {symbol}{' '}
+              <span className="text-[var(--fg-3)]">
+                → {truncateAddr(bump.changeAddress, 8, 6)}
+              </span>
+            </span>
+          </>
+        )}
+        {!bump.dryRun && (
+          <>
+            <span className="text-[var(--fg-3)]">replaced</span>
+            <Addr value={bump.priorTxHash} />
+            <span className="text-[var(--fg-3)]">new tx</span>
+            <Addr value={bump.txHash} />
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -1645,8 +1980,15 @@ function CreatePayoutDialog({
               setToken(t)
               setTokenMeta(m ?? null)
             }}
-            filter={(c) => c.bootstrapReady}
-            emptyHint="No bootstrap-ready chains. Register a fee wallet from Chains first."
+            // UTXO chains (BTC/LTC) never report `bootstrapReady: true` because
+            // the backend formula requires `feeWallets`, and the UTXO family
+            // doesn't have a fee-wallet topology — payouts use coinselect over
+            // owned UTXOs directly. Accept any wired UTXO chain alongside the
+            // strict `bootstrapReady` set for the other families.
+            filter={(c) =>
+              c.bootstrapReady || (c.family === 'utxo' && c.wired)
+            }
+            emptyHint="No payout-ready chains. Bootstrap fee wallets / Alchemy webhooks from Chains first."
           />
 
           <Field label="Amount mode">

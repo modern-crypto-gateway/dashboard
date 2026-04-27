@@ -32,9 +32,15 @@ export function SettingsPage() {
   const [baseUrl, setBaseUrl] = React.useState('')
   const [adminKey, setAdminKey] = React.useState('')
 
-  React.useEffect(() => {
-    if (cfg.data) setBaseUrl(cfg.data.baseUrl ?? '')
-  }, [cfg.data])
+  // Re-seed the input when the loaded baseUrl changes (e.g. after save).
+  const loadedBaseUrl = cfg.data?.baseUrl ?? null
+  const [prevLoadedBaseUrl, setPrevLoadedBaseUrl] = React.useState<string | null>(
+    loadedBaseUrl,
+  )
+  if (prevLoadedBaseUrl !== loadedBaseUrl) {
+    setPrevLoadedBaseUrl(loadedBaseUrl)
+    if (cfg.data) setBaseUrl(loadedBaseUrl ?? '')
+  }
 
   const saveBaseUrl = useMutation({
     mutationFn: (body: { baseUrl: string }) =>
@@ -193,11 +199,14 @@ export function SettingsPage() {
 function DefaultMerchantCard({ currentId }: { currentId: string | null }) {
   const qc = useQueryClient()
   const merchants = useMerchants()
-  const [value, setValue] = React.useState<string>('')
+  const [value, setValue] = React.useState<string>(currentId ?? '__none__')
 
-  React.useEffect(() => {
+  // Sync the select when the persisted default merchant changes.
+  const [prevCurrentId, setPrevCurrentId] = React.useState<string | null>(currentId)
+  if (prevCurrentId !== currentId) {
+    setPrevCurrentId(currentId)
     setValue(currentId ?? '__none__')
-  }, [currentId])
+  }
 
   const save = useMutation({
     mutationFn: (id: string | null) =>
