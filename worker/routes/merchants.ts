@@ -25,6 +25,12 @@ async function writeIndex(env: Bindings, idx: Index): Promise<void> {
   await kvPut(env, K.merchantIndex, idx)
 }
 
+interface ConfirmationTierRule {
+  amount?: string
+  op?: '<' | '<=' | '>' | '>=' | '=' | '<>'
+  confirmations: number
+}
+
 interface GatewayMerchant {
   id: string
   name: string
@@ -33,6 +39,8 @@ interface GatewayMerchant {
   paymentToleranceUnderBps: number
   paymentToleranceOverBps: number
   addressCooldownSeconds: number
+  confirmationThresholds: Record<string, number> | null
+  confirmationTiers: Record<string, ConfirmationTierRule[]> | null
   createdAt: string
   updatedAt: string
 }
@@ -51,6 +59,8 @@ function publicShape(
     paymentToleranceUnderBps: gw?.paymentToleranceUnderBps ?? null,
     paymentToleranceOverBps: gw?.paymentToleranceOverBps ?? null,
     addressCooldownSeconds: gw?.addressCooldownSeconds ?? null,
+    confirmationThresholds: gw?.confirmationThresholds ?? null,
+    confirmationTiers: gw?.confirmationTiers ?? null,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
   }
@@ -67,6 +77,8 @@ function gatewayOnlyShape(gw: GatewayMerchant) {
     paymentToleranceUnderBps: gw.paymentToleranceUnderBps,
     paymentToleranceOverBps: gw.paymentToleranceOverBps,
     addressCooldownSeconds: gw.addressCooldownSeconds,
+    confirmationThresholds: gw.confirmationThresholds ?? null,
+    confirmationTiers: gw.confirmationTiers ?? null,
     createdAt: Math.floor(new Date(gw.createdAt).getTime() / 1000),
     updatedAt: Math.floor(new Date(gw.updatedAt).getTime() / 1000),
   }
@@ -193,6 +205,8 @@ export async function createMerchantViaGateway(
     paymentToleranceUnderBps?: number
     paymentToleranceOverBps?: number
     addressCooldownSeconds?: number
+    confirmationThresholds?: Record<string, number> | null
+    confirmationTiers?: Record<string, ConfirmationTierRule[]> | null
   }>(req)
   const name = (body.name ?? '').trim()
   if (!MERCHANT_NAME_RX.test(name)) {
@@ -222,6 +236,12 @@ export async function createMerchantViaGateway(
           : {}),
         ...(body.addressCooldownSeconds != null
           ? { addressCooldownSeconds: body.addressCooldownSeconds }
+          : {}),
+        ...(body.confirmationThresholds !== undefined
+          ? { confirmationThresholds: body.confirmationThresholds }
+          : {}),
+        ...(body.confirmationTiers !== undefined
+          ? { confirmationTiers: body.confirmationTiers }
           : {}),
       }),
     })
@@ -337,6 +357,12 @@ export async function patchMerchant(
     paymentToleranceUnderBps?: number
     paymentToleranceOverBps?: number
     addressCooldownSeconds?: number
+    /** Pass an object to replace the merchant's map whole-sale (the gateway
+     * does not support partial-key updates); pass `null` to clear it back to
+     * gateway defaults. Omit to leave untouched. */
+    confirmationThresholds?: Record<string, number> | null
+    /** Same whole-sale-replace semantics as `confirmationThresholds`. */
+    confirmationTiers?: Record<string, ConfirmationTierRule[]> | null
   }>(req)
 
   const gwPatch: Record<string, unknown> = {}
@@ -348,6 +374,10 @@ export async function patchMerchant(
     gwPatch.paymentToleranceOverBps = body.paymentToleranceOverBps
   if (body.addressCooldownSeconds != null)
     gwPatch.addressCooldownSeconds = body.addressCooldownSeconds
+  if (body.confirmationThresholds !== undefined)
+    gwPatch.confirmationThresholds = body.confirmationThresholds
+  if (body.confirmationTiers !== undefined)
+    gwPatch.confirmationTiers = body.confirmationTiers
 
   if (Object.keys(gwPatch).length === 0) {
     return json({ merchant: publicShape(m) })

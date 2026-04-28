@@ -39,8 +39,36 @@ export type Merchant = {
   paymentToleranceUnderBps: number | null
   paymentToleranceOverBps: number | null
   addressCooldownSeconds: number | null
+  /**
+   * Per-chain confirmation override map (`{ "<chainId>": <blockCount> }`).
+   * `null` = no override → gateway default applies. Resolution order at
+   * invoice/payout create time: this map > FINALITY_OVERRIDES env > per-chain
+   * gateway default. Setting a value below the gateway default surfaces a
+   * `merchant_confirmation_below_default` WARN log on the gateway.
+   */
+  confirmationThresholds: Record<string, number> | null
+  /**
+   * Per-(chain, token) amount-tiered confirmation rules — keys are
+   * `"<chainId>:<TOKEN>"`. Resolution layer **above** `confirmationThresholds`:
+   * for an invoice/payout, the gateway evaluates each rule of the matching
+   * key in order against the resource's amount; the first predicate that
+   * matches wins. A rule with no `amount`/`op` acts as a catch-all. Falls
+   * back to `confirmationThresholds` then the gateway default if no rule
+   * matches. Snapshotted onto each invoice/payout at create time and frozen.
+   */
+  confirmationTiers: Record<string, ConfirmationTierRule[]> | null
   createdAt: number
   updatedAt: number
+}
+
+export type ConfirmationTierOp = '<' | '<=' | '>' | '>=' | '=' | '<>'
+
+export type ConfirmationTierRule = {
+  /** Decimal string (whole-token units, e.g. `"100"`, `"0.5"`). Omit with
+   * `op` for a catch-all rule. */
+  amount?: string
+  op?: ConfirmationTierOp
+  confirmations: number
 }
 
 /**

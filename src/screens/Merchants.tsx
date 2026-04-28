@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   AlertTriangle,
@@ -8,6 +8,7 @@ import {
   CircleDashed,
   Download,
   KeyRound,
+  Layers,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -17,12 +18,19 @@ import {
   Store,
   Trash2,
   Webhook,
+  X,
 } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
+import { chainInfo } from '@/lib/chains'
 import { merchantsQuery, useMerchants } from '@/lib/merchants'
 import { fmtLocal, fmtRel } from '@/lib/format'
-import type { Merchant } from '@/lib/types'
+import type {
+  ChainInventoryEntry,
+  ConfirmationTierOp,
+  ConfirmationTierRule,
+  Merchant,
+} from '@/lib/types'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -263,6 +271,28 @@ function MerchantRow({ m, onOpen }: { m: Merchant; onOpen: () => void }) {
                 orphan
               </Badge>
             )}
+            {m.confirmationThresholds &&
+              Object.keys(m.confirmationThresholds).length > 0 && (
+                <Badge
+                  variant="outline"
+                  className="shrink-0 gap-1 text-[10px]"
+                  title="Per-chain confirmation overrides set"
+                >
+                  <Layers className="size-3" />
+                  {Object.keys(m.confirmationThresholds).length} conf
+                </Badge>
+              )}
+            {m.confirmationTiers &&
+              Object.keys(m.confirmationTiers).length > 0 && (
+                <Badge
+                  variant="accent"
+                  className="shrink-0 gap-1 text-[10px]"
+                  title="Per-(chain, token) amount-tier rules set"
+                >
+                  <Layers className="size-3" />
+                  {Object.keys(m.confirmationTiers).length} tier
+                </Badge>
+              )}
           </div>
           <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--fg-3)]">
             {m.id}
@@ -734,6 +764,97 @@ function WebhookSection({ m }: { m: Merchant }) {
 
 /* ── sheet: tuning ───────────────────────────────────────── */
 
+type ThresholdRow = { id: string; chainId: string; value: string }
+
+function thresholdsToRows(
+  m: Record<string, number> | null | undefined,
+): ThresholdRow[] {
+  if (!m) return []
+  return Object.entries(m)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([chainId, value], i) => ({
+      id: `${chainId}-${i}`,
+      chainId,
+      value: String(value),
+    }))
+}
+
+const TIER_OPS: ConfirmationTierOp[] = ['<', '<=', '=', '<>', '>=', '>']
+
+const TIER_OP_LABEL: Record<ConfirmationTierOp, string> = {
+  '<': 'LESS',
+  '<=': 'LESS OR EQUALS',
+  '=': 'EQUALS',
+  '<>': 'NOT EQUALS',
+  '>=': 'GREATER OR EQUALS',
+  '>': 'GREATER',
+}
+
+// Phrasing for the per-rule preview line — slightly more natural English
+// than the dropdown labels, which use the standard programmer terms.
+const TIER_OP_PREVIEW: Record<ConfirmationTierOp, string> = {
+  '<': 'is less than',
+  '<=': 'is less than or equal to',
+  '=': 'equals',
+  '<>': 'does not equal',
+  '>=': 'is greater than or equal to',
+  '>': 'is greater than',
+}
+
+/**
+ * Render a rule as a single English sentence. Used for the live preview
+ * line beneath each rule editor row so operators can sanity-check what
+ * they've just typed.
+ */
+function describeTierRule(rule: TierRuleRow, token: string): string {
+  const tok = token || 'token'
+  const conf = rule.confirmations.trim()
+  const confLabel = conf === '' ? 'N' : `${conf} confirmation${conf === '1' ? '' : 's'}`
+  if (rule.op === '') {
+    return `Otherwise → require ${confLabel} (catch-all)`
+  }
+  const amount = rule.amount.trim() || '?'
+  return `If amount ${TIER_OP_PREVIEW[rule.op]} ${amount} ${tok} → require ${confLabel}`
+}
+
+type TierRuleRow = {
+  id: string
+  /** Empty string means "catch-all" (no `amount` / `op` in the wire payload). */
+  op: '' | ConfirmationTierOp
+  amount: string
+  confirmations: string
+}
+type TierGroup = {
+  id: string
+  chainId: string
+  token: string
+  rules: TierRuleRow[]
+}
+
+function tiersToGroups(
+  m: Record<string, ConfirmationTierRule[]> | null | undefined,
+): TierGroup[] {
+  if (!m) return []
+  return Object.entries(m)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, rules], i) => {
+      const [chainPart, ...tokenParts] = key.split(':')
+      const chainId = chainPart ?? ''
+      const token = tokenParts.join(':')
+      return {
+        id: `${key}-${i}`,
+        chainId,
+        token,
+        rules: rules.map((r, j) => ({
+          id: `${key}-${i}-${j}`,
+          op: (r.op ?? '') as TierRuleRow['op'],
+          amount: r.amount ?? '',
+          confirmations: String(r.confirmations),
+        })),
+      }
+    })
+}
+
 function TuningSection({ m }: { m: Merchant }) {
   const qc = useQueryClient()
   const [name, setName] = React.useState(m.name)
@@ -746,6 +867,12 @@ function TuningSection({ m }: { m: Merchant }) {
   const [cooldown, setCooldown] = React.useState(
     m.addressCooldownSeconds?.toString() ?? '',
   )
+  const [thresholdRows, setThresholdRows] = React.useState<ThresholdRow[]>(() =>
+    thresholdsToRows(m.confirmationThresholds),
+  )
+  const [tierGroups, setTierGroups] = React.useState<TierGroup[]>(() =>
+    tiersToGroups(m.confirmationTiers),
+  )
 
   // Re-seed inputs when a different merchant is opened.
   const [prevId, setPrevId] = React.useState(m.id)
@@ -755,6 +882,165 @@ function TuningSection({ m }: { m: Merchant }) {
     setUnder(m.paymentToleranceUnderBps?.toString() ?? '')
     setOver(m.paymentToleranceOverBps?.toString() ?? '')
     setCooldown(m.addressCooldownSeconds?.toString() ?? '')
+    setThresholdRows(thresholdsToRows(m.confirmationThresholds))
+    setTierGroups(tiersToGroups(m.confirmationTiers))
+  }
+
+  // Look up gateway-default confirmations per chain so we can flag rows that
+  // dip below it (matches the backend's `merchant_confirmation_below_default`
+  // WARN log).
+  const chainsQ = useQuery({
+    queryKey: ['gw', 'chains'] as const,
+    queryFn: () =>
+      api<{ chains: ChainInventoryEntry[] }>('/api/gw/admin/chains'),
+    refetchInterval: 120_000,
+    staleTime: 30_000,
+  })
+  const defaultByChainId = React.useMemo(() => {
+    const out = new Map<string, number>()
+    for (const c of chainsQ.data?.chains ?? []) {
+      out.set(String(c.chainId), c.confirmationsRequired)
+    }
+    return out
+  }, [chainsQ.data])
+
+  // Build the JSON payload from current rows. Returns `{ ok, body, error }`
+  // — `body` carries the parsed object when ok, `null` to clear (when there
+  // are no rows AND the merchant currently has overrides), or `undefined`
+  // (skip) when nothing changed.
+  const buildThresholdsPatch = ():
+    | { ok: true; value: Record<string, number> | null | undefined }
+    | { ok: false; error: string } => {
+    // No changes (rows are empty AND merchant has no current overrides).
+    const cur = m.confirmationThresholds ?? null
+    const trimmed = thresholdRows.filter(
+      (r) => r.chainId.trim() !== '' || r.value.trim() !== '',
+    )
+
+    if (trimmed.length === 0) {
+      if (cur === null) return { ok: true, value: undefined }
+      return { ok: true, value: null }
+    }
+
+    const seen = new Set<string>()
+    const out: Record<string, number> = {}
+    for (const r of trimmed) {
+      const k = r.chainId.trim()
+      const v = r.value.trim()
+      if (!/^\d+$/.test(k) || Number(k) <= 0) {
+        return { ok: false, error: `Invalid chain id "${r.chainId}"` }
+      }
+      if (seen.has(k)) {
+        return { ok: false, error: `Duplicate chain id ${k}` }
+      }
+      seen.add(k)
+      const n = parseInt(v, 10)
+      if (!Number.isFinite(n) || n < 1 || n > 10000) {
+        return {
+          ok: false,
+          error: `Confirmations for chain ${k} must be 1–10000`,
+        }
+      }
+      out[k] = n
+    }
+    // Skip if identical to current.
+    if (cur && Object.keys(out).length === Object.keys(cur).length) {
+      const same = Object.entries(out).every(([k, v]) => cur[k] === v)
+      if (same) return { ok: true, value: undefined }
+    }
+    return { ok: true, value: out }
+  }
+
+  // Mirror of buildThresholdsPatch for the tier map. Each tier-key needs at
+  // least one rule; rules without an op are catch-alls; ops must come with
+  // an amount that parses as decimal.
+  const buildTiersPatch = ():
+    | {
+        ok: true
+        value: Record<string, ConfirmationTierRule[]> | null | undefined
+      }
+    | { ok: false; error: string } => {
+    const cur = m.confirmationTiers ?? null
+    const trimmedGroups = tierGroups.filter(
+      (g) => g.chainId.trim() !== '' || g.token.trim() !== '' || g.rules.length > 0,
+    )
+
+    if (trimmedGroups.length === 0) {
+      return { ok: cur === null ? true : true, value: cur === null ? undefined : null }
+    }
+
+    const seenKeys = new Set<string>()
+    const out: Record<string, ConfirmationTierRule[]> = {}
+    for (const g of trimmedGroups) {
+      const chainId = g.chainId.trim()
+      const token = g.token.trim().toUpperCase()
+      if (!/^\d+$/.test(chainId) || Number(chainId) <= 0) {
+        return { ok: false, error: `Invalid chain id "${g.chainId}"` }
+      }
+      if (!/^[A-Z0-9]+$/.test(token)) {
+        return { ok: false, error: `Pick a token for chain ${chainId}` }
+      }
+      const key = `${chainId}:${token}`
+      if (seenKeys.has(key)) {
+        return { ok: false, error: `Duplicate tier key ${key}` }
+      }
+      seenKeys.add(key)
+      if (g.rules.length === 0) {
+        return { ok: false, error: `${key} has no rules — add one or remove the group` }
+      }
+      if (g.rules.length > 20) {
+        return { ok: false, error: `${key} has more than 20 rules (max 20)` }
+      }
+      const rules: ConfirmationTierRule[] = []
+      for (const r of g.rules) {
+        const conf = parseInt(r.confirmations.trim(), 10)
+        if (!Number.isFinite(conf) || conf < 1 || conf > 10000) {
+          return {
+            ok: false,
+            error: `${key}: confirmations must be 1–10000`,
+          }
+        }
+        const opStr = r.op
+        const amountStr = r.amount.trim()
+        if (opStr === '') {
+          // catch-all — amount must be empty
+          if (amountStr !== '') {
+            return {
+              ok: false,
+              error: `${key}: catch-all rule cannot have an amount; pick an operator or clear the amount`,
+            }
+          }
+          rules.push({ confirmations: conf })
+        } else {
+          if (!/^\d+(\.\d+)?$/.test(amountStr)) {
+            return {
+              ok: false,
+              error: `${key}: amount must be a decimal number for op "${opStr}"`,
+            }
+          }
+          rules.push({ op: opStr, amount: amountStr, confirmations: conf })
+        }
+      }
+      out[key] = rules
+    }
+
+    // Skip if identical to current.
+    if (cur && Object.keys(out).length === Object.keys(cur).length) {
+      const same = Object.entries(out).every(([k, v]) => {
+        const prev = cur[k]
+        if (!prev || prev.length !== v.length) return false
+        return v.every((rule, i) => {
+          const p = prev[i]
+          return (
+            (p.op ?? '') === (rule.op ?? '') &&
+            (p.amount ?? '') === (rule.amount ?? '') &&
+            p.confirmations === rule.confirmations
+          )
+        })
+      })
+      if (same) return { ok: true, value: undefined }
+    }
+    return { ok: true, value: out }
   }
 
   const save = useMutation({
@@ -770,6 +1056,12 @@ function TuningSection({ m }: { m: Merchant }) {
         body.paymentToleranceOverBps = parseInt(o, 10)
       if (c !== '' && parseInt(c, 10) !== m.addressCooldownSeconds)
         body.addressCooldownSeconds = parseInt(c, 10)
+      const t = buildThresholdsPatch()
+      if (!t.ok) throw new Error(t.error)
+      if (t.value !== undefined) body.confirmationThresholds = t.value
+      const tiers = buildTiersPatch()
+      if (!tiers.ok) throw new Error(tiers.error)
+      if (tiers.value !== undefined) body.confirmationTiers = tiers.value
       if (Object.keys(body).length === 0) throw new Error('Nothing to update')
       return api(`/api/merchants/${encodeURIComponent(m.id)}`, {
         method: 'PATCH',
@@ -783,6 +1075,104 @@ function TuningSection({ m }: { m: Merchant }) {
     onError: (e: ApiError | Error) =>
       toast.error(e.message || 'Could not update'),
   })
+
+  const addThresholdRow = () =>
+    setThresholdRows((rows) => [
+      ...rows,
+      { id: `new-${Date.now()}-${Math.random()}`, chainId: '', value: '' },
+    ])
+  const updateThresholdRow = (id: string, patch: Partial<ThresholdRow>) =>
+    setThresholdRows((rows) =>
+      rows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    )
+  const removeThresholdRow = (id: string) =>
+    setThresholdRows((rows) => rows.filter((r) => r.id !== id))
+
+  const addTierGroup = () =>
+    setTierGroups((groups) => [
+      ...groups,
+      {
+        id: `g-${Date.now()}-${Math.random()}`,
+        chainId: '',
+        token: '',
+        rules: [
+          {
+            id: `r-${Date.now()}-${Math.random()}`,
+            op: '',
+            amount: '',
+            confirmations: '',
+          },
+        ],
+      },
+    ])
+  const updateTierGroup = (id: string, patch: Partial<TierGroup>) =>
+    setTierGroups((groups) =>
+      groups.map((g) => (g.id === id ? { ...g, ...patch } : g)),
+    )
+  const removeTierGroup = (id: string) =>
+    setTierGroups((groups) => groups.filter((g) => g.id !== id))
+  const addTierRule = (groupId: string) =>
+    setTierGroups((groups) =>
+      groups.map((g) =>
+        g.id === groupId
+          ? {
+              ...g,
+              rules: [
+                ...g.rules,
+                {
+                  id: `r-${Date.now()}-${Math.random()}`,
+                  op: '',
+                  amount: '',
+                  confirmations: '',
+                },
+              ],
+            }
+          : g,
+      ),
+    )
+  const updateTierRule = (
+    groupId: string,
+    ruleId: string,
+    patch: Partial<TierRuleRow>,
+  ) =>
+    setTierGroups((groups) =>
+      groups.map((g) =>
+        g.id === groupId
+          ? {
+              ...g,
+              rules: g.rules.map((r) =>
+                r.id === ruleId ? { ...r, ...patch } : r,
+              ),
+            }
+          : g,
+      ),
+    )
+  const removeTierRule = (groupId: string, ruleId: string) =>
+    setTierGroups((groups) =>
+      groups.map((g) =>
+        g.id === groupId
+          ? { ...g, rules: g.rules.filter((r) => r.id !== ruleId) }
+          : g,
+      ),
+    )
+  const moveTierRule = (
+    groupId: string,
+    ruleId: string,
+    delta: number,
+  ) =>
+    setTierGroups((groups) =>
+      groups.map((g) => {
+        if (g.id !== groupId) return g
+        const idx = g.rules.findIndex((r) => r.id === ruleId)
+        if (idx < 0) return g
+        const next = idx + delta
+        if (next < 0 || next >= g.rules.length) return g
+        const arr = g.rules.slice()
+        const [item] = arr.splice(idx, 1)
+        arr.splice(next, 0, item)
+        return { ...g, rules: arr }
+      }),
+    )
 
   return (
     <form
@@ -832,9 +1222,33 @@ function TuningSection({ m }: { m: Merchant }) {
         />
       </Field>
 
+      <ConfirmationThresholdsEditor
+        rows={thresholdRows}
+        defaults={defaultByChainId}
+        availableChains={chainsQ.data?.chains ?? []}
+        onAdd={addThresholdRow}
+        onUpdate={updateThresholdRow}
+        onRemove={removeThresholdRow}
+        onClear={() => setThresholdRows([])}
+      />
+
+      <ConfirmationTiersEditor
+        groups={tierGroups}
+        availableChains={chainsQ.data?.chains ?? []}
+        onAddGroup={addTierGroup}
+        onUpdateGroup={updateTierGroup}
+        onRemoveGroup={removeTierGroup}
+        onAddRule={addTierRule}
+        onUpdateRule={updateTierRule}
+        onRemoveRule={removeTierRule}
+        onMoveRule={moveTierRule}
+        onClear={() => setTierGroups([])}
+      />
+
       <HintCard icon={<CircleDashed className="size-4" />}>
-        Tolerance changes apply to <span className="font-medium">new</span>{' '}
-        invoices only — existing invoices keep their snapshotted values.
+        Tolerance, threshold + tier changes apply to{' '}
+        <span className="font-medium">new</span> invoices only — existing
+        invoices keep their snapshotted values.
       </HintCard>
 
       <div className="flex justify-end">
@@ -844,6 +1258,433 @@ function TuningSection({ m }: { m: Merchant }) {
         </Button>
       </div>
     </form>
+  )
+}
+
+function ConfirmationThresholdsEditor({
+  rows,
+  defaults,
+  availableChains,
+  onAdd,
+  onUpdate,
+  onRemove,
+  onClear,
+}: {
+  rows: ThresholdRow[]
+  defaults: Map<string, number>
+  availableChains: ChainInventoryEntry[]
+  onAdd: () => void
+  onUpdate: (id: string, patch: Partial<ThresholdRow>) => void
+  onRemove: (id: string) => void
+  onClear: () => void
+}) {
+  // Sorted chain dropdown — so operators don't have to memorise chainIds.
+  const chainOptions = React.useMemo(
+    () =>
+      availableChains
+        .slice()
+        .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    [availableChains],
+  )
+  return (
+    <Field
+      label={
+        <span className="flex items-center gap-1.5">
+          <Layers className="size-3.5 text-[var(--fg-3)]" />
+          Confirmation thresholds (per chain)
+        </span>
+      }
+      right={
+        rows.length > 0 ? (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-[11px] text-[var(--fg-2)] hover:text-destructive"
+          >
+            Clear all
+          </button>
+        ) : null
+      }
+      hint={
+        rows.length === 0
+          ? 'Empty = use gateway defaults for every chain. Set a per-chain override to tighten or loosen finality for this merchant.'
+          : 'Lower-than-default values trade reorg risk for faster finality and surface a WARN in gateway logs.'
+      }
+    >
+      <div className="space-y-2">
+        {rows.map((row) => {
+          const def = row.chainId.trim()
+            ? defaults.get(row.chainId.trim()) ?? null
+            : null
+          const parsedV = /^\d+$/.test(row.value.trim())
+            ? parseInt(row.value.trim(), 10)
+            : null
+          const belowDefault =
+            def != null && parsedV != null && parsedV < def
+          const info = row.chainId.trim()
+            ? chainInfo(parseInt(row.chainId.trim(), 10))
+            : null
+          return (
+            <div
+              key={row.id}
+              className={
+                'grid grid-cols-[minmax(0,1.4fr)_120px_auto] items-start gap-2 rounded-md border p-2 ' +
+                (belowDefault
+                  ? 'border-warn/40 bg-warn/5'
+                  : 'border-border bg-[var(--bg-2)]')
+              }
+            >
+              <div className="space-y-1">
+                <Select
+                  value={row.chainId}
+                  onValueChange={(v) => onUpdate(row.id, { chainId: v })}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Pick a chain" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chainOptions.map((c) => (
+                      <SelectItem key={c.chainId} value={String(c.chainId)}>
+                        <span className="flex items-center gap-2">
+                          <span>{c.displayName}</span>
+                          <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                            {c.chainId}
+                          </span>
+                          <span className="text-[10.5px] text-[var(--fg-3)]">
+                            default {c.confirmationsRequired}
+                          </span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {info && def != null && (
+                  <div className="flex items-center gap-2 px-1 text-[10.5px] text-[var(--fg-3)]">
+                    <span className="font-mono">{info.short}</span>
+                    <span>·</span>
+                    <span>
+                      gateway default{' '}
+                      <span className="font-mono text-[var(--fg-1)]">
+                        {def}
+                      </span>{' '}
+                      blocks
+                    </span>
+                    {belowDefault && (
+                      <span className="inline-flex items-center gap-1 text-warn">
+                        <AlertTriangle className="size-3" /> below default
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+              <Input
+                value={row.value}
+                onChange={(e) =>
+                  onUpdate(row.id, { value: e.target.value })
+                }
+                placeholder="blocks"
+                inputMode="numeric"
+                className="h-8 font-mono text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => onRemove(row.id)}
+                className="inline-flex size-8 items-center justify-center rounded-md text-[var(--fg-3)] transition-colors hover:bg-destructive/10 hover:text-destructive"
+                title="Remove override"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )
+        })}
+        <button
+          type="button"
+          onClick={onAdd}
+          className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 text-xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
+        >
+          <Plus className="size-3.5" />
+          Add chain override
+        </button>
+      </div>
+    </Field>
+  )
+}
+
+function ConfirmationTiersEditor({
+  groups,
+  availableChains,
+  onAddGroup,
+  onUpdateGroup,
+  onRemoveGroup,
+  onAddRule,
+  onUpdateRule,
+  onRemoveRule,
+  onMoveRule,
+  onClear,
+}: {
+  groups: TierGroup[]
+  availableChains: ChainInventoryEntry[]
+  onAddGroup: () => void
+  onUpdateGroup: (id: string, patch: Partial<TierGroup>) => void
+  onRemoveGroup: (id: string) => void
+  onAddRule: (groupId: string) => void
+  onUpdateRule: (
+    groupId: string,
+    ruleId: string,
+    patch: Partial<TierRuleRow>,
+  ) => void
+  onRemoveRule: (groupId: string, ruleId: string) => void
+  onMoveRule: (groupId: string, ruleId: string, delta: number) => void
+  onClear: () => void
+}) {
+  const chainOptions = React.useMemo(
+    () =>
+      availableChains
+        .slice()
+        .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    [availableChains],
+  )
+  const tokensFor = (chainId: string) => {
+    const id = parseInt(chainId, 10)
+    return availableChains.find((c) => c.chainId === id)?.tokens ?? []
+  }
+
+  return (
+    <Field
+      label={
+        <span className="flex items-center gap-1.5">
+          <Layers className="size-3.5 text-[var(--fg-3)]" />
+          Amount-tiered rules (per chain &amp; token)
+        </span>
+      }
+      right={
+        groups.length > 0 ? (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-[11px] text-[var(--fg-2)] hover:text-destructive"
+          >
+            Clear all
+          </button>
+        ) : null
+      }
+      hint={
+        groups.length === 0
+          ? 'Optional. Override confirmations by amount tier — e.g. "<$3 LTC: 1 conf, otherwise 12". Falls back to flat thresholds then gateway defaults if no rule matches.'
+          : 'Rules evaluate top-down — first matching predicate wins. A rule with no operator acts as a catch-all and should sit last.'
+      }
+    >
+      <div className="space-y-3">
+        {groups.map((group) => {
+          const tokenList = tokensFor(group.chainId)
+          const info = group.chainId.trim()
+            ? chainInfo(parseInt(group.chainId.trim(), 10))
+            : null
+          return (
+            <div
+              key={group.id}
+              className="space-y-2 rounded-md border border-border bg-[var(--bg-2)] p-2"
+            >
+              <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] items-center gap-2">
+                <Select
+                  value={group.chainId}
+                  onValueChange={(v) =>
+                    onUpdateGroup(group.id, { chainId: v, token: '' })
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Pick a chain" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chainOptions.map((c) => (
+                      <SelectItem key={c.chainId} value={String(c.chainId)}>
+                        <span className="flex items-center gap-2">
+                          <span>{c.displayName}</span>
+                          <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                            {c.chainId}
+                          </span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={group.token}
+                  onValueChange={(v) => onUpdateGroup(group.id, { token: v })}
+                  disabled={tokenList.length === 0}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue
+                      placeholder={
+                        group.chainId
+                          ? tokenList.length === 0
+                            ? 'No tokens'
+                            : 'Pick token'
+                          : 'Pick chain first'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tokenList.map((t) => (
+                      <SelectItem key={t.symbol} value={t.symbol}>
+                        <span className="flex items-center gap-2">
+                          <span className="font-mono">{t.symbol}</span>
+                          <span className="text-[10.5px] text-[var(--fg-3)]">
+                            {t.displayName}
+                          </span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <button
+                  type="button"
+                  onClick={() => onRemoveGroup(group.id)}
+                  className="inline-flex size-8 items-center justify-center rounded-md text-[var(--fg-3)] transition-colors hover:bg-destructive/10 hover:text-destructive"
+                  title="Remove tier group"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+
+              {info && group.chainId && (
+                <div className="px-1 text-[10.5px] text-[var(--fg-3)]">
+                  Key{' '}
+                  <span className="font-mono text-[var(--fg-1)]">
+                    {group.chainId}:{group.token || '<token>'}
+                  </span>{' '}
+                  · {info.short}
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                {group.rules.map((rule, idx) => {
+                  const isCatchAll = rule.op === ''
+                  const last = idx === group.rules.length - 1
+                  return (
+                    <div
+                      key={rule.id}
+                      className="space-y-1 rounded border border-border bg-card px-1.5 py-1.5"
+                    >
+                      <div className="grid grid-cols-[150px_minmax(0,1.2fr)_88px_auto] items-center gap-1.5">
+                        <Select
+                          value={rule.op === '' ? '__any__' : rule.op}
+                          onValueChange={(v) =>
+                            onUpdateRule(group.id, rule.id, {
+                              op: v === '__any__' ? '' : (v as ConfirmationTierOp),
+                              ...(v === '__any__' ? { amount: '' } : {}),
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-7 px-1.5 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__any__">
+                              <span className="flex items-center gap-2">
+                                <span className="w-7 font-mono text-[var(--fg-3)]">
+                                  —
+                                </span>
+                                <span>Default · catch-all</span>
+                              </span>
+                            </SelectItem>
+                            {TIER_OPS.map((op) => (
+                              <SelectItem key={op} value={op}>
+                                <span className="flex items-center gap-2">
+                                  <span className="w-7 font-mono text-[var(--fg-2)]">
+                                    {op}
+                                  </span>
+                                  <span>{TIER_OP_LABEL[op]}</span>
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          value={rule.amount}
+                          onChange={(e) =>
+                            onUpdateRule(group.id, rule.id, {
+                              amount: e.target.value,
+                            })
+                          }
+                          placeholder={
+                            isCatchAll
+                              ? 'no amount — applies to all'
+                              : `amount in ${group.token || 'token'}`
+                          }
+                          disabled={isCatchAll}
+                          inputMode="decimal"
+                          className="h-7 font-mono text-xs"
+                        />
+                        <Input
+                          value={rule.confirmations}
+                          onChange={(e) =>
+                            onUpdateRule(group.id, rule.id, {
+                              confirmations: e.target.value,
+                            })
+                          }
+                          placeholder="conf"
+                          inputMode="numeric"
+                          className="h-7 font-mono text-xs"
+                        />
+                        <div className="flex items-center">
+                          <button
+                            type="button"
+                            onClick={() => onMoveRule(group.id, rule.id, -1)}
+                            disabled={idx === 0}
+                            className="inline-flex size-6 items-center justify-center rounded text-[var(--fg-3)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                            title="Move up"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onMoveRule(group.id, rule.id, 1)}
+                            disabled={last}
+                            className="inline-flex size-6 items-center justify-center rounded text-[var(--fg-3)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                            title="Move down"
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onRemoveRule(group.id, rule.id)}
+                            className="inline-flex size-6 items-center justify-center rounded text-[var(--fg-3)] transition-colors hover:bg-destructive/10 hover:text-destructive"
+                            title="Remove rule"
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="px-1 text-[10.5px] italic text-[var(--fg-3)]">
+                        {describeTierRule(rule, group.token)}
+                      </div>
+                    </div>
+                  )
+                })}
+                <button
+                  type="button"
+                  onClick={() => onAddRule(group.id)}
+                  disabled={group.rules.length >= 20}
+                  className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-1 text-[11px] text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Plus className="size-3" />
+                  Add rule {group.rules.length >= 20 ? '(max 20)' : ''}
+                </button>
+              </div>
+            </div>
+          )
+        })}
+        <button
+          type="button"
+          onClick={onAddGroup}
+          className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 text-xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
+        >
+          <Plus className="size-3.5" />
+          Add (chain, token) tier group
+        </button>
+      </div>
+    </Field>
   )
 }
 
