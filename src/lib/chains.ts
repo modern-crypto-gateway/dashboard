@@ -40,6 +40,8 @@ export const CHAINS: Record<
     family: 'utxo',
     color: 'oklch(0.7 0.02 250)',
   },
+  // Monero — privacy chain, 12-decimal piconero native unit.
+  1000: { name: 'Monero', short: 'XMR', family: 'monero', color: 'oklch(0.65 0.22 35)' },
 }
 
 export const FAMILY_COLOR: Record<Family, string> = {
@@ -47,6 +49,7 @@ export const FAMILY_COLOR: Record<Family, string> = {
   tron: 'var(--chain-tron)',
   solana: 'var(--chain-solana)',
   utxo: 'oklch(0.7 0.18 55)',
+  monero: 'oklch(0.65 0.22 35)',
 }
 
 export function chainInfo(chainId: number) {
@@ -72,6 +75,8 @@ export const LOW_GAS_THRESHOLD: Record<string, number> = {
   // thresholds expressed in the asset itself (whole BTC / LTC).
   BTC: 0.001,
   LTC: 0.05,
+  // Monero — same idea, native asset is also the fee asset.
+  XMR: 0.05,
 }
 
 const FAMILY_FALLBACK_THRESHOLD: Record<Family, number> = {
@@ -79,6 +84,7 @@ const FAMILY_FALLBACK_THRESHOLD: Record<Family, number> = {
   tron: 100,
   solana: 0.1,
   utxo: 0.001,
+  monero: 0.05,
 }
 
 export function gasThreshold(
@@ -128,6 +134,8 @@ const NATIVE_BY_CHAIN: Record<number, { symbol: string; decimals: number }> = {
   801: { symbol: 'LTC', decimals: 8 },
   802: { symbol: 'BTC', decimals: 8 },
   803: { symbol: 'LTC', decimals: 8 },
+  // Monero — 12 decimals (piconero).
+  1000: { symbol: 'XMR', decimals: 12 },
 }
 
 const FAMILY_NATIVE_FALLBACK: Record<Family, { symbol: string; decimals: number }> = {
@@ -135,6 +143,7 @@ const FAMILY_NATIVE_FALLBACK: Record<Family, { symbol: string; decimals: number 
   tron: { symbol: 'TRX', decimals: 6 },
   solana: { symbol: 'SOL', decimals: 9 },
   utxo: { symbol: 'BTC', decimals: 8 },
+  monero: { symbol: 'XMR', decimals: 12 },
 }
 
 export function nativeMeta(chainId: number): { symbol: string; decimals: number } {

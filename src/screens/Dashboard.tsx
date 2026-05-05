@@ -246,7 +246,7 @@ function BalancesCard({
   snapshot?: BalancesSnapshot
   loading: boolean
 }) {
-  const families: Family[] = ['evm', 'tron', 'solana', 'utxo']
+  const families: Family[] = ['evm', 'tron', 'solana', 'utxo', 'monero']
   const rows =
     snapshot?.families.map((f) => ({
       family: f.family,
@@ -318,7 +318,7 @@ function BalancesCard({
       )}
 
       {/* Family blocks */}
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {families.map((fam) => {
           const r = byFamily[fam]
           const inactive = !r || r.usd === 0

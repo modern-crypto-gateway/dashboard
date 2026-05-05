@@ -1558,10 +1558,10 @@ function CreateInvoiceDialog({
               </Field>
               <Field
                 label="Accepted families"
-                hint="Each accepted family gets one allocated receive address. UTXO mints a fresh BIP84 address per invoice (no pool)."
+                hint="Each accepted family gets one allocated receive address. UTXO and Monero mint a fresh address per invoice (no pool)."
               >
                 <div className="flex flex-wrap gap-2">
-                  {(['evm', 'tron', 'solana', 'utxo'] as const).map((f) => {
+                  {(['evm', 'tron', 'solana', 'utxo', 'monero'] as const).map((f) => {
                     const active = acceptedFamilies.includes(f)
                     return (
                       <button

@@ -14,7 +14,7 @@ export type Session = {
 
 export type LoginStage = 'creds' | 'totp'
 
-export type Family = 'evm' | 'tron' | 'solana' | 'utxo'
+export type Family = 'evm' | 'tron' | 'solana' | 'utxo' | 'monero'
 
 export type PoolStatsRow = {
   family: Family
