@@ -259,6 +259,16 @@ function CapabilityBadge({ capability }: { capability: FeeWalletCapability }) {
       </Badge>
     )
   }
+  if (capability === 'top-up') {
+    return (
+      <Badge
+        variant="default"
+        title="Fee wallet sits in the gas top-up sponsor pool — funds the sourceâ€™s native top-up tx; the source still burns native for the payout"
+      >
+        top-up
+      </Badge>
+    )
+  }
   return (
     <Badge variant="outline" title="No fee-wallet topology supported today">
       none

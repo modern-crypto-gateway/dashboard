@@ -53,6 +53,7 @@ import type {
 
 import { Addr } from '@/components/Addr'
 import { ChainTokenPicker } from '@/components/ChainTokenPicker'
+import { ConsolidateDialog } from '@/components/ConsolidateDialog'
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
 import { MerchantSwitcher } from '@/components/MerchantSwitcher'
@@ -641,6 +642,24 @@ function PayoutDetailSheet({
             {po?.kind === 'gas_top_up' && (
               <Badge variant="outline" className="uppercase tracking-wider">
                 <Fuel className="size-3" /> gas top-up
+              </Badge>
+            )}
+            {po?.kind === 'gas_burn' && (
+              <Badge
+                variant="warn"
+                className="uppercase tracking-wider"
+                title="Synthetic debit row — records the native fee a failed-but-broadcast tx burned on chain."
+              >
+                <Fuel className="size-3" /> gas burn
+              </Badge>
+            )}
+            {po?.kind === 'consolidation_sweep' && (
+              <Badge
+                variant="accent"
+                className="uppercase tracking-wider"
+                title="Internal pool-defragmentation sweep planned via /admin/pool/consolidate."
+              >
+                <Layers className="size-3" /> consolidation
               </Badge>
             )}
             {(po?.feeBumpAttempts ?? 0) > 0 && (
@@ -1705,6 +1724,7 @@ function CreatePayoutDialog({
   const [proceedAnywaySignature, setProceedAnywaySignature] = React.useState<
     string | null
   >(null)
+  const [consolidateOpen, setConsolidateOpen] = React.useState(false)
 
   const webhookMismatch =
     (webhookUrl.trim() !== '' && webhookSecret.trim() === '') ||
@@ -1814,6 +1834,12 @@ function CreatePayoutDialog({
   const alternatives = estimate.data?.alternatives ?? []
   const noSourceBalance = warnings.includes(
     'no_source_address_has_sufficient_token_balance',
+  )
+  // Companion warning: aggregate IS sufficient but it's split across
+  // pool addresses. Account-model chains pick a single sender per payout,
+  // so the operator needs to consolidate first.
+  const consolidateRequired = warnings.includes(
+    'single_source_insufficient_consolidate_required',
   )
   const noGasSponsor = warnings.includes('no_gas_sponsor_available')
   const amountExceedsSpendable = warnings.includes(
@@ -2114,7 +2140,28 @@ function CreatePayoutDialog({
           />
 
           {noSourceBalance && (
-            <NoSourceBalanceBanner token={token || 'this token'} />
+            <div className="space-y-2">
+              <NoSourceBalanceBanner token={token || 'this token'} />
+              {consolidateRequired && (
+                <div className="flex flex-wrap items-center gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs">
+                  <span className="text-warn">
+                    Aggregate balance is sufficient but split across pool
+                    addresses — consolidate first to unblock this payout.
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto"
+                    onClick={() => setConsolidateOpen(true)}
+                    disabled={!chainId || !token}
+                  >
+                    <Layers className="size-3.5" />
+                    Consolidate first
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
 
           {noGasSponsor && <NoGasSponsorBanner />}
@@ -2190,6 +2237,16 @@ function CreatePayoutDialog({
           </DialogFooter>
         </form>
       </DialogContent>
+      <ConsolidateDialog
+        open={consolidateOpen}
+        onOpenChange={setConsolidateOpen}
+        prefillChainId={chainId ? parseInt(chainId, 10) : undefined}
+        prefillToken={token || undefined}
+        onPlanned={() => {
+          // Refetch the estimate so the warning clears once legs confirm.
+          void estimate.refetch()
+        }}
+      />
     </Dialog>
   )
 }

@@ -197,8 +197,25 @@ export type PayoutStatus =
   | 'failed'
   | 'canceled'
 
-/** `gas_top_up` rows are internal sibling payouts the executor inserts to sponsor gas for a parent token payout. */
-export type PayoutKind = 'standard' | 'gas_top_up'
+/**
+ * Payout row classification.
+ * - `standard` — merchant-facing
+ * - `gas_top_up` — internal sibling row inserted by the executor when the
+ *   chosen source needs JIT gas top-up.
+ * - `gas_burn` — synthetic debit row recording native fees a
+ *   failed-but-broadcast tx burned (keeps `computeSpendable` in sync).
+ * - `consolidation_sweep` — admin-triggered internal token transfer
+ *   between two pool addresses, planned by `POST /admin/pool/consolidate`.
+ *
+ * All three internal kinds are filtered out of merchant-scoped list
+ * endpoints; they only surface via admin queries (`GET /admin/payouts`,
+ * `GET /admin/pool/consolidations/:id`).
+ */
+export type PayoutKind =
+  | 'standard'
+  | 'gas_top_up'
+  | 'gas_burn'
+  | 'consolidation_sweep'
 
 export type GatewayPayout = {
   id: string
@@ -290,6 +307,14 @@ export type PayoutFeeTiers = {
  */
 export type PayoutEstimateWarning =
   | 'no_source_address_has_sufficient_token_balance'
+  /**
+   * Emitted alongside `no_source_address_has_sufficient_token_balance` when
+   * the AGGREGATE balance across pool addresses IS sufficient but it's
+   * fragmented. Account-model chains pick one sender per payout, so the
+   * payout can't proceed until the balance is consolidated. UI hint: surface
+   * a "Consolidate first" CTA that triggers `POST /admin/pool/consolidate`.
+   */
+  | 'single_source_insufficient_consolidate_required'
   | 'no_gas_sponsor_available'
   | 'max_amount_exceeds_net_spendable'
   | 'fee_quote_unavailable'
@@ -335,6 +360,61 @@ export type PayoutEstimate = {
   alternatives: PayoutEstimateSource[]
   /** Warning codes — may contain unknown future codes. */
   warnings: string[]
+}
+
+/* ── Pool consolidation (admin) ───────────────────────────── */
+
+export type ConsolidationLeg = {
+  payoutId: string
+  sourceAddress: string
+  /** Full balance being swept from the source, in the token's smallest unit. */
+  amountRaw: string
+}
+
+export type ConsolidationSkipped = {
+  sourceAddress: string
+  amountRaw: string
+  /** e.g. `NO_GAS_SPONSOR_AVAILABLE: ...` */
+  reason: string
+}
+
+export type ConsolidationPlanResponse = {
+  consolidationId: string
+  chainId: number
+  token: string
+  targetAddress: string
+  legs: ConsolidationLeg[]
+  skipped: ConsolidationSkipped[]
+}
+
+export type ConsolidationLegStatus = {
+  payoutId: string
+  sourceAddress: string
+  amountRaw: string
+  status:
+    | 'planned'
+    | 'reserved'
+    | 'topping-up'
+    | 'submitted'
+    | 'confirmed'
+    | 'failed'
+    | 'canceled'
+  txHash: string | null
+  topUpTxHash: string | null
+  lastError: string | null
+}
+
+export type ConsolidationStatusResponse = {
+  consolidationId: string
+  legs: ConsolidationLegStatus[]
+  summary: {
+    total: number
+    /** Legs in planned/reserved/topping-up/submitted. Poll until 0. */
+    pendingOrInFlight: number
+    confirmed: number
+    failed: number
+    canceled: number
+  }
 }
 
 export type PayoutBatchRowResult =
@@ -456,7 +536,17 @@ export type PoolAuditResponse = {
   reports: PoolAuditFamilyReport[]
 }
 
-export type FeeWalletCapability = 'none' | 'delegate' | 'co-sign'
+/**
+ * How the registered fee wallet covers gas for payouts on this family.
+ * - `none`     — family doesn't use a fee wallet today (EVM, pending AA).
+ * - `top-up`   — fee wallet sits in the top-up sponsor pool; the source
+ *                still burns native, but the top-up is funded by the
+ *                fee wallet rather than another pool address (Tron).
+ * - `delegate` — fee wallet pre-delegates resources out-of-band so payouts
+ *                spend zero native (Tron, future Phase 4 integration).
+ * - `co-sign`  — fee wallet signs every payout as the tx fee payer (Solana).
+ */
+export type FeeWalletCapability = 'none' | 'top-up' | 'delegate' | 'co-sign'
 export type FeeWalletMode = 'hd-pool' | 'imported'
 
 export type FeeWalletEntry = {

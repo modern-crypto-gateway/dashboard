@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import {
   AlertTriangle,
   CheckCircle2,
+  Layers,
   Loader2,
   Plus,
   RefreshCw,
@@ -20,6 +21,7 @@ import type {
 } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
+import { ConsolidateDialog } from '@/components/ConsolidateDialog'
 import { Field } from '@/components/Field'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -50,6 +52,7 @@ export function PoolPage() {
     queryFn: () => api<{ stats: PoolStatsRow[] }>('/api/gw/admin/pool/stats'),
     refetchInterval: 30_000,
   })
+  const [consolidateOpen, setConsolidateOpen] = React.useState(false)
 
   return (
     <div className="fade-in space-y-6">
@@ -75,11 +78,28 @@ export function PoolPage() {
             <RefreshCw className={'size-3.5' + (q.isFetching ? ' animate-spin' : '')} />
             Refresh
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setConsolidateOpen(true)}
+            title="Defragment a token balance scattered across pool addresses"
+          >
+            <Layers className="size-3.5" />
+            Consolidate
+          </Button>
           <SeedDialog
             onSuccess={() => qc.invalidateQueries({ queryKey: ['pool-stats'] })}
           />
         </div>
       </div>
+
+      <ConsolidateDialog
+        open={consolidateOpen}
+        onOpenChange={setConsolidateOpen}
+        onPlanned={() =>
+          qc.invalidateQueries({ queryKey: ['pool-stats'] })
+        }
+      />
 
       <PoolAuditCard />
 
