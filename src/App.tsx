@@ -47,6 +47,11 @@ const BalancesPage = lazy(() =>
 const PoolPage = lazy(() =>
   import('@/screens/Pool').then((m) => ({ default: m.PoolPage })),
 )
+const ConsolidationSchedulesPage = lazy(() =>
+  import('@/screens/ConsolidationSchedules').then((m) => ({
+    default: m.ConsolidationSchedulesPage,
+  })),
+)
 const ActivityPage = lazy(() =>
   import('@/screens/Activity').then((m) => ({ default: m.ActivityPage })),
 )
@@ -155,6 +160,14 @@ export default function App() {
                     element={
                       <Suspense fallback={<Spinner />}>
                         <PoolPage />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="/consolidation-schedules"
+                    element={
+                      <Suspense fallback={<Spinner />}>
+                        <ConsolidationSchedulesPage />
                       </Suspense>
                     }
                   />

@@ -417,6 +417,32 @@ export type ConsolidationStatusResponse = {
   }
 }
 
+/* ── Auto-consolidation schedules (admin) ─────────────────── */
+
+export type AutoConsolidationSchedule = {
+  id: string
+  chainId: number
+  token: string
+  targetAddress: string
+  intervalHours: number
+  /** Per-source dust floor in token's smallest unit (decimal string). */
+  minSourceBalanceRaw: string
+  maxSourcesPerRun: number
+  enabled: boolean
+  /** Epoch ms of the most recent cron firing. NULL until first run. */
+  lastRunAt: number | null
+  /** UUID of the consolidationId returned by the most recent firing. */
+  lastConsolidationId: string | null
+  /** How many legs the most recent firing planned. */
+  lastLegCount: number | null
+  /** How many sources the most recent firing skipped. */
+  lastSkippedCount: number | null
+  /** Epoch ms when the cron will next attempt to fire. */
+  nextRunDue: number
+  createdAt: number
+  updatedAt: number
+}
+
 export type PayoutBatchRowResult =
   | { index: number; status: 'planned'; payout: GatewayPayout }
   | { index: number; status: 'failed'; error: { code?: string; message: string } }
@@ -591,7 +617,13 @@ export type BalancesSnapshot = {
         address: string
         kind: 'pool' | 'fee'
         totalUsd: string
-        tokens: Array<{ token: string; amountDecimal: string; usd: string }>
+        tokens: Array<{
+          token: string
+          decimals?: number
+          amountRaw?: string
+          amountDecimal: string
+          usd: string
+        }>
       }>
       errors: number
     }>

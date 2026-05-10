@@ -1,8 +1,10 @@
 import * as React from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   AlertTriangle,
+  CalendarClock,
   CheckCircle2,
   Layers,
   Loader2,
@@ -86,6 +88,15 @@ export function PoolPage() {
           >
             <Layers className="size-3.5" />
             Consolidate
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link
+              to="/consolidation-schedules"
+              title="Recurring auto-consolidation per (chain, token)"
+            >
+              <CalendarClock className="size-3.5" />
+              Schedules
+            </Link>
           </Button>
           <SeedDialog
             onSuccess={() => qc.invalidateQueries({ queryKey: ['pool-stats'] })}

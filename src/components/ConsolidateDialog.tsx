@@ -12,6 +12,7 @@ import {
 import { api, ApiError } from '@/lib/api'
 import { formatUnits } from '@/lib/format'
 import type {
+  BalancesSnapshot,
   ChainInventoryEntry,
   ConsolidationPlanResponse,
   ConsolidationStatusResponse,
@@ -86,6 +87,19 @@ export function ConsolidateDialog({
     staleTime: 30_000,
   })
 
+  // Pull pool addresses from the DB balances snapshot — fast (no RPC) and
+  // gives us per-address token balances we can rank to help the operator
+  // pick a target that already holds the most of `token`.
+  const balancesQ = useQuery({
+    queryKey: ['gw', 'balances', 'db'] as const,
+    queryFn: () =>
+      api<{ snapshot: BalancesSnapshot; cached: boolean }>(
+        '/api/gw/admin/balances',
+      ),
+    enabled: open,
+    staleTime: 30_000,
+  })
+
   const chainOptions = React.useMemo(
     () =>
       (chainsQ.data?.chains ?? [])
@@ -102,6 +116,43 @@ export function ConsolidateDialog({
   const selectedToken = tokenOptions.find(
     (t) => t.symbol.toUpperCase() === token.toUpperCase(),
   )
+
+  // Pool address candidates for the chosen chain, with their current balance
+  // of the selected token (smallest units). Sorted: holders of `token` first
+  // (descending balance), then any remaining pool addresses on the chain.
+  const targetCandidates = React.useMemo(() => {
+    const id = parseInt(chainId, 10)
+    if (!Number.isFinite(id)) return []
+    const tokSym = token.trim().toUpperCase()
+    const families = balancesQ.data?.snapshot.families ?? []
+    type Row = { address: string; tokenAmountRaw: string; allTokens: string }
+    const rows: Row[] = []
+    for (const fam of families) {
+      for (const ch of fam.chains) {
+        if (ch.chainId !== id) continue
+        for (const a of ch.addresses) {
+          if (a.kind !== 'pool') continue
+          const tokRow = a.tokens.find(
+            (t) => t.token.toUpperCase() === tokSym,
+          )
+          rows.push({
+            address: a.address,
+            tokenAmountRaw: tokRow?.amountRaw ?? '0',
+            allTokens: a.tokens
+              .map((t) => `${t.amountDecimal} ${t.token}`)
+              .join(' · '),
+          })
+        }
+      }
+    }
+    rows.sort((a, b) => {
+      const av = BigInt(a.tokenAmountRaw || '0')
+      const bv = BigInt(b.tokenAmountRaw || '0')
+      if (av === bv) return a.address.localeCompare(b.address)
+      return av > bv ? -1 : 1
+    })
+    return rows
+  }, [balancesQ.data, chainId, token])
 
   const planMut = useMutation({
     mutationFn: () => {
@@ -229,20 +280,78 @@ export function ConsolidateDialog({
             </div>
             <Field
               label="Target address"
-              hint="Pool address that receives every consolidated balance. MUST already exist in the address pool for this family."
+              hint={
+                targetCandidates.length > 0
+                  ? 'Pick a pool address with the most existing token balance (top of the list) to minimize legs.'
+                  : 'Pool address that receives every consolidated balance. MUST already exist in the address pool for this family.'
+              }
+              right={
+                targetCandidates.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setTarget('')}
+                    className="text-[11px] text-[var(--fg-3)] hover:text-foreground cursor-pointer"
+                  >
+                    {target && !targetCandidates.some((r) => r.address === target)
+                      ? 'Use picker'
+                      : 'Custom address'}
+                  </button>
+                ) : null
+              }
             >
-              <Input
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                className="font-mono"
-                placeholder={
-                  chainId === '728126428' || chainId === '728'
-                    ? 'T…'
-                    : chainId === '900'
-                      ? 'base58…'
-                      : '0x…'
-                }
-              />
+              {targetCandidates.length > 0 &&
+              (target === '' || targetCandidates.some((r) => r.address === target)) ? (
+                <Select
+                  value={target}
+                  onValueChange={setTarget}
+                  disabled={balancesQ.isLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        balancesQ.isLoading ? 'Loading addresses…' : 'Pick pool address'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    {targetCandidates.map((row) => {
+                      const has = row.tokenAmountRaw !== '0'
+                      const dec = selectedToken?.decimals
+                      const balLabel =
+                        has && dec != null
+                          ? `${formatUnits(row.tokenAmountRaw, dec)} ${selectedToken!.symbol}`
+                          : null
+                      return (
+                        <SelectItem key={row.address} value={row.address}>
+                          <span className="flex items-center gap-2">
+                            <span className="font-mono text-[11.5px]">
+                              {row.address.slice(0, 10)}…{row.address.slice(-6)}
+                            </span>
+                            {balLabel && (
+                              <span className="font-mono text-[10.5px] text-success">
+                                {balLabel}
+                              </span>
+                            )}
+                          </span>
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                  className="font-mono"
+                  placeholder={
+                    chainId === '728126428' || chainId === '728'
+                      ? 'T…'
+                      : chainId === '900'
+                        ? 'base58…'
+                        : '0x…'
+                  }
+                />
+              )}
             </Field>
             <DialogFooter>
               <Button

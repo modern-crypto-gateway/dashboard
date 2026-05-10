@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowUpDown,
+  CalendarClock,
   CircleDollarSign,
   FileText,
   Fuel,
@@ -44,6 +45,11 @@ const sections: Section[] = [
     items: [
       { to: '/balances', label: 'Balances', icon: CircleDollarSign },
       { to: '/pool', label: 'Address pool', icon: Waypoints },
+      {
+        to: '/consolidation-schedules',
+        label: 'Auto-consolidation',
+        icon: CalendarClock,
+      },
       { to: '/invoices', label: 'Invoices', icon: FileText },
       { to: '/payouts', label: 'Payouts', icon: ArrowUpDown },
     ],
