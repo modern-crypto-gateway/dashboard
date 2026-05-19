@@ -12,15 +12,35 @@ import type { Bindings } from '../lib/env'
 import { error, HttpError, json, readJson } from '../lib/http'
 import { kvGet, K } from '../lib/kv'
 
+// Full set of query params GET /api/v1/invoices accepts. Anything not listed
+// here is dropped before the upstream call — keep in sync with the gateway's
+// OpenAPI spec or filters silently no-op.
 const LIST_PASSTHROUGH = [
   'status',
+  'extraStatus',
   'chainId',
   'token',
   'externalId',
+  'externalIdContains',
   'toAddress',
+  'addressContains',
   'fromAddress',
+  'txHash',
+  'amountUsdMin',
+  'amountUsdMax',
+  'paidUsdMin',
+  'paidUsdMax',
+  'hasPayments',
   'createdFrom',
   'createdTo',
+  'updatedFrom',
+  'updatedTo',
+  'confirmedFrom',
+  'confirmedTo',
+  'expiresFrom',
+  'expiresTo',
+  'sortBy',
+  'sortDir',
   'limit',
   'offset',
 ] as const

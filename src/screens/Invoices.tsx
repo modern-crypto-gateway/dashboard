@@ -3,13 +3,16 @@ import { Link } from 'react-router-dom'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
+  Activity,
+  CalendarRange,
   ChevronDown,
+  Coins,
   ExternalLink,
   FileText,
+  Hash,
   KeyRound,
   Loader2,
   Plus,
-  Search,
   Webhook,
   X,
 } from 'lucide-react'
@@ -27,6 +30,7 @@ import {
 } from '@/lib/format'
 import { useActiveMerchant, useMerchants } from '@/lib/merchants'
 import type {
+  ChainInventoryEntry,
   Family,
   GatewayInvoice,
   InvoiceDetails,
@@ -37,6 +41,14 @@ import type {
 
 import { Addr } from '@/components/Addr'
 import { ChainTokenPicker } from '@/components/ChainTokenPicker'
+import { ListFilterBar } from '@/components/ListFilterBar'
+import {
+  cleanFilterValues,
+  useFilterOptions,
+  type FilterSection,
+  type FilterValues,
+  type SortConfig,
+} from '@/lib/listFilters'
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
 import { MerchantSwitcher } from '@/components/MerchantSwitcher'
@@ -186,51 +198,191 @@ export function StatusBadge({
 
 /* ── page ────────────────────────────────────────────────── */
 
-type InvoiceFilter = 'all' | 'open' | 'paid' | 'failed'
-
-/**
- * v3 lifecycle: pending,processing,completed,expired,canceled.
- * Legacy values (`created`/`partial`/`detected`/`confirmed`/`overpaid`)
- * are sent too so older gateways still get filtered correctly.
- */
-const STATUS_CSV: Record<InvoiceFilter, string | undefined> = {
-  all: undefined,
-  open: 'pending,processing,created,partial,detected',
-  paid: 'completed,confirmed,overpaid',
-  failed: 'expired,canceled',
-}
-
 const PAGE_SIZE = 50
 
-const invoicesQueryKey = (merchantId: string | null, filter: InvoiceFilter) =>
-  ['invoices', 'list', merchantId, filter] as const
+/* Filter spec for invoices — keys are the gateway's query-param names. */
+
+const INVOICE_SECTIONS: FilterSection[] = [
+  {
+    title: 'Status',
+    icon: Activity,
+    fields: [
+      {
+        kind: 'enumSet',
+        key: 'status',
+        label: 'Lifecycle status',
+        options: [
+          { value: 'pending', label: 'Pending' },
+          { value: 'processing', label: 'Processing' },
+          { value: 'completed', label: 'Completed' },
+          { value: 'expired', label: 'Expired' },
+          { value: 'canceled', label: 'Canceled' },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Payment',
+    icon: Coins,
+    fields: [
+      {
+        kind: 'enumSet',
+        key: 'extraStatus',
+        label: 'Payment fidelity',
+        options: [
+          { value: 'partial', label: 'Partial (underpaid)' },
+          { value: 'overpaid', label: 'Overpaid' },
+        ],
+      },
+      {
+        kind: 'tri',
+        key: 'hasPayments',
+        label: 'Has payments',
+        yes: 'Credited',
+        no: 'Untouched',
+      },
+      {
+        kind: 'numberRange',
+        keyMin: 'amountUsdMin',
+        keyMax: 'amountUsdMax',
+        label: 'Invoice amount (USD)',
+        prefix: '$',
+      },
+      {
+        kind: 'numberRange',
+        keyMin: 'paidUsdMin',
+        keyMax: 'paidUsdMax',
+        label: 'Paid amount (USD)',
+        prefix: '$',
+      },
+    ],
+  },
+  {
+    title: 'Identity',
+    icon: Hash,
+    fields: [
+      { kind: 'chain', key: 'chainId', label: 'Chain' },
+      { kind: 'tokens', key: 'token', label: 'Token' },
+      {
+        kind: 'text',
+        key: 'externalId',
+        label: 'External ID (exact)',
+        placeholder: 'cart-123',
+      },
+      {
+        kind: 'text',
+        key: 'externalIdContains',
+        label: 'External ID contains',
+        placeholder: 'substring',
+      },
+      {
+        kind: 'text',
+        key: 'toAddress',
+        label: 'Receive address (exact)',
+        placeholder: '0x… / T… / base58',
+      },
+      {
+        kind: 'text',
+        key: 'addressContains',
+        label: 'Receive address contains',
+        placeholder: 'substring',
+      },
+      {
+        kind: 'text',
+        key: 'fromAddress',
+        label: 'Payer address',
+        placeholder: 'paid from…',
+      },
+      {
+        kind: 'text',
+        key: 'txHash',
+        label: 'Tx hash',
+        placeholder: 'on-chain hash',
+      },
+    ],
+  },
+  {
+    title: 'Dates',
+    icon: CalendarRange,
+    fields: [
+      { kind: 'dateRange', keyFrom: 'createdFrom', keyTo: 'createdTo', label: 'Created' },
+      { kind: 'dateRange', keyFrom: 'updatedFrom', keyTo: 'updatedTo', label: 'Updated' },
+      {
+        kind: 'dateRange',
+        keyFrom: 'confirmedFrom',
+        keyTo: 'confirmedTo',
+        label: 'Confirmed',
+      },
+      { kind: 'dateRange', keyFrom: 'expiresFrom', keyTo: 'expiresTo', label: 'Expires' },
+    ],
+  },
+]
+
+const INVOICE_SORT: SortConfig = {
+  byKey: 'sortBy',
+  dirKey: 'sortDir',
+  defaultBy: 'createdAt',
+  defaultDir: 'desc',
+  options: [
+    { value: 'createdAt', label: 'Created' },
+    { value: 'updatedAt', label: 'Updated' },
+    { value: 'confirmedAt', label: 'Confirmed' },
+    { value: 'expiresAt', label: 'Expires' },
+    { value: 'amountUsd', label: 'Amount (USD)' },
+    { value: 'paidUsd', label: 'Paid (USD)' },
+  ],
+}
+
+/** Filter keys that don't narrow the result set (sort is cosmetic). */
+const NON_NARROWING = new Set(['sortBy', 'sortDir'])
+
+function hasNarrowingFilter(values: FilterValues): boolean {
+  return Object.entries(cleanFilterValues(values)).some(
+    ([k]) => !NON_NARROWING.has(k),
+  )
+}
 
 export function InvoicesPage() {
   const merchants = useMerchants()
   const { active } = useActiveMerchant()
 
-  const [query, setQuery] = React.useState('')
-  const [filter, setFilter] = React.useState<InvoiceFilter>('all')
+  const [filters, setFilters] = React.useState<FilterValues>({})
   const [createOpen, setCreateOpen] = React.useState(false)
   const [detailId, setDetailId] = React.useState<string | null>(null)
 
   const canList =
     !!active && active.source !== 'gateway-only' && active.apiKeyFingerprint !== null
 
+  // Chain + token options for the filter bar's chain/token pickers.
+  const chainsQ = useQuery({
+    enabled: canList,
+    queryKey: ['gw', 'chains'] as const,
+    queryFn: () =>
+      api<{ chains: ChainInventoryEntry[] }>('/api/gw/admin/chains'),
+    staleTime: 120_000,
+  })
+  const { chainOptions, tokenOptions } = useFilterOptions(chainsQ.data?.chains)
+
   const list = useInfiniteQuery({
     enabled: canList,
-    queryKey: invoicesQueryKey(active?.id ?? null, filter),
+    queryKey: ['invoices', 'list', active?.id ?? null, filters] as const,
     initialPageParam: 0,
-    queryFn: ({ pageParam }) => {
-      const qs = new URLSearchParams({
-        limit: String(PAGE_SIZE),
-        offset: String(pageParam),
-      })
-      const s = STATUS_CSV[filter]
-      if (s) qs.set('status', s)
-      return api<InvoiceListResponse>(
+    queryFn: async ({ pageParam }) => {
+      const qs = new URLSearchParams(cleanFilterValues(filters))
+      qs.set('limit', String(PAGE_SIZE))
+      qs.set('offset', String(pageParam))
+      const res = await api<Partial<InvoiceListResponse> | null>(
         `/api/mg/${encodeURIComponent(active!.id)}/invoices?${qs}`,
       )
+      // A misconfigured gateway can answer 200 with an empty / non-JSON body
+      // (api() yields null then) or omit `invoices`. Normalize to a valid
+      // page so the list shows an empty state instead of crashing on flatMap.
+      return {
+        invoices: Array.isArray(res?.invoices) ? res.invoices : [],
+        limit: typeof res?.limit === 'number' ? res.limit : PAGE_SIZE,
+        offset: typeof res?.offset === 'number' ? res.offset : pageParam,
+        hasMore: res?.hasMore === true,
+      } satisfies InvoiceListResponse
     },
     getNextPageParam: (last) => (last.hasMore ? last.offset + last.limit : undefined),
     refetchInterval: 30_000,
@@ -240,17 +392,7 @@ export function InvoicesPage() {
     () => list.data?.pages.flatMap((p) => p.invoices) ?? [],
     [list.data],
   )
-
-  const filtered = React.useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return all
-    return all.filter(
-      (inv) =>
-        inv.id.toLowerCase().includes(q) ||
-        (inv.externalId ?? '').toLowerCase().includes(q) ||
-        inv.token.toLowerCase().includes(q),
-    )
-  }, [all, query])
+  const narrowed = hasNarrowingFilter(filters)
 
   if (merchants.isLoading) {
     return <PageSkeleton title="Invoices" />
@@ -282,12 +424,15 @@ export function InvoicesPage() {
         <NoApiKeyCard merchant={active} />
       ) : (
         <>
-          <Toolbar
-            query={query}
-            setQuery={setQuery}
-            filter={filter}
-            setFilter={setFilter}
-            loaded={all.length}
+          <ListFilterBar
+            values={filters}
+            onChange={setFilters}
+            sections={INVOICE_SECTIONS}
+            sort={INVOICE_SORT}
+            chainOptions={chainOptions}
+            tokenOptions={tokenOptions}
+            resultCount={all.length}
+            loading={list.isFetching && !list.isFetchingNextPage}
           />
 
           {list.isLoading ? (
@@ -295,12 +440,14 @@ export function InvoicesPage() {
           ) : list.isError ? (
             <ErrorCard message={list.error instanceof Error ? list.error.message : 'Could not load'} />
           ) : all.length === 0 ? (
-            <EmptyState onCreate={() => setCreateOpen(true)} />
-          ) : filtered.length === 0 ? (
-            <NoMatch />
+            narrowed ? (
+              <NoMatch onClear={() => setFilters({})} />
+            ) : (
+              <EmptyState onCreate={() => setCreateOpen(true)} />
+            )
           ) : (
             <>
-              <InvoiceList rows={filtered} onOpen={setDetailId} />
+              <InvoiceList rows={all} onOpen={setDetailId} />
               {list.hasNextPage && (
                 <div className="flex justify-center">
                   <Button
@@ -343,51 +490,6 @@ export function InvoicesPage() {
   )
 }
 
-/* ── toolbar / list / row ───────────────────────────────── */
-
-function Toolbar({
-  query,
-  setQuery,
-  filter,
-  setFilter,
-  loaded,
-}: {
-  query: string
-  setQuery: (v: string) => void
-  filter: InvoiceFilter
-  setFilter: (v: InvoiceFilter) => void
-  loaded: number
-}) {
-  return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-      <div className="relative flex-1">
-        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[var(--fg-3)]" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search loaded by id, external id, token…"
-          className="pl-8"
-        />
-      </div>
-      <div className="flex items-center gap-2">
-        <Select value={filter} onValueChange={(v) => setFilter(v as InvoiceFilter)}>
-          <SelectTrigger className="h-9 w-[140px] text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="paid">Paid</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-          </SelectContent>
-        </Select>
-        <div className="hidden text-xs text-[var(--fg-3)] sm:block">
-          {loaded} loaded
-        </div>
-      </div>
-    </div>
-  )
-}
 
 function InvoiceList({
   rows,
@@ -1317,10 +1419,13 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
   )
 }
 
-function NoMatch() {
+function NoMatch({ onClear }: { onClear: () => void }) {
   return (
-    <div className="rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-[var(--fg-2)]">
-      No loaded invoices match your search.
+    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-[var(--fg-2)]">
+      <span>No invoices match the current filters.</span>
+      <Button variant="outline" size="sm" onClick={onClear}>
+        <X className="size-3.5" /> Clear filters
+      </Button>
     </div>
   )
 }

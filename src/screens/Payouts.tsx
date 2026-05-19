@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   useInfiniteQuery,
   useMutation,
@@ -8,19 +8,22 @@ import {
 } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
+  Activity,
   AlertTriangle,
   ArrowUpDown,
   Ban,
+  CalendarRange,
   ChevronDown,
   ExternalLink,
   Fuel,
+  Gauge,
+  Hash,
   Info,
   KeyRound,
   Layers,
   Loader2,
   Plus,
   RefreshCw,
-  Search,
   Webhook,
   X,
   Zap,
@@ -54,6 +57,15 @@ import type {
 import { Addr } from '@/components/Addr'
 import { ChainTokenPicker } from '@/components/ChainTokenPicker'
 import { ConsolidateDialog } from '@/components/ConsolidateDialog'
+import { ListFilterBar } from '@/components/ListFilterBar'
+import {
+  cleanFilterValues,
+  useDebouncedValue,
+  useFilterOptions,
+  type FilterSection,
+  type FilterValues,
+  type SortConfig,
+} from '@/lib/listFilters'
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
 import { MerchantSwitcher } from '@/components/MerchantSwitcher'
@@ -139,74 +151,193 @@ function useChainTokenLookup() {
   return lookup
 }
 
-type PayoutFilter = 'all' | 'pending' | 'confirmed' | 'failed'
-
-const STATUS_CSV: Record<PayoutFilter, string | undefined> = {
-  all: undefined,
-  // v2.2: the gateway reserves synchronously at create time, so `planned` is
-  // no longer inserted. `topping-up` is the intermediate state between
-  // `reserved` and `submitted` when gas auto-sponsoring kicks in.
-  pending: 'reserved,topping-up,submitted',
-  confirmed: 'confirmed',
-  failed: 'failed,canceled',
-}
-
 const PAGE_SIZE = 50
 
-const payoutsQueryKey = (
-  merchantId: string | null,
-  filter: PayoutFilter,
-  batchId: string | null,
-) => ['payouts', 'list', merchantId, filter, batchId] as const
+/* Filter spec for payouts — keys are the gateway's query-param names. */
+
+const PAYOUT_SECTIONS: FilterSection[] = [
+  {
+    title: 'Status',
+    icon: Activity,
+    fields: [
+      {
+        kind: 'enumSet',
+        key: 'status',
+        label: 'Payout status',
+        options: [
+          { value: 'reserved', label: 'Reserved' },
+          { value: 'topping-up', label: 'Topping-up' },
+          { value: 'submitted', label: 'Submitted' },
+          { value: 'confirmed', label: 'Confirmed' },
+          { value: 'failed', label: 'Failed' },
+          { value: 'canceled', label: 'Canceled' },
+          { value: 'planned', label: 'Planned' },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Execution',
+    icon: Gauge,
+    fields: [
+      {
+        kind: 'enumSet',
+        key: 'feeTier',
+        label: 'Fee tier',
+        options: [
+          { value: 'low', label: 'Low' },
+          { value: 'medium', label: 'Medium' },
+          { value: 'high', label: 'High' },
+        ],
+      },
+      {
+        kind: 'tri',
+        key: 'hasError',
+        label: 'Error state',
+        yes: 'Has error',
+        no: 'Clean',
+      },
+      {
+        kind: 'numberRange',
+        keyMin: 'amountUsdMin',
+        keyMax: 'amountUsdMax',
+        label: 'Quoted amount (USD)',
+        prefix: '$',
+      },
+    ],
+  },
+  {
+    title: 'Identity',
+    icon: Hash,
+    fields: [
+      { kind: 'chain', key: 'chainId', label: 'Chain' },
+      { kind: 'tokens', key: 'token', label: 'Token' },
+      {
+        kind: 'text',
+        key: 'destinationAddress',
+        label: 'Destination (exact)',
+        placeholder: '0x… / T… / base58',
+      },
+      {
+        kind: 'text',
+        key: 'destinationAddressContains',
+        label: 'Destination contains',
+        placeholder: 'substring',
+      },
+      {
+        kind: 'text',
+        key: 'sourceAddress',
+        label: 'Source address (exact)',
+        placeholder: 'HD source…',
+      },
+      {
+        kind: 'text',
+        key: 'sourceAddressContains',
+        label: 'Source contains',
+        placeholder: 'substring',
+      },
+      {
+        kind: 'text',
+        key: 'txHash',
+        label: 'Tx hash',
+        placeholder: 'on-chain hash',
+      },
+      {
+        kind: 'text',
+        key: 'batchId',
+        label: 'Batch ID',
+        placeholder: 'POST /payouts/batch group id',
+      },
+    ],
+  },
+  {
+    title: 'Dates',
+    icon: CalendarRange,
+    fields: [
+      { kind: 'dateRange', keyFrom: 'createdFrom', keyTo: 'createdTo', label: 'Created' },
+      {
+        kind: 'dateRange',
+        keyFrom: 'submittedFrom',
+        keyTo: 'submittedTo',
+        label: 'Submitted',
+      },
+      {
+        kind: 'dateRange',
+        keyFrom: 'confirmedFrom',
+        keyTo: 'confirmedTo',
+        label: 'Confirmed',
+      },
+      { kind: 'dateRange', keyFrom: 'updatedFrom', keyTo: 'updatedTo', label: 'Updated' },
+    ],
+  },
+]
+
+const PAYOUT_SORT: SortConfig = {
+  byKey: 'sortBy',
+  dirKey: 'sortDir',
+  defaultBy: 'createdAt',
+  defaultDir: 'desc',
+  options: [
+    { value: 'createdAt', label: 'Created' },
+    { value: 'updatedAt', label: 'Updated' },
+    { value: 'submittedAt', label: 'Submitted' },
+    { value: 'confirmedAt', label: 'Confirmed' },
+    { value: 'amountUsd', label: 'Amount (USD)' },
+  ],
+}
+
+const NON_NARROWING = new Set(['sortBy', 'sortDir'])
+
+function hasNarrowingFilter(values: FilterValues): boolean {
+  return Object.entries(cleanFilterValues(values)).some(
+    ([k]) => !NON_NARROWING.has(k),
+  )
+}
 
 export function PayoutsPage() {
   const merchants = useMerchants()
   const { active } = useActiveMerchant()
 
-  const [searchParams, setSearchParams] = useSearchParams()
-  const batchIdFilter = searchParams.get('batchId')
-  const setBatchIdFilter = React.useCallback(
-    (bid: string | null) => {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev)
-          if (bid) next.set('batchId', bid)
-          else next.delete('batchId')
-          return next
-        },
-        { replace: true },
-      )
-    },
-    [setSearchParams],
-  )
-
-  const [query, setQuery] = React.useState('')
-  const [filter, setFilter] = React.useState<PayoutFilter>('all')
+  const [filters, setFilters] = React.useState<FilterValues>({})
   const [createOpen, setCreateOpen] = React.useState(false)
   const [detailId, setDetailId] = React.useState<string | null>(null)
 
   const canList =
     !!active && active.source !== 'gateway-only' && active.apiKeyFingerprint !== null
 
+  const chainsQ = useQuery({
+    enabled: canList,
+    queryKey: ['gw', 'chains'] as const,
+    queryFn: () =>
+      api<{ chains: ChainInventoryEntry[] }>('/api/gw/admin/chains'),
+    staleTime: 120_000,
+  })
+  const { chainOptions, tokenOptions } = useFilterOptions(chainsQ.data?.chains)
+
   const list = useInfiniteQuery({
     enabled: canList,
-    queryKey: payoutsQueryKey(active?.id ?? null, filter, batchIdFilter),
+    queryKey: ['payouts', 'list', active?.id ?? null, filters] as const,
     initialPageParam: 0,
-    queryFn: ({ pageParam }) => {
-      const qs = new URLSearchParams({
-        limit: String(PAGE_SIZE),
-        offset: String(pageParam),
-        // v2.2: the gateway can insert internal `gas_top_up` sibling rows that
-        // are merchant-noise by default. Filtering to `standard` matches the
-        // merchant API's default and keeps the dashboard's list legible.
-        kind: 'standard',
-      })
-      const s = STATUS_CSV[filter]
-      if (s) qs.set('status', s)
-      if (batchIdFilter) qs.set('batchId', batchIdFilter)
-      return api<PayoutListResponse>(
+    queryFn: async ({ pageParam }) => {
+      const qs = new URLSearchParams(cleanFilterValues(filters))
+      qs.set('limit', String(PAGE_SIZE))
+      qs.set('offset', String(pageParam))
+      // v2.2: the gateway can insert internal `gas_top_up` sibling rows that
+      // are merchant-noise by default. Filtering to `standard` matches the
+      // merchant API's default and keeps the dashboard's list legible.
+      qs.set('kind', 'standard')
+      const res = await api<Partial<PayoutListResponse> | null>(
         `/api/mg/${encodeURIComponent(active!.id)}/payouts?${qs}`,
       )
+      // A misconfigured gateway can answer 200 with an empty / non-JSON body
+      // (api() yields null then) or omit `payouts`. Normalize to a valid page
+      // so the list shows an empty state instead of crashing on flatMap.
+      return {
+        payouts: Array.isArray(res?.payouts) ? res.payouts : [],
+        limit: typeof res?.limit === 'number' ? res.limit : PAGE_SIZE,
+        offset: typeof res?.offset === 'number' ? res.offset : pageParam,
+        hasMore: res?.hasMore === true,
+      } satisfies PayoutListResponse
     },
     getNextPageParam: (last) => (last.hasMore ? last.offset + last.limit : undefined),
     refetchInterval: 30_000,
@@ -216,17 +347,7 @@ export function PayoutsPage() {
     () => list.data?.pages.flatMap((p) => p.payouts) ?? [],
     [list.data],
   )
-
-  const filtered = React.useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return all
-    return all.filter(
-      (po) =>
-        po.id.toLowerCase().includes(q) ||
-        po.destinationAddress.toLowerCase().includes(q) ||
-        po.token.toLowerCase().includes(q),
-    )
-  }, [all, query])
+  const narrowed = hasNarrowingFilter(filters)
 
   if (merchants.isLoading) {
     return <PageSkeleton />
@@ -274,14 +395,15 @@ export function PayoutsPage() {
         <NoApiKeyCard merchant={active} />
       ) : (
         <>
-          <Toolbar
-            query={query}
-            setQuery={setQuery}
-            filter={filter}
-            setFilter={setFilter}
-            batchIdFilter={batchIdFilter}
-            clearBatchFilter={() => setBatchIdFilter(null)}
-            loaded={all.length}
+          <ListFilterBar
+            values={filters}
+            onChange={setFilters}
+            sections={PAYOUT_SECTIONS}
+            sort={PAYOUT_SORT}
+            chainOptions={chainOptions}
+            tokenOptions={tokenOptions}
+            resultCount={all.length}
+            loading={list.isFetching && !list.isFetchingNextPage}
           />
 
           {list.isLoading ? (
@@ -289,12 +411,14 @@ export function PayoutsPage() {
           ) : list.isError ? (
             <ErrorCard message={list.error instanceof Error ? list.error.message : 'Could not load'} />
           ) : all.length === 0 ? (
-            <EmptyState onCreate={() => setCreateOpen(true)} />
-          ) : filtered.length === 0 ? (
-            <NoMatch />
+            narrowed ? (
+              <NoMatch onClear={() => setFilters({})} />
+            ) : (
+              <EmptyState onCreate={() => setCreateOpen(true)} />
+            )
           ) : (
             <>
-              <PayoutList rows={filtered} onOpen={setDetailId} />
+              <PayoutList rows={all} onOpen={setDetailId} />
               {list.hasNextPage && (
                 <div className="flex justify-center">
                   <Button
@@ -331,8 +455,7 @@ export function PayoutsPage() {
             payoutId={detailId}
             onOpenChange={(v) => !v && setDetailId(null)}
             onOpenBatch={(bid) => {
-              setBatchIdFilter(bid)
-              setFilter('all')
+              setFilters((f) => ({ ...f, batchId: bid }))
               setDetailId(null)
             }}
           />
@@ -342,75 +465,7 @@ export function PayoutsPage() {
   )
 }
 
-/* ── toolbar / list / row ──────────────────────────────── */
-
-function Toolbar({
-  query,
-  setQuery,
-  filter,
-  setFilter,
-  batchIdFilter,
-  clearBatchFilter,
-  loaded,
-}: {
-  query: string
-  setQuery: (v: string) => void
-  filter: PayoutFilter
-  setFilter: (v: PayoutFilter) => void
-  batchIdFilter: string | null
-  clearBatchFilter: () => void
-  loaded: number
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[var(--fg-3)]" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search loaded by id, destination, token…"
-            className="pl-8"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Select value={filter} onValueChange={(v) => setFilter(v as PayoutFilter)}>
-            <SelectTrigger className="h-9 w-[150px] text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="confirmed">Confirmed</SelectItem>
-              <SelectItem value="failed">Failed</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="hidden text-xs text-[var(--fg-3)] sm:block">
-            {loaded} loaded
-          </div>
-        </div>
-      </div>
-      {batchIdFilter && (
-        <div className="flex items-center gap-2 rounded-md border border-[var(--accent-border)] bg-[var(--accent-bg)] px-3 py-1.5 text-[11.5px]">
-          <Layers className="size-3.5 text-primary" />
-          <span className="text-[var(--fg-2)]">Scoped to batch</span>
-          <span className="font-mono text-primary">
-            {truncateAddr(batchIdFilter, 10, 6)}
-          </span>
-          <CopyButton value={batchIdFilter} />
-          <div className="flex-1" />
-          <button
-            type="button"
-            onClick={clearBatchFilter}
-            className="inline-flex items-center gap-1 text-[11.5px] font-medium text-primary hover:underline"
-          >
-            <X className="size-3" /> Clear
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
+/* ── list / row ────────────────────────────────────────── */
 
 function PayoutList({
   rows,
@@ -1371,10 +1426,13 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
   )
 }
 
-function NoMatch() {
+function NoMatch({ onClear }: { onClear: () => void }) {
   return (
-    <div className="rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-[var(--fg-2)]">
-      No loaded payouts match your search.
+    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-[var(--fg-2)]">
+      <span>No payouts match the current filters.</span>
+      <Button variant="outline" size="sm" onClick={onClear}>
+        <X className="size-3.5" /> Clear filters
+      </Button>
     </div>
   )
 }
@@ -1599,15 +1657,6 @@ function FeeTierPicker({
       </div>
     </div>
   )
-}
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [v, setV] = React.useState(value)
-  React.useEffect(() => {
-    const t = setTimeout(() => setV(value), delayMs)
-    return () => clearTimeout(t)
-  }, [value, delayMs])
-  return v
 }
 
 /**

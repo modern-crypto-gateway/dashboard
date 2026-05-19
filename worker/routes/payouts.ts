@@ -17,16 +17,34 @@ import type { Bindings } from '../lib/env'
 import { HttpError, json, readJson } from '../lib/http'
 import { kvGet, K } from '../lib/kv'
 
+// Full set of query params GET /api/v1/payouts accepts (`kind` is dashboard-
+// added to scope to standard payouts). Anything not listed here is dropped
+// before the upstream call — keep in sync with the gateway's OpenAPI spec.
 const LIST_PASSTHROUGH = [
   'status',
   'kind',
   'chainId',
   'token',
   'destinationAddress',
+  'destinationAddressContains',
   'sourceAddress',
+  'sourceAddressContains',
   'batchId',
+  'txHash',
+  'feeTier',
+  'hasError',
+  'amountUsdMin',
+  'amountUsdMax',
   'createdFrom',
   'createdTo',
+  'submittedFrom',
+  'submittedTo',
+  'confirmedFrom',
+  'confirmedTo',
+  'updatedFrom',
+  'updatedTo',
+  'sortBy',
+  'sortDir',
   'limit',
   'offset',
 ] as const

@@ -170,6 +170,9 @@ export type InvoiceListResponse = {
   limit: number
   offset: number
   hasMore: boolean
+  /** Echo of the applied sort — present on gateways that support sorting. */
+  sortBy?: string
+  sortDir?: 'asc' | 'desc'
 }
 
 export type PayoutListResponse = {
@@ -177,6 +180,9 @@ export type PayoutListResponse = {
   limit: number
   offset: number
   hasMore: boolean
+  /** Echo of the applied sort — present on gateways that support sorting. */
+  sortBy?: string
+  sortDir?: 'asc' | 'desc'
 }
 
 export type FeeTier = 'low' | 'medium' | 'high'
@@ -437,6 +443,14 @@ export type AutoConsolidationSchedule = {
   lastLegCount: number | null
   /** How many sources the most recent firing skipped. */
   lastSkippedCount: number | null
+  /**
+   * Per-leg skip reasons from the most recent firing (capped at 50
+   * server-side). NULL when the last firing had zero skips or the schedule
+   * hasn't fired yet.
+   */
+  lastSkippedReasons?:
+    | Array<{ sourceAddress: string; amountRaw: string; reason: string }>
+    | null
   /** Epoch ms when the cron will next attempt to fire. */
   nextRunDue: number
   createdAt: number
