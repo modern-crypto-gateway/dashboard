@@ -25,6 +25,23 @@ export type PoolStatsRow = {
   highestIndex?: number
 }
 
+/**
+ * Monero pool stats — fetched separately from `/admin/monero-pool/stats`.
+ * Monero allocates subaddresses against a single primary view-key per chain,
+ * so it doesn't participate in the regular `address_pool` table or family
+ * stats endpoint. Response shape is `{ stats: MoneroPoolStatsRow[] }` keyed
+ * by chainId (multi-chain ready: mainnet/stagenet/testnet).
+ */
+export type MoneroPoolStatsRow = {
+  chainId: number
+  total: number
+  available: number
+  allocated: number
+  quarantined: number
+  highestIndex?: number
+}
+export type MoneroPoolStatsResponse = { stats: MoneroPoolStatsRow[] }
+
 export type Health = { status: 'ok' | 'degraded'; phase: number }
 
 export type Merchant = {

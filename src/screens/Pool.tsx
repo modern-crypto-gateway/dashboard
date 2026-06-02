@@ -15,9 +15,11 @@ import {
 } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
-import { FAMILY_COLOR } from '@/lib/chains'
+import { chainInfo, FAMILY_COLOR } from '@/lib/chains'
 import type {
   Family,
+  MoneroPoolStatsResponse,
+  MoneroPoolStatsRow,
   PoolAuditResponse,
   PoolStatsRow,
 } from '@/lib/types'
@@ -54,6 +56,18 @@ export function PoolPage() {
     queryFn: () => api<{ stats: PoolStatsRow[] }>('/api/gw/admin/pool/stats'),
     refetchInterval: 30_000,
   })
+  // Monero is a separate pool (subaddress-indexed, not HD-derived) with its
+  // own endpoint. 404 means the gateway build doesn't have Monero wired —
+  // suppress retries so the page works on non-Monero deployments.
+  const moneroQ = useQuery({
+    queryKey: ['pool-stats', 'monero'] as const,
+    queryFn: () =>
+      api<MoneroPoolStatsResponse>('/api/gw/admin/monero-pool/stats'),
+    refetchInterval: 30_000,
+    retry: false,
+  })
+  const moneroRows: MoneroPoolStatsRow[] = moneroQ.data?.stats ?? []
+  const moneroAvailable = moneroQ.isSuccess
   const [consolidateOpen, setConsolidateOpen] = React.useState(false)
 
   return (
@@ -101,6 +115,13 @@ export function PoolPage() {
           <SeedDialog
             onSuccess={() => qc.invalidateQueries({ queryKey: ['pool-stats'] })}
           />
+          {moneroAvailable && (
+            <MoneroSeedDialog
+              onSuccess={() =>
+                qc.invalidateQueries({ queryKey: ['pool-stats', 'monero'] })
+              }
+            />
+          )}
         </div>
       </div>
 
@@ -134,9 +155,12 @@ export function PoolPage() {
           </p>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {(q.data?.stats ?? []).map((s) => (
             <PoolFamilyCard key={s.family} s={s} />
+          ))}
+          {moneroRows.map((row) => (
+            <MoneroPoolCard key={row.chainId} stats={row} />
           ))}
         </div>
       )}
@@ -197,6 +221,56 @@ function MetricCell({ label, value }: { label: string; value: number }) {
       </div>
       <div className="mt-0.5 font-mono font-semibold">{value}</div>
     </div>
+  )
+}
+
+function MoneroPoolCard({ stats }: { stats: MoneroPoolStatsRow }) {
+  const { chainId, total, available, allocated, quarantined } = stats
+  const info = chainInfo(chainId)
+  const pct = total ? (available / total) * 100 : 0
+  const tone = available < 3 ? 'danger' : available < 6 ? 'warn' : 'success'
+  const indicator =
+    tone === 'danger'
+      ? 'bg-destructive'
+      : tone === 'warn'
+        ? 'bg-warn'
+        : 'bg-success'
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="size-2.5 shrink-0 rounded-sm"
+            style={{ background: FAMILY_COLOR.monero }}
+          />
+          <span className="truncate font-semibold uppercase tracking-[0.08em] text-[13px]">
+            {info.short || 'monero'}
+          </span>
+          <Badge variant="outline" className="text-[9.5px]" title="Monero uses subaddress derivation, not an HD pool">
+            subaddress
+          </Badge>
+        </div>
+        <Badge
+          variant={
+            tone === 'danger' ? 'danger' : tone === 'warn' ? 'warn' : 'success'
+          }
+        >
+          {available} avail
+        </Badge>
+      </div>
+      <div className="mt-4 font-mono text-[28px] font-semibold leading-none tracking-tight">
+        {available}
+        <span className="ml-1 text-base text-[var(--fg-2)]">/ {total}</span>
+      </div>
+      <div className="mt-3">
+        <Progress value={pct} indicatorClassName={indicator} />
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+        <MetricCell label="allocated" value={allocated} />
+        <MetricCell label="quarantined" value={quarantined} />
+        <MetricCell label="highest idx" value={stats.highestIndex ?? 0} />
+      </div>
+    </Card>
   )
 }
 
@@ -301,6 +375,110 @@ function SeedDialog({ onSuccess }: { onSuccess: () => void }) {
               type="submit"
               disabled={seed.isPending || families.length === 0}
             >
+              {seed.isPending ? 'Seeding…' : 'Seed'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function MoneroSeedDialog({ onSuccess }: { onSuccess: () => void }) {
+  const [open, setOpen] = React.useState(false)
+  const [initialSize, setInitialSize] = React.useState('20')
+
+  const seed = useMutation({
+    mutationFn: () =>
+      api<{ added?: number; total?: number }>(
+        '/api/gw/admin/monero-pool/initialize',
+        {
+          method: 'POST',
+          body: JSON.stringify({ initialSize: parseInt(initialSize, 10) }),
+        },
+      ),
+    onSuccess: (res) => {
+      const added = res.added ?? 0
+      toast.success(
+        added > 0
+          ? `Seeded ${added} Monero subaddress${added === 1 ? '' : 'es'}`
+          : 'Monero pool already at target',
+        res.total != null
+          ? { description: `Pool now holds ${res.total} subaddresses.` }
+          : undefined,
+      )
+      onSuccess()
+      setOpen(false)
+    },
+    onError: (e: ApiError) =>
+      toast.error(e.message || 'Monero seed failed'),
+  })
+
+  const sizeNum = parseInt(initialSize, 10)
+  const sizeValid = Number.isFinite(sizeNum) && sizeNum >= 1 && sizeNum <= 500
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          size="sm"
+          variant="outline"
+          className="border-[var(--accent-border)]"
+          title="Monero uses subaddress derivation, not an HD pool"
+        >
+          <span
+            className="size-2 shrink-0 rounded-sm"
+            style={{ background: FAMILY_COLOR.monero }}
+          />
+          Seed Monero
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span
+              className="size-2.5 rounded-sm"
+              style={{ background: FAMILY_COLOR.monero }}
+            />
+            Seed Monero subaddress pool
+          </DialogTitle>
+          <DialogDescription>
+            Reserves additional subaddresses derived from the gateway's Monero
+            primary key. Distinct from the HD address pool — Monero invoices
+            use a single view-key with per-invoice subaddress indices.
+            Idempotent: a pool already at or above the target is left alone.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            seed.mutate()
+          }}
+        >
+          <Field
+            label="Target size"
+            hint="The pool is topped up to this many spare subaddresses. Cap 500."
+          >
+            <Input
+              type="number"
+              min={1}
+              max={500}
+              value={initialSize}
+              onChange={(e) => setInitialSize(e.target.value)}
+              className="font-mono"
+            />
+          </Field>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={seed.isPending}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={seed.isPending || !sizeValid}>
               {seed.isPending ? 'Seeding…' : 'Seed'}
             </Button>
           </DialogFooter>
