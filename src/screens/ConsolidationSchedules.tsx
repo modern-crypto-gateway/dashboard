@@ -318,6 +318,18 @@ function ScheduleCard({
           <KeyVal label="Max sources / run">
             <span className="font-mono">{schedule.maxSourcesPerRun}</span>
           </KeyVal>
+          <KeyVal label="Gas ceiling">
+            {schedule.maxFeeUsd ? (
+              <span className="font-mono">
+                ≤ ${schedule.maxFeeUsd}
+                <span className="ml-1.5 text-[10.5px] text-[var(--fg-3)]">
+                  defers above this
+                </span>
+              </span>
+            ) : (
+              <span className="text-[var(--fg-3)]">— no ceiling</span>
+            )}
+          </KeyVal>
         </div>
         <div className="space-y-3">
           <KeyVal label="Next firing">
@@ -427,6 +439,85 @@ function LastRunSummary({
           tokenDecimals={tokenDecimals}
           token={schedule.token}
         />
+      )}
+      {schedule.lastSkippedReasons &&
+        schedule.lastSkippedReasons.length > 0 && (
+          <SkippedReasonsList
+            reasons={schedule.lastSkippedReasons}
+            tokenDecimals={tokenDecimals}
+            token={schedule.token}
+          />
+        )}
+    </div>
+  )
+}
+
+function SkippedReasonsList({
+  reasons,
+  tokenDecimals,
+  token,
+}: {
+  reasons: NonNullable<AutoConsolidationSchedule['lastSkippedReasons']>
+  tokenDecimals: number | null
+  token: string
+}) {
+  const [open, setOpen] = React.useState(false)
+  // Group by reason code (the prefix before the `:`) so a long tail of dust
+  // skips collapses into one line instead of dozens.
+  const groups = React.useMemo(() => {
+    const m = new Map<string, typeof reasons>()
+    for (const r of reasons) {
+      const code = r.reason.includes(':') ? r.reason.split(':')[0].trim() : r.reason
+      const arr = m.get(code) ?? []
+      arr.push(r)
+      m.set(code, arr)
+    }
+    return [...m.entries()].sort((a, b) => b[1].length - a[1].length)
+  }, [reasons])
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1 text-[11px] text-warn hover:underline cursor-pointer"
+      >
+        <AlertTriangle className="size-3" />
+        {open ? 'Hide' : 'Show'} skipped breakdown · {reasons.length} entr
+        {reasons.length === 1 ? 'y' : 'ies'}
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-2 rounded-md border border-warn/40 bg-warn/10 p-2.5">
+          {groups.map(([code, rows]) => (
+            <details key={code} className="text-xs">
+              <summary className="cursor-pointer select-none font-mono text-[11px] font-semibold text-warn">
+                {code} · {rows.length}
+              </summary>
+              <ul className="mt-1.5 space-y-1">
+                {rows.slice(0, 50).map((r) => (
+                  <li
+                    key={r.sourceAddress + r.amountRaw}
+                    className="flex flex-wrap items-center gap-2 rounded border border-warn/30 bg-card px-2 py-1"
+                  >
+                    <Addr value={r.sourceAddress} />
+                    <span className="font-mono text-[10.5px] text-[var(--fg-2)]">
+                      {tokenDecimals != null
+                        ? `${formatUnits(r.amountRaw, tokenDecimals)} ${token}`
+                        : r.amountRaw}
+                    </span>
+                    <span
+                      className="ml-auto max-w-[260px] truncate font-mono text-[10px] text-[var(--fg-3)]"
+                      title={r.reason}
+                    >
+                      {r.reason.includes(':')
+                        ? r.reason.slice(r.reason.indexOf(':') + 1).trim()
+                        : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -621,6 +712,10 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
   const [maxSources, setMaxSources] = React.useState<string>(
     String(initial?.maxSourcesPerRun ?? 25),
   )
+  // Empty string = no ceiling (`null` on the wire). Non-empty = USD decimal.
+  const [maxFeeUsd, setMaxFeeUsd] = React.useState<string>(
+    initial?.maxFeeUsd ?? '',
+  )
   const [enabled, setEnabled] = React.useState<boolean>(initial?.enabled ?? true)
 
   const chainsQ = useQuery({ ...CHAINS_Q, enabled: props.open })
@@ -698,20 +793,22 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
         const ms = parseInt(maxSources, 10)
         if (!Number.isFinite(ms) || ms < 1 || ms > 200)
           throw new ApiError('Max sources must be between 1 and 200', 400)
+        const fee = maxFeeUsd.trim()
+        if (fee && !/^\d+(\.\d+)?$/.test(fee))
+          throw new ApiError('Gas ceiling must be a USD decimal (e.g. 4.00)', 400)
+        const body: Record<string, unknown> = {
+          chainId: parseInt(chainId, 10),
+          token: token.trim().toUpperCase(),
+          targetAddress: target.trim(),
+          intervalHours: iv,
+          minSourceBalanceRaw: minRaw.trim(),
+          maxSourcesPerRun: ms,
+          enabled,
+        }
+        if (fee) body.maxFeeUsd = fee
         return api<{ schedule: AutoConsolidationSchedule }>(
           '/api/gw/admin/consolidation-schedules',
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              chainId: parseInt(chainId, 10),
-              token: token.trim().toUpperCase(),
-              targetAddress: target.trim(),
-              intervalHours: iv,
-              minSourceBalanceRaw: minRaw.trim(),
-              maxSourcesPerRun: ms,
-              enabled,
-            }),
-          },
+          { method: 'POST', body: JSON.stringify(body) },
         )
       }
       // Edit mode — only send changed fields. Compare against `initial`.
@@ -726,6 +823,22 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
       const ms = parseInt(maxSources, 10)
       if (Number.isFinite(ms) && ms !== initial!.maxSourcesPerRun)
         patch.maxSourcesPerRun = ms
+      // maxFeeUsd: '' means "clear" → send `null`; non-empty means "set".
+      // Only include in patch when it changed (current vs. `initial.maxFeeUsd`).
+      const feeNext = maxFeeUsd.trim()
+      const feePrev = initial!.maxFeeUsd ?? ''
+      if (feeNext !== feePrev) {
+        if (feeNext === '') {
+          patch.maxFeeUsd = null
+        } else {
+          if (!/^\d+(\.\d+)?$/.test(feeNext))
+            throw new ApiError(
+              'Gas ceiling must be a USD decimal (e.g. 4.00)',
+              400,
+            )
+          patch.maxFeeUsd = feeNext
+        }
+      }
       if (enabled !== initial!.enabled) patch.enabled = enabled
       if (Object.keys(patch).length === 0)
         throw new ApiError('Nothing to update', 400)
@@ -964,6 +1077,47 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
               className="font-mono"
               placeholder="e.g. 50000000"
             />
+          </Field>
+
+          <Field
+            label="Gas ceiling (USD, optional)"
+            hint={
+              <>
+                When set, the cron compares the live low-tier fee against
+                this ceiling and <span className="font-medium">defers</span>{' '}
+                the firing while the fee exceeds it — clustering sweeps into
+                cheap-gas windows. Mostly an EVM L1 tool.{' '}
+                {isEdit && (
+                  <span className="text-[var(--fg-2)]">
+                    Leave empty to clear the ceiling.
+                  </span>
+                )}
+              </>
+            }
+            right={
+              maxFeeUsd ? (
+                <button
+                  type="button"
+                  onClick={() => setMaxFeeUsd('')}
+                  className="text-[11px] text-[var(--fg-3)] hover:text-foreground cursor-pointer"
+                >
+                  Clear
+                </button>
+              ) : null
+            }
+          >
+            <div className="relative">
+              <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-xs text-[var(--fg-3)]">
+                $
+              </span>
+              <Input
+                inputMode="decimal"
+                value={maxFeeUsd}
+                onChange={(e) => setMaxFeeUsd(e.target.value)}
+                className="pl-6 font-mono"
+                placeholder="e.g. 4.00 — empty = no ceiling"
+              />
+            </div>
           </Field>
 
           <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2.5">

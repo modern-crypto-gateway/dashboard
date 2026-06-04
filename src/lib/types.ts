@@ -450,6 +450,12 @@ export type AutoConsolidationSchedule = {
   intervalHours: number
   /** Per-source dust floor in token's smallest unit (decimal string). */
   minSourceBalanceRaw: string
+  /**
+   * USD decimal string gas ceiling — defer firing while the live low-tier
+   * fee exceeds this. `null` means no ceiling (always run). Primarily an
+   * EVM L1 gas-window-gating tool.
+   */
+  maxFeeUsd: string | null
   maxSourcesPerRun: number
   enabled: boolean
   /** Epoch ms of the most recent cron firing. NULL until first run. */

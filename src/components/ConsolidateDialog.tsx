@@ -63,6 +63,10 @@ export function ConsolidateDialog({
   )
   const [token, setToken] = React.useState<string>(prefillToken ?? '')
   const [target, setTarget] = React.useState<string>('')
+  // Optional per-call overrides. Empty = let the server use its dynamic
+  // dust floor / default cap.
+  const [minRaw, setMinRaw] = React.useState<string>('')
+  const [maxSources, setMaxSources] = React.useState<string>('')
   const [plan, setPlan] = React.useState<ConsolidationPlanResponse | null>(null)
 
   // Reset form on every closed → open transition (pulling fresh prefills).
@@ -74,6 +78,8 @@ export function ConsolidateDialog({
       setChainId(prefillChainId != null ? String(prefillChainId) : '')
       setToken(prefillToken ?? '')
       setTarget('')
+      setMinRaw('')
+      setMaxSources('')
       setPlan(null)
     }
   }
@@ -163,13 +169,30 @@ export function ConsolidateDialog({
       if (target.trim().length < 8) {
         throw new ApiError('Target address is required', 400)
       }
+      const min = minRaw.trim()
+      if (min && !/^\d+$/.test(min)) {
+        throw new ApiError('Dust floor must be an integer (smallest unit)', 400)
+      }
+      const cap = maxSources.trim()
+      if (cap) {
+        if (!/^\d+$/.test(cap)) {
+          throw new ApiError('Max sources must be an integer', 400)
+        }
+        const n = parseInt(cap, 10)
+        if (n < 1 || n > 200) {
+          throw new ApiError('Max sources must be between 1 and 200', 400)
+        }
+      }
+      const body: Record<string, unknown> = {
+        chainId: parseInt(chainId, 10),
+        token: token.trim().toUpperCase(),
+        targetAddress: target.trim(),
+      }
+      if (min) body.minSourceBalanceRaw = min
+      if (cap) body.maxSources = parseInt(cap, 10)
       return api<ConsolidationPlanResponse>('/api/gw/admin/pool/consolidate', {
         method: 'POST',
-        body: JSON.stringify({
-          chainId: parseInt(chainId, 10),
-          token: token.trim().toUpperCase(),
-          targetAddress: target.trim(),
-        }),
+        body: JSON.stringify(body),
       })
     },
     onSuccess: (res) => {
@@ -353,6 +376,45 @@ export function ConsolidateDialog({
                 />
               )}
             </Field>
+
+            <details className="rounded-md border border-border bg-[var(--bg-2)] open:pb-3">
+              <summary className="flex cursor-pointer select-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-[var(--fg-2)]">
+                <span>Advanced — per-call overrides</span>
+                <span className="text-[10.5px] text-[var(--fg-3)]">
+                  optional
+                </span>
+              </summary>
+              <div className="grid grid-cols-2 gap-2 px-3 pt-1">
+                <Field
+                  label="Dust floor (raw)"
+                  hint={
+                    selectedToken?.decimals != null && /^\d+$/.test(minRaw)
+                      ? `≈ ${formatUnits(minRaw, selectedToken.decimals)} ${selectedToken.symbol}`
+                      : "Smallest unit. Empty = server's dynamic floor."
+                  }
+                >
+                  <Input
+                    inputMode="numeric"
+                    value={minRaw}
+                    onChange={(e) => setMinRaw(e.target.value)}
+                    className="h-9 font-mono text-xs"
+                    placeholder="e.g. 10000000"
+                  />
+                </Field>
+                <Field label="Max sources" hint="1–200. Empty = server default.">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={200}
+                    value={maxSources}
+                    onChange={(e) => setMaxSources(e.target.value)}
+                    className="h-9 font-mono text-xs"
+                    placeholder="e.g. 50"
+                  />
+                </Field>
+              </div>
+            </details>
+
             <DialogFooter>
               <Button
                 type="button"
