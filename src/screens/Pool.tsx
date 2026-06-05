@@ -7,6 +7,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Layers,
+  ListChecks,
   Loader2,
   Plus,
   RefreshCw,
@@ -110,6 +111,15 @@ export function PoolPage() {
             >
               <CalendarClock className="size-3.5" />
               Schedules
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link
+              to="/pool/addresses"
+              title="Browse, park, or re-enable individual pool addresses"
+            >
+              <ListChecks className="size-3.5" />
+              Manage addresses
             </Link>
           </Button>
           <SeedDialog

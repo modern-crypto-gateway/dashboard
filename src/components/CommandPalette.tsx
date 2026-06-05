@@ -49,6 +49,12 @@ const NAV: Nav[] = [
   { label: 'Balances', to: '/balances', icon: CircleDollarSign, group: 'Money' },
   { label: 'Address pool', to: '/pool', icon: Waypoints, group: 'Money' },
   {
+    label: 'Pool addresses (park / re-enable)',
+    to: '/pool/addresses',
+    icon: Waypoints,
+    group: 'Money',
+  },
+  {
     label: 'Auto-consolidation schedules',
     to: '/consolidation-schedules',
     icon: CalendarClock,

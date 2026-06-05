@@ -26,6 +26,33 @@ export type PoolStatsRow = {
 }
 
 /**
+ * Per-address view returned by the admin pool browser endpoints. Note:
+ * `disabledAt != null` is the source of truth for "operator-disabled" —
+ * `status` may temporarily read `allocated` when the system borrowed a
+ * disabled address because the family pool was exhausted; it auto-reparks
+ * on invoice release.
+ */
+export type PoolAddressAdminView = {
+  family: Family
+  address: string
+  addressIndex: number
+  status: 'available' | 'allocated' | 'quarantined'
+  disabledAt: number | null
+  allocatedToInvoiceId: string | null
+}
+
+export type PoolAddressListResponse = {
+  addresses: PoolAddressAdminView[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type DisabledPoolAddressesResponse = {
+  addresses: PoolAddressAdminView[]
+}
+
+/**
  * Monero pool stats — fetched separately from `/admin/monero-pool/stats`.
  * Monero allocates subaddresses against a single primary view-key per chain,
  * so it doesn't participate in the regular `address_pool` table or family
