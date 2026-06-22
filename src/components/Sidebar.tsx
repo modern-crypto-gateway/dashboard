@@ -8,6 +8,7 @@ import {
   FileText,
   Fuel,
   LayoutDashboard,
+  LifeBuoy,
   Link2,
   Radio,
   Settings,
@@ -17,6 +18,7 @@ import {
   Webhook,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useHeldQueue } from '@/lib/held'
 import { Logo } from './Logo'
 import { StatusDot } from './StatusDot'
 import { Badge } from './ui/badge'
@@ -63,6 +65,12 @@ const sections: Section[] = [
         icon: AlertTriangle,
         countVariant: 'warn',
       },
+      {
+        to: '/held-payouts',
+        label: 'Held payouts',
+        icon: LifeBuoy,
+        countVariant: 'warn',
+      },
       { to: '/webhooks', label: 'Webhooks', icon: Webhook },
       { to: '/merchants', label: 'Merchants', icon: Store },
     ],
@@ -85,6 +93,13 @@ const sections: Section[] = [
 ]
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+  // Live recovery-queue badge — shared cache with the Held payouts page.
+  const held = useHeldQueue({ refetchInterval: 30_000 })
+  const heldCount = held.data?.count ?? 0
+
+  const liveCount = (to: string): number | undefined =>
+    to === '/held-payouts' && heldCount > 0 ? heldCount : undefined
+
   return (
     <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col gap-1 border-r border-border bg-card p-3">
       <div className="mb-2.5 border-b border-border px-1.5 pb-3.5 pt-1">
@@ -98,6 +113,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             </div>
             {section.items.map((it) => {
               const Icon = it.icon
+              const count = it.count ?? liveCount(it.to)
               return (
                 <NavLink
                   key={it.to}
@@ -115,12 +131,12 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                 >
                   <Icon className="size-4 shrink-0 text-[var(--fg-2)]" />
                   <span className="truncate">{it.label}</span>
-                  {it.count != null && (
+                  {count != null && (
                     <Badge
                       variant={it.countVariant === 'warn' ? 'warn' : 'default'}
                       className="ml-auto h-5 px-1.5 text-[10.5px]"
                     >
-                      {it.count}
+                      {count}
                     </Badge>
                   )}
                 </NavLink>

@@ -6,6 +6,7 @@ import {
   Database,
   RefreshCw,
   Satellite,
+  Scale,
 } from 'lucide-react'
 
 import { api } from '@/lib/api'
@@ -15,6 +16,7 @@ import { cn } from '@/lib/utils'
 import type { BalancesSnapshot, Family } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
+import { ReconcileDialog } from '@/components/ReconcileDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -23,6 +25,7 @@ type Mode = 'db' | 'rpc'
 
 export function BalancesPage() {
   const [mode, setMode] = React.useState<Mode>('db')
+  const [reconcileOpen, setReconcileOpen] = React.useState(false)
   const q = useQuery({
     queryKey: ['balances', mode] as const,
     queryFn: () =>
@@ -53,6 +56,15 @@ export function BalancesPage() {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setReconcileOpen(true)}
+            title="Compare on-chain balances to the settled ledger and snap any drift"
+          >
+            <Scale className="size-3.5" />
+            Reconcile
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => q.refetch()}
             disabled={q.isFetching}
           >
@@ -61,6 +73,12 @@ export function BalancesPage() {
           </Button>
         </div>
       </div>
+
+      <ReconcileDialog
+        open={reconcileOpen}
+        onOpenChange={setReconcileOpen}
+        onApplied={() => setMode('db')}
+      />
 
       {q.isLoading ? (
         <Card className="p-10 text-center text-sm text-[var(--fg-2)]">Loading…</Card>

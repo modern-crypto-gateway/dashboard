@@ -41,6 +41,9 @@ const WebhooksPage = lazy(() =>
 const OrphansPage = lazy(() =>
   import('@/screens/Orphans').then((m) => ({ default: m.OrphansPage })),
 )
+const HeldPayoutsPage = lazy(() =>
+  import('@/screens/HeldPayouts').then((m) => ({ default: m.HeldPayoutsPage })),
+)
 const BalancesPage = lazy(() =>
   import('@/screens/Balances').then((m) => ({ default: m.BalancesPage })),
 )
@@ -213,6 +216,14 @@ export default function App() {
                     element={
                       <Suspense fallback={<Spinner />}>
                         <OrphansPage />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="/held-payouts"
+                    element={
+                      <Suspense fallback={<Spinner />}>
+                        <HeldPayoutsPage />
                       </Suspense>
                     }
                   />

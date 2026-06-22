@@ -4,9 +4,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   AlertTriangle,
+  ArrowRight,
   CalendarClock,
   CheckCircle2,
   Layers,
+  LifeBuoy,
   ListChecks,
   Loader2,
   Plus,
@@ -17,6 +19,7 @@ import {
 
 import { api, ApiError } from '@/lib/api'
 import { chainInfo, FAMILY_COLOR } from '@/lib/chains'
+import { useHeldQueue } from '@/lib/held'
 import type {
   Family,
   MoneroPoolStatsResponse,
@@ -142,6 +145,8 @@ export function PoolPage() {
           qc.invalidateQueries({ queryKey: ['pool-stats'] })
         }
       />
+
+      <HeldLegsBanner />
 
       <PoolAuditCard />
 
@@ -495,6 +500,38 @@ function MoneroSeedDialog({ onSuccess }: { onSuccess: () => void }) {
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/* ── held legs banner ────────────────────────────────────── */
+
+/**
+ * Surfaces the payout recovery queue right where consolidations are launched:
+ * a stalled sweep (ambiguous broadcast) lands in `GET /admin/payouts/held` and
+ * needs an operator to confirm the OUT hash. Hidden when the queue is clear.
+ */
+function HeldLegsBanner() {
+  const held = useHeldQueue({ refetchInterval: 30_000 })
+  const count = held.data?.count ?? 0
+  if (count === 0) return null
+  return (
+    <Link
+      to="/held-payouts"
+      className="group flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-[var(--warn-border)] bg-[var(--warn-bg)] px-4 py-3 text-sm transition hover:opacity-90"
+    >
+      <LifeBuoy className="size-4 shrink-0 text-warn" />
+      <span className="text-foreground">
+        <span className="font-mono font-semibold">{count}</span> payout leg
+        {count === 1 ? '' : 's'} held for recovery
+      </span>
+      <span className="text-[var(--fg-2)]">
+        — a consolidation sweep may have stalled mid-broadcast.
+      </span>
+      <span className="ml-auto inline-flex items-center gap-1 font-medium text-warn">
+        Review
+        <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+      </span>
+    </Link>
   )
 }
 

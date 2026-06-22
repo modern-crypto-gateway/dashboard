@@ -53,6 +53,20 @@ export function formatUnits(
   return fracPart ? `${intPart}.${fracPart}` : intPart
 }
 
+/**
+ * Like {@link formatUnits} but preserves a leading `-` on negative raw values
+ * (e.g. a signed reconciliation delta). Positive values are returned bare.
+ */
+export function formatUnitsSigned(
+  raw: string | null | undefined,
+  decimals: number | null | undefined,
+): string {
+  if (raw == null || decimals == null) return '—'
+  const neg = raw.startsWith('-')
+  const human = formatUnits(neg ? raw.slice(1) : raw, decimals)
+  return neg ? `-${human}` : human
+}
+
 /** Count decimal places in a human decimal string. Returns 0 for integers. */
 export function decimalPlaces(s: string): number {
   const dot = s.indexOf('.')

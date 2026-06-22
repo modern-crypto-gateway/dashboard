@@ -467,6 +467,78 @@ export type ConsolidationStatusResponse = {
   }
 }
 
+/* ── Balance reconciliation (admin) ───────────────────────── */
+
+/**
+ * One token's drift between the live chain balance and the settled ledger for
+ * a single account-model pool address. All `*Raw` fields are decimal strings
+ * in the token's smallest unit (apply decimals client-side — they can exceed
+ * 2^53 for 18-decimal tokens). `deltaRaw` is signed (`onChainRaw − ledgerRaw`):
+ * negative = ledger was over-counting (it'll be reduced), positive = under.
+ */
+export type ReconcileDelta = {
+  chainId: number
+  address: string
+  token: string
+  onChainRaw: string
+  ledgerRaw: string
+  deltaRaw: string
+}
+
+/**
+ * Result of `POST /admin/balances/reconcile`. A partial RPC failure does NOT
+ * fail the call — the affected address lands in `errors[]` and the rest still
+ * reconcile. `adjusted` is always 0 when `dryRun`.
+ */
+export type ReconcileResponse = {
+  dryRun: boolean
+  /** (address, chain) pairs probed. */
+  checked: number
+  /** Adjustment rows written (0 on a dry run). */
+  adjusted: number
+  deltas: ReconcileDelta[]
+  errors: Array<{ chainId: number; address: string; error: string }>
+}
+
+/* ── Held payout recovery (admin) ─────────────────────────── */
+
+/**
+ * A payout leg whose main tx errored ambiguously (transport error) and is
+ * stuck in the recovery queue — `reserved`/`topping-up`, no `txHash`, with a
+ * `lastError` containing "Broadcast outcome unknown". These are the rows
+ * `POST /admin/payouts/{id}/recover` acts on. Legs the auto-reconciler already
+ * released for re-broadcast drop out of this list. Returned by
+ * `GET /admin/payouts/held`, ordered oldest-held first.
+ */
+export type HeldLeg = {
+  /** payoutId — pass to `/admin/payouts/{id}/recover`. */
+  id: string
+  kind: 'standard' | 'consolidation_sweep'
+  chainId: number
+  token: string
+  /** Raw smallest units — apply the token's decimals client-side. */
+  amountRaw: string
+  /** The address whose funds left — find the OUT transfer here. */
+  sourceAddress: string
+  destinationAddress: string
+  status: 'reserved' | 'topping-up'
+  topUpTxHash: string | null
+  batchId: string | null
+  parentPayoutId: string | null
+  lastError: string | null
+  /** ISO-8601 — when the doomed broadcast was attempted. */
+  broadcastAttemptedAt: string | null
+  /** Age since `broadcastAttemptedAt`, for "stuck 6d" badges. */
+  heldForMs: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type ListHeldResponse = { count: number; held: HeldLeg[] }
+
+/** Response of `POST /admin/payouts/{id}/recover` — the leg, now `submitted`. */
+export type RecoverPayoutResponse = { payout: GatewayPayout }
+
 /* ── Auto-consolidation schedules (admin) ─────────────────── */
 
 export type AutoConsolidationSchedule = {

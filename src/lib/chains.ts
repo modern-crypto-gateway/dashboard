@@ -151,3 +151,46 @@ export function nativeMeta(chainId: number): { symbol: string; decimals: number 
   if (exact) return exact
   return FAMILY_NATIVE_FALLBACK[chainInfo(chainId).family]
 }
+
+/* ── Block explorers ──────────────────────────────────────── */
+
+/**
+ * Per-chain block-explorer URL builders. Only chains with a well-known public
+ * explorer are listed — unknown chains (and privacy chains like Monero, where
+ * address lookups don't exist) return `null`, and callers fall back to a
+ * copy-only address. Keep these conservative: a wrong link is worse than none.
+ */
+type ExplorerFns = { tx: (h: string) => string; address: (a: string) => string }
+
+const EXPLORERS: Record<number, ExplorerFns> = {
+  1: { tx: (h) => `https://etherscan.io/tx/${h}`, address: (a) => `https://etherscan.io/address/${a}` },
+  56: { tx: (h) => `https://bscscan.com/tx/${h}`, address: (a) => `https://bscscan.com/address/${a}` },
+  137: { tx: (h) => `https://polygonscan.com/tx/${h}`, address: (a) => `https://polygonscan.com/address/${a}` },
+  8453: { tx: (h) => `https://basescan.org/tx/${h}`, address: (a) => `https://basescan.org/address/${a}` },
+  43114: { tx: (h) => `https://snowtrace.io/tx/${h}`, address: (a) => `https://snowtrace.io/address/${a}` },
+  728: {
+    tx: (h) => `https://tronscan.org/#/transaction/${h}`,
+    address: (a) => `https://tronscan.org/#/address/${a}`,
+  },
+  900: { tx: (h) => `https://solscan.io/tx/${h}`, address: (a) => `https://solscan.io/account/${a}` },
+  800: { tx: (h) => `https://mempool.space/tx/${h}`, address: (a) => `https://mempool.space/address/${a}` },
+  801: { tx: (h) => `https://litecoinspace.org/tx/${h}`, address: (a) => `https://litecoinspace.org/address/${a}` },
+  802: {
+    tx: (h) => `https://mempool.space/testnet/tx/${h}`,
+    address: (a) => `https://mempool.space/testnet/address/${a}`,
+  },
+  803: {
+    tx: (h) => `https://litecoinspace.org/testnet/tx/${h}`,
+    address: (a) => `https://litecoinspace.org/testnet/address/${a}`,
+  },
+}
+
+export function explorerTxUrl(chainId: number, hash: string): string | null {
+  const e = EXPLORERS[chainId]
+  return e ? e.tx(hash) : null
+}
+
+export function explorerAddressUrl(chainId: number, address: string): string | null {
+  const e = EXPLORERS[chainId]
+  return e ? e.address(address) : null
+}
