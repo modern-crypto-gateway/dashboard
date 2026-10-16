@@ -54,6 +54,22 @@ export function formatUnits(
 }
 
 /**
+ * Inverse of {@link formatUnits}: parse a human decimal string (e.g. "12.5")
+ * into a raw smallest-unit integer string using the given token decimals.
+ * Returns `null` when the input is not a plain non-negative decimal or has
+ * more fractional places than the token allows. String math only — never
+ * `Number` — so large amounts and 18-decimal tokens round-trip exactly.
+ */
+export function parseUnits(human: string, decimals: number): string | null {
+  const s = human.trim()
+  if (!/^d+(.d+)?$/.test(s)) return null
+  const d = Math.max(0, decimals | 0)
+  const [intPart, fracPart = ''] = s.split('.')
+  if (fracPart.length > d) return null
+  return (intPart + fracPart.padEnd(d, '0')).replace(/^0+(?=d)/, '')
+}
+
+/**
  * Like {@link formatUnits} but preserves a leading `-` on negative raw values
  * (e.g. a signed reconciliation delta). Positive values are returned bare.
  */

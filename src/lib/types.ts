@@ -579,6 +579,99 @@ export type AutoConsolidationSchedule = {
   updatedAt: number
 }
 
+/* ── Treasury destinations + transfers (admin) ───────────── */
+
+export type TreasuryDestination = {
+  id: string
+  label: string
+  exchange: 'kraken' | 'other'
+  chainId: number
+  token: string
+  address: string
+  memo: string | null
+  enabled: boolean
+  /** Epoch ms when the operator marked the destination verified. */
+  verifiedAt: number | null
+  disabledAt: number | null
+  /** Exchange deposit minimum in the token's smallest unit (verification floor). */
+  exchangeMinRaw: string
+  /** Decimal USD string, e.g. "100". Nothing is sent below this. */
+  minTransferUsd: string
+  /** Decimal USD cap per run. */
+  maxPerTransferUsd: string
+  /** Decimal USD cap over a rolling 24 h window. */
+  maxDailyUsd: string
+  /** Smallest unit of (chainId, token) always left in the gateway. */
+  keepFloatRaw: string
+  /** `null` = manual only; set = scheduled runs every N hours. */
+  autoIntervalHours: number | null
+  nextRunDue: number | null
+  lastRunAt: number | null
+  lastTransferId: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export type TreasuryTransferMode = 'verification' | 'manual' | 'scheduled'
+
+export type TreasuryTransfer = {
+  id: string
+  destinationId: string
+  mode: TreasuryTransferMode
+  /** `payouts.batch_id` shared by every leg of this transfer. */
+  batchId: string
+  plannedAmountRaw: string
+  plannedUsd: string
+  legCount: number
+  skippedCount: number
+  skippedReasons: Array<{ sourceAddress: string; amountRaw: string; reason: string }>
+  createdAt: number
+  /** Live roll-up of the legs' payout statuses. */
+  status: {
+    planned: number
+    reserved: number
+    toppingUp: number
+    submitted: number
+    confirmed: number
+    failed: number
+    canceled: number
+    confirmedAmountRaw: string
+  }
+}
+
+export type TreasuryEligibility = {
+  chainId: number
+  token: string
+  decimals: number
+  /** 1 token in USD, decimal string. */
+  usdRate: string
+  holdHours: number
+  /** Σ spendable over pool sources (ledger − reservations). */
+  spendableRaw: string
+  /** Σ stable credits younger than the hold. */
+  heldForRefundsRaw: string
+  keepFloatRaw: string
+  perTransferCapUsd: string
+  dailyRemainingUsd: string
+  /** What a transfer right now would move at most. */
+  budgetRaw: string
+  budgetUsd: string
+  sources: Array<{
+    address: string
+    spendableRaw: string
+    heldRaw: string
+    eligibleRaw: string
+  }>
+  blocked:
+    | null
+    | 'DISABLED'
+    | 'NOT_VERIFIED'
+    | 'BELOW_MIN_TRANSFER'
+    | 'DAILY_CAP_REACHED'
+    | 'IN_FLIGHT'
+    | 'NO_ELIGIBLE_SOURCES'
+}
+
 export type PayoutBatchRowResult =
   | { index: number; status: 'planned'; payout: GatewayPayout }
   | { index: number; status: 'failed'; error: { code?: string; message: string } }
