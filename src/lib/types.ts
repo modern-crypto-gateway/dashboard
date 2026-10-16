@@ -752,6 +752,10 @@ export type ExchangeStatus = {
   openOrders: ExchangeOpenOrder[]
   /** Saved fiat destinations (bank accounts). */
   withdrawKeys: ExchangeWithdrawKey[]
+  /** When balances / orders / keys were last read from Kraken (snapshot written by every run or live read). */
+  snapshotAt: number | null
+  /** Set while Kraken has the API key in a temporary lockout; no calls are made until then. */
+  lockedUntil: number | null
   /** Exchange API error while loading live data. */
   error: string | null
 }

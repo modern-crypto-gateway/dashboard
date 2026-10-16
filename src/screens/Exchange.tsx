@@ -263,11 +263,28 @@ export function ExchangePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {status?.snapshotAt != null && (
+            <span
+              className="text-xs text-muted-foreground"
+              title="Balances, open orders and withdrawal keys are a snapshot written by every run. Refresh reads Kraken live (one serialized read)."
+            >
+              Kraken data as of {fmtLocal(status.snapshotAt)}
+              {status.lockedUntil != null
+                ? ` · locked out until ${fmtLocal(status.lockedUntil)}`
+                : ''}
+            </span>
+          )}
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              statusQ.refetch()
+            onClick={async () => {
+              try {
+                const live = await api<ExchangeStatus>(`${BASE}?live=1`)
+                qc.setQueryData(STATUS_Q.queryKey, live)
+                if (live.error) toast.warning(live.error)
+              } catch (e) {
+                toast.error(e instanceof ApiError ? e.message : String(e))
+              }
               actionsQ.refetch()
             }}
             disabled={statusQ.isFetching}
@@ -747,7 +764,7 @@ function BalancesCard({ rows }: { rows: ExchangeStatus['balances'] }) {
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3.5">
         <div className="text-base font-semibold tracking-tight">Balances</div>
         <span className="text-xs text-[var(--fg-2)]">
-          live at Kraken · {rows.length} asset{rows.length === 1 ? '' : 's'}
+          Kraken snapshot · {rows.length} asset{rows.length === 1 ? '' : 's'}
         </span>
         {totalUsd != null && (
           <span className="ml-auto font-mono text-xs text-[var(--fg-2)]">
@@ -819,7 +836,7 @@ function OpenOrdersCard({ orders }: { orders: ExchangeOpenOrder[] }) {
           Open orders
         </div>
         <span className="text-xs text-[var(--fg-2)]">
-          live at Kraken · {orders.length}
+          Kraken snapshot · {orders.length}
         </span>
       </div>
       {orders.length === 0 ? (
