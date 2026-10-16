@@ -62,11 +62,11 @@ export function formatUnits(
  */
 export function parseUnits(human: string, decimals: number): string | null {
   const s = human.trim()
-  if (!/^d+(.d+)?$/.test(s)) return null
+  if (!/^\d+(\.\d+)?$/.test(s)) return null
   const d = Math.max(0, decimals | 0)
   const [intPart, fracPart = ''] = s.split('.')
   if (fracPart.length > d) return null
-  return (intPart + fracPart.padEnd(d, '0')).replace(/^0+(?=d)/, '')
+  return (intPart + fracPart.padEnd(d, '0')).replace(/^0+(?=\d)/, '')
 }
 
 /**
