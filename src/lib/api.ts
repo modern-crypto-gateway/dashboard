@@ -46,11 +46,14 @@ export async function api<T = unknown>(
   if (!res.ok) {
     const err = (body as { error?: { code?: string; message?: string; details?: unknown } } | null)
       ?.error
+    // A non-OK response without the `{ error }` envelope (e.g. the exchange
+    // run route answers 409 with a plain result object) keeps its body in
+    // `details` so the caller can still read it.
     throw new ApiError(
       err?.message || res.statusText || 'Request failed',
       res.status,
       err?.code,
-      err?.details,
+      err ? err.details : (body ?? undefined),
     )
   }
   return body as T

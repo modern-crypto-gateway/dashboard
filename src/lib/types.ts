@@ -672,6 +672,125 @@ export type TreasuryEligibility = {
     | 'NO_ELIGIBLE_SOURCES'
 }
 
+/* ── Exchange auto-sell (Kraken, admin) ───────────────────── */
+
+export type ExchangeMode = 'off' | 'dry-run' | 'on'
+
+/** Read-only: environment variables on the worker (KRAKEN_AUTOSELL* / KRAKEN_WITHDRAW*). */
+export type ExchangePolicy = {
+  mode: ExchangeMode
+  minOrderUsd: string
+  dailyCapUsd: string
+  requoteMinutes: number
+  maxRequotes: number
+  intervalMinutes: number
+  /** Exchange asset code → pair altname, e.g. `{ XXBT: 'XBTUSD', USDT: 'USDTUSD' }`. */
+  sellable: Record<string, string>
+  userref: number
+  withdraw: {
+    enabled: boolean
+    key: string | null
+    asset: string
+    minUsd: string
+    dailyCapUsd: string
+  }
+}
+
+export type ExchangeRunResult = {
+  ran: boolean
+  /** `'disabled' | 'throttled'` when `ran` is false. */
+  reason?: string
+  mode: ExchangeMode
+  dryRun: boolean
+  synced: number
+  placed: number
+  requoted: number
+  marketFallbacks: number
+  filled: number
+  canceled: number
+  withdrawals: number
+  skipped: Array<{ asset: string; reason: string }>
+  errors: string[]
+  /** Epoch ms. */
+  at: number
+}
+
+export type ExchangeBalanceRow = {
+  /** Kraken code: XXBT, XETH, XLTC, SOL, POL, USDT, USDC, ZUSD … */
+  asset: string
+  balance: string
+  holdTrade: string
+  available: string
+  /** Sell pair, null for USD / non-sellable. */
+  pair: string | null
+  /** Best bid, USD. */
+  price: string | null
+  /** available × bid (or the USD amount itself for ZUSD). */
+  usd: string | null
+}
+
+export type ExchangeOpenOrder = {
+  txid: string
+  pair: string
+  status: 'pending' | 'open' | 'closed' | 'canceled' | 'expired'
+  volume: string
+  volumeExecuted: string
+  cost: string
+  fee: string
+  averagePrice: string | null
+  openedAt: number
+}
+
+export type ExchangeWithdrawKey = { key: string; address: string; verified: boolean }
+
+export type ExchangeStatus = {
+  /** False when the worker has no KRAKEN_API_KEY / KRAKEN_API_SECRET. */
+  configured: boolean
+  policy: ExchangePolicy
+  lastRun: ExchangeRunResult | null
+  balances: ExchangeBalanceRow[]
+  openOrders: ExchangeOpenOrder[]
+  /** Saved fiat destinations (bank accounts). */
+  withdrawKeys: ExchangeWithdrawKey[]
+  /** Exchange API error while loading live data. */
+  error: string | null
+}
+
+export type ExchangeActionKind = 'sell' | 'market_sell' | 'withdraw'
+
+export type ExchangeActionStatus =
+  | 'validated'
+  | 'open'
+  | 'filled'
+  | 'canceled'
+  | 'failed'
+  | 'requested'
+  | 'completed'
+
+export type ExchangeAction = {
+  id: string
+  exchange: 'kraken'
+  kind: ExchangeActionKind
+  asset: string
+  pair: string | null
+  volume: string
+  price: string | null
+  usdEstimate: string
+  /** Kraken order txid or withdrawal refid. */
+  exchangeRef: string | null
+  status: ExchangeActionStatus
+  requoteOf: string | null
+  requotes: number
+  /** 0/1 */
+  dryRun: number
+  executedVolume: string | null
+  cost: string | null
+  fee: string | null
+  error: string | null
+  createdAt: number
+  updatedAt: number
+}
+
 export type PayoutBatchRowResult =
   | { index: number; status: 'planned'; payout: GatewayPayout }
   | { index: number; status: 'failed'; error: { code?: string; message: string } }

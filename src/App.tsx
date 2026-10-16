@@ -63,6 +63,9 @@ const ConsolidationSchedulesPage = lazy(() =>
 const TreasuryPage = lazy(() =>
   import('@/screens/Treasury').then((m) => ({ default: m.TreasuryPage })),
 )
+const ExchangePage = lazy(() =>
+  import('@/screens/Exchange').then((m) => ({ default: m.ExchangePage })),
+)
 const ActivityPage = lazy(() =>
   import('@/screens/Activity').then((m) => ({ default: m.ActivityPage })),
 )
@@ -195,6 +198,14 @@ export default function App() {
                     element={
                       <Suspense fallback={<Spinner />}>
                         <TreasuryPage />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="/exchange"
+                    element={
+                      <Suspense fallback={<Spinner />}>
+                        <ExchangePage />
                       </Suspense>
                     }
                   />
