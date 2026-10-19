@@ -935,10 +935,10 @@ function TuningSection({ m }: { m: Merchant }) {
       }
       seen.add(k)
       const n = parseInt(v, 10)
-      if (!Number.isFinite(n) || n < 1 || n > 10000) {
+      if (!Number.isFinite(n) || n < 0 || n > 10000) {
         return {
           ok: false,
-          error: `Confirmations for chain ${k} must be 1–10000`,
+          error: `Confirmations for chain ${k} must be 0–10000`,
         }
       }
       out[k] = n
@@ -994,10 +994,10 @@ function TuningSection({ m }: { m: Merchant }) {
       const rules: ConfirmationTierRule[] = []
       for (const r of g.rules) {
         const conf = parseInt(r.confirmations.trim(), 10)
-        if (!Number.isFinite(conf) || conf < 1 || conf > 10000) {
+        if (!Number.isFinite(conf) || conf < 0 || conf > 10000) {
           return {
             ok: false,
-            error: `${key}: confirmations must be 1–10000`,
+            error: `${key}: confirmations must be 0–10000`,
           }
         }
         const opStr = r.op
@@ -1308,7 +1308,7 @@ function ConfirmationThresholdsEditor({
       hint={
         rows.length === 0
           ? 'Empty = use gateway defaults for every chain. Set a per-chain override to tighten or loosen finality for this merchant.'
-          : 'Lower-than-default values trade reorg risk for faster finality and surface a WARN in gateway logs.'
+          : 'Lower-than-default values trade reorg risk for faster finality and surface a WARN in gateway logs. 0 = zero-conf: on Bitcoin/Litecoin the payment settles once the mempool holds a non-replaceable (non-RBF) transaction carrying it; on other chains 0 settles at the first block.'
       }
     >
       <div className="space-y-2">
@@ -1470,7 +1470,7 @@ function ConfirmationTiersEditor({
       }
       hint={
         groups.length === 0
-          ? 'Optional. Override confirmations by amount tier — e.g. "<$3 LTC: 1 conf, otherwise 12". Falls back to flat thresholds then gateway defaults if no rule matches.'
+          ? 'Optional. Override confirmations by amount tier — e.g. "<$3 LTC: 0 conf (non-RBF mempool), otherwise 12". Falls back to flat thresholds then gateway defaults if no rule matches.'
           : 'Rules evaluate top-down — first matching predicate wins. A rule with no operator acts as a catch-all and should sit last.'
       }
     >
