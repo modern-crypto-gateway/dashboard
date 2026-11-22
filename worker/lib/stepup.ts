@@ -6,8 +6,10 @@
  * reuse it in that window, so every accepted code's time step is claimed once
  * per user in the AuthGuard Durable Object and a second use is refused.
  *
- * Failed codes count toward a per-user lockout: 10 wrong codes in an hour
- * blocks every TOTP check for that user (login included) until the hour ends.
+ * Every attempt is counted (atomically, before the code is checked, so a
+ * burst of parallel guesses can't slip past) toward a per-user limit: 10
+ * attempts in an hour without a success blocks every TOTP check for that user
+ * (login included) until the hour ends. A correct code clears the count.
  * Reaching that point needs the password or a live session already, so the
  * lockout is a stop for an attacker who has one of those, not a way for an
  * outsider to lock the operator out.
@@ -15,7 +17,7 @@
 
 import { unseal } from './crypto'
 import { kek, type Bindings } from './env'
-import { guardAssertBelow, guardClaim, guardClear, guardCount } from './guard'
+import { guardClaim, guardClear, guardHit } from './guard'
 import { HttpError } from './http'
 import type { UserRecord } from './kv'
 import { matchTotpStep } from './totp'
@@ -26,16 +28,14 @@ const STEP_CLAIM_TTL = 3 * 60
 
 export const userScope = (username: string) => `user:${username}`
 
-/** Throws 429 while the user's TOTP lockout is active. */
-export async function assertTotpNotLocked(env: Bindings, username: string): Promise<void> {
-  await guardAssertBelow(env, userScope(username), 'totp-fail', TOTP_FAIL_LIMIT)
-}
-
-/** Record one failed TOTP / recovery attempt for the user. */
-export async function recordTotpFailure(env: Bindings, username: string): Promise<void> {
-  const r = await guardCount(env, userScope(username), 'totp-fail', TOTP_FAIL_WINDOW)
+/**
+ * Count one TOTP / recovery-code attempt before it is checked. Throws 429 once
+ * the user is over the limit. Atomic, so parallel requests can't all pass.
+ */
+export async function takeTotpAttempt(env: Bindings, username: string): Promise<void> {
+  const r = await guardHit(env, userScope(username), 'totp-fail', TOTP_FAIL_LIMIT, TOTP_FAIL_WINDOW)
   if (r.count === TOTP_FAIL_LIMIT) {
-    console.warn('security: TOTP lockout engaged', { username, retryAfter: r.retryAfter })
+    console.warn('security: TOTP attempt limit reached', { username, retryAfter: r.retryAfter })
   }
 }
 
@@ -45,24 +45,18 @@ export async function clearTotpFailures(env: Bindings, username: string): Promis
 
 /**
  * Check `code` against the user's current authenticator, accepting each code
- * once. Counts failures toward the lockout. Returns true on success.
+ * once. Counts the attempt toward the limit first. Returns true on success.
  */
 export async function verifyUserTotpOnce(
   env: Bindings,
   user: UserRecord,
   code: string,
 ): Promise<boolean> {
-  await assertTotpNotLocked(env, user.username)
-  if (!user.totpSecretSealed || !code) {
-    await recordTotpFailure(env, user.username)
-    return false
-  }
+  await takeTotpAttempt(env, user.username)
+  if (!user.totpSecretSealed || !code) return false
   const secret = await unseal(user.totpSecretSealed, kek(env))
   const step = await matchTotpStep(code, secret)
-  if (step === null) {
-    await recordTotpFailure(env, user.username)
-    return false
-  }
+  if (step === null) return false
   if (!(await guardClaim(env, userScope(user.username), `totp-step:${step}`, STEP_CLAIM_TTL))) {
     throw new HttpError(
       401,
@@ -70,6 +64,7 @@ export async function verifyUserTotpOnce(
       'That code was already used. Wait for the next code in your authenticator.',
     )
   }
+  await clearTotpFailures(env, user.username)
   return true
 }
 

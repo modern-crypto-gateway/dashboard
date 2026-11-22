@@ -11,12 +11,11 @@ import {
   parseCookies,
 } from '../lib/session'
 import { clientId } from '../lib/ratelimit'
-import { guardAssertBelow, guardCount, guardHit } from '../lib/guard'
+import { guardClear, guardCount, guardHit } from '../lib/guard'
 import {
-  assertTotpNotLocked,
   claimRecoveryCode,
   clearTotpFailures,
-  recordTotpFailure,
+  takeTotpAttempt,
   userScope,
   verifyUserTotpOnce,
 } from '../lib/stepup'
@@ -32,15 +31,21 @@ const CHALLENGE_TTL = 5 * 60 // 5 minutes
 
 /* Brute-force limits. All counted exactly in the AuthGuard Durable Object.
  *   - per IP (IPv6: per /64): password 10 / 5 min, 2FA 20 / 5 min
- *   - per username: 30 wrong passwords / hour, then that username is refused
- *     for the rest of the hour (Turnstile makes spraying this costly)
+ *   - per username from one IP / 64: 20 password attempts / hour
+ *   - per username from anywhere: 300 password attempts / hour. High on
+ *     purpose: a low global cap would let anyone lock the operator out by
+ *     spraying wrong passwords; this one only stops large distributed
+ *     guessing, and with Turnstile on each attempt costs a solved challenge.
  *   - per login challenge: 5 wrong 2FA codes, then the challenge is burned and
  *     the password has to be entered again
- *   - per user: 10 wrong 2FA / recovery codes per hour locks every 2FA check
- *     (see stepup.ts) */
+ *   - per user: 10 2FA / recovery attempts per hour without a success locks
+ *     every 2FA check (see stepup.ts). Reaching it needs the password.
+ * Attempts are counted before they are checked (atomic), so a burst of
+ * parallel requests can't get past a limit. */
 const IP_PASSWORD = { limit: 10, window: 5 * 60 }
 const IP_TOTP = { limit: 20, window: 5 * 60 }
-const USER_PASSWORD_FAILS = { limit: 30, window: 60 * 60 }
+const USER_IP_PASSWORD = { limit: 20, window: 60 * 60 }
+const USER_PASSWORD = { limit: 300, window: 60 * 60 }
 const CHALLENGE_ATTEMPTS = 5
 
 const USERNAME_MAX = 64
@@ -102,7 +107,12 @@ export async function postLoginPassword(
     return error('BAD_INPUT', 'Username and password required', 400)
   }
 
-  await guardAssertBelow(env, userScope(username), 'pw-fail', USER_PASSWORD_FAILS.limit)
+  const pwKey = `pw:${clientId(req)}`
+  await guardHit(env, userScope(username), pwKey, USER_IP_PASSWORD.limit, USER_IP_PASSWORD.window)
+  const all = await guardHit(env, userScope(username), 'pw', USER_PASSWORD.limit, USER_PASSWORD.window)
+  if (all.count === USER_PASSWORD.limit) {
+    console.warn('security: password attempt limit reached', { username })
+  }
 
   const user = await kvGet<UserRecord>(env, K.user(username), 'json')
   // Dummy verify to equalize timing on non-existent users.
@@ -114,12 +124,9 @@ export async function postLoginPassword(
         'pbkdf2$sha256$100000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
       )
   if (!user || !ok) {
-    const r = await guardCount(env, userScope(username), 'pw-fail', USER_PASSWORD_FAILS.window)
-    if (r.count === USER_PASSWORD_FAILS.limit) {
-      console.warn('security: password failures limit reached', { username })
-    }
     return error('BAD_CREDS', 'Invalid username or password', 401)
   }
+  await guardClear(env, userScope(username), pwKey)
 
   const challengeToken = randomToken(32)
   const chKey = `challenge:${await sha256Hex(challengeToken)}`
@@ -173,7 +180,6 @@ export async function postLoginTotp(
     await kvDelete(env, chKey)
     return error('NO_CHALLENGE', 'Too many wrong codes — re-enter your password', 401)
   }
-  await assertTotpNotLocked(env, user.username)
 
   const code = (typeof body.code === 'string' ? body.code : '').trim()
   const recovery = (typeof body.recovery === 'string' ? body.recovery : '').trim()
@@ -182,6 +188,7 @@ export async function postLoginTotp(
   if (code) {
     passed = await verifyUserTotpOnce(env, user, code)
   } else if (recovery) {
+    await takeTotpAttempt(env, user.username)
     const h = await sha256Hex(recovery)
     const idx = user.recoveryHashes.indexOf(h)
     // Claim the code atomically before honouring it, so two parallel requests
@@ -196,8 +203,6 @@ export async function postLoginTotp(
       }
       await kvPut(env, K.user(user.username), updated)
       console.warn('security: recovery code used', { username: user.username })
-    } else {
-      await recordTotpFailure(env, user.username)
     }
   } else {
     return error('BAD_INPUT', 'Provide an authenticator code or recovery code', 400)

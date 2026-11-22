@@ -39,7 +39,16 @@ export function parseCookies(req: Request): Record<string, string> {
     if (!s) return
     const eq = s.indexOf('=')
     if (eq < 0) return
-    out[s.slice(0, eq)] = decodeURIComponent(s.slice(eq + 1))
+    // A malformed cookie (e.g. planted from a sibling subdomain) must not
+    // break every request: keep the raw value instead of throwing.
+    const rawValue = s.slice(eq + 1)
+    let v = rawValue
+    try {
+      v = decodeURIComponent(rawValue)
+    } catch {
+      /* keep raw */
+    }
+    out[s.slice(0, eq)] = v
   })
   return out
 }

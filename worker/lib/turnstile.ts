@@ -53,16 +53,21 @@ export async function verifyTurnstile(
     console.warn('turnstile rejected', { codes: data['error-codes'] ?? [] })
     throw new HttpError(403, 'TURNSTILE_FAILED', 'Human check failed. Try again.')
   }
-  // Cloudflare's published test keys (local dev) answer without action or our
-  // hostname. Only those answers carry this flag; real keys never do.
-  if (data.metadata?.result_with_testing_key === true) return
+  // Cloudflare's published test keys answer without action or our hostname.
+  // Accept that only for local development; anywhere else a test secret
+  // would quietly turn Turnstile off, so it is refused.
+  const host = new URL(req.url).hostname
+  const local = host === 'localhost' || host === '127.0.0.1'
+  if (data.metadata?.result_with_testing_key === true) {
+    if (local) return
+    throw new HttpError(403, 'TURNSTILE_FAILED', 'Human check is misconfigured (test key).')
+  }
   if (data.action !== TURNSTILE_ACTION) {
     throw new HttpError(403, 'TURNSTILE_FAILED', 'Human check failed. Try again.')
   }
   // The token must have been issued on this site, not lifted from another
   // page that uses the same site key. Local dev serves on localhost.
-  const host = new URL(req.url).hostname
-  if (host !== 'localhost' && host !== '127.0.0.1' && data.hostname !== host) {
+  if (!local && data.hostname !== host) {
     throw new HttpError(403, 'TURNSTILE_FAILED', 'Human check failed. Try again.')
   }
 }
