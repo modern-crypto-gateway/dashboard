@@ -3,22 +3,24 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
+  AlertTriangle,
   ArrowRight,
   CalendarClock,
-  ExternalLink,
+  Clock,
   Fuel,
   Layers,
   LifeBuoy,
   Loader2,
   RefreshCw,
   RotateCcw,
+  Send,
   ShieldCheck,
   X,
 } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { explorerAddressUrl } from '@/lib/chains'
-import { fmtRel, formatUnits, truncateAddr } from '@/lib/format'
+import { fmtLocal, fmtRel, formatUnits, truncateAddr } from '@/lib/format'
 import { useHeldQueue } from '@/lib/held'
 import type {
   ChainInventoryEntry,
@@ -27,8 +29,10 @@ import type {
 } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
-import { ChainPill } from '@/components/ChainPill'
+import { SegmentedBar } from '@/components/charts'
 import { CopyButton } from '@/components/CopyButton'
+import { ChainIcon, TokenIcon, TokenOnChain } from '@/components/CryptoIcon'
+import { Pager, TableCard, usePaged } from '@/components/DataTable'
 import { Field } from '@/components/Field'
 import { PageHeader } from '@/components/PageHeader'
 import {
@@ -36,8 +40,9 @@ import {
   EmptyState,
   ErrorState,
 } from '@/components/States'
-import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -55,8 +60,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableWrap, TBody, Td, Th, THead, Tr } from '@/components/ui/table'
+import { cn } from '@/lib/utils'
 
 const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/
+const PAGE_SIZE = 25
 
 function useChains() {
   return useQuery({
@@ -81,8 +89,8 @@ function fmtAge(ms: number | null): string {
 }
 
 /** Held legs are bad regardless; escalate the colour the longer they're stuck. */
-function ageTone(ms: number | null): 'warn' | 'danger' {
-  return ms != null && ms >= 24 * 3_600_000 ? 'danger' : 'warn'
+function ageTone(ms: number | null): 'warn' | 'bad' {
+  return ms != null && ms >= 24 * 3_600_000 ? 'bad' : 'warn'
 }
 
 function unixOf(iso: string | null): number {
@@ -141,94 +149,57 @@ export function HeldPayoutsPage() {
     token: token || null,
   })
 
-  const legs = held.data?.held ?? []
+  const legs = React.useMemo(() => held.data?.held ?? [], [held.data])
+  const paged = usePaged(legs, PAGE_SIZE)
   const target = legs.find((l) => l.id === recoverId) ?? null
   const filtered = chainId !== '' || token !== ''
-  const oldest = legs.reduce(
-    (m, l) => (l.heldForMs != null && l.heldForMs > m ? l.heldForMs : m),
-    0,
-  )
+
+  const summary = React.useMemo(() => {
+    let oldest = 0
+    let sweeps = 0
+    const chains = new Map<number, number>()
+    for (const l of legs) {
+      if (l.heldForMs != null && l.heldForMs > oldest) oldest = l.heldForMs
+      if (l.kind === 'consolidation_sweep') sweeps++
+      chains.set(l.chainId, (chains.get(l.chainId) ?? 0) + 1)
+    }
+    return {
+      oldest,
+      sweeps,
+      standard: legs.length - sweeps,
+      chains: [...chains.entries()].sort((a, b) => b[1] - a[1]),
+    }
+  }, [legs])
 
   const qc = useQueryClient()
   const onRecovered = React.useCallback(() => {
     qc.invalidateQueries({ queryKey: ['gw', 'payouts', 'held'] })
   }, [qc])
 
+  const clearFilters = () => {
+    setChainId('')
+    setToken('')
+  }
+
   return (
-    <div className="fade-in space-y-5">
+    <div className="space-y-8">
       <PageHeader
-        eyebrow="Payments"
-        title={
-          <>
-            <LifeBuoy className="size-5 text-[var(--fg-2)]" />
-            Held payouts
-          </>
-        }
-        description={
-          <>
-            Legs whose broadcast errored ambiguously (a transport hiccup) and
-            are stuck mid-flight — most often an auto-consolidation sweep that
-            actually landed on-chain but couldn&rsquo;t be confirmed. Paste the
-            successful OUT hash from the explorer to drive the leg back to{' '}
-            <span className="font-mono">submitted</span>; the confirm cron takes
-            it from there.
-          </>
-        }
+        title="Held payouts"
+        description="Stuck legs awaiting recovery"
         actions={
-          <>
-            <Select
-              value={chainId || 'all'}
-              onValueChange={(v) => {
-                setChainId(v === 'all' ? '' : v)
-                setToken('')
-              }}
-            >
-              <SelectTrigger className="h-8 w-[150px] text-sm">
-                <SelectValue placeholder="All chains" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All chains</SelectItem>
-                {chainOptions.map((c) => (
-                  <SelectItem key={c.chainId} value={String(c.chainId)}>
-                    {c.displayName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={token || 'all'}
-              onValueChange={(v) => setToken(v === 'all' ? '' : v)}
-            >
-              <SelectTrigger className="h-8 w-[130px] text-sm">
-                <SelectValue placeholder="All tokens" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All tokens</SelectItem>
-                {tokenOptions.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => held.refetch()}
-              disabled={held.isFetching}
-            >
-              <RefreshCw
-                className={'size-3.5' + (held.isFetching ? ' animate-spin' : '')}
-              />
-              Refresh
-            </Button>
-          </>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => held.refetch()}
+            disabled={held.isFetching}
+          >
+            <RefreshCw className={cn('size-4', held.isFetching && 'animate-spin')} />
+            Refresh
+          </Button>
         }
       />
 
-      {held.isLoading ? (
-        <ListSkeleton />
-      ) : held.isError ? (
+      {held.isError ? (
         <ErrorCard
           message={
             held.error instanceof ApiError && held.error.code === 'NOT_CONFIGURED'
@@ -238,25 +209,164 @@ export function HeldPayoutsPage() {
                 : 'Could not load the recovery queue.'
           }
         />
-      ) : legs.length === 0 ? (
-        filtered ? (
-          <NoMatch
-            onClear={() => {
-              setChainId('')
-              setToken('')
-            }}
-          />
-        ) : (
-          <ClearState />
-        )
+      ) : !held.isLoading && legs.length === 0 && !filtered ? (
+        <ClearState />
       ) : (
         <>
-          <SummaryStrip count={legs.length} oldestMs={oldest} />
-          <HeldList
-            rows={legs}
-            decimalsOf={decimalsOf}
-            onRecover={setRecoverId}
-          />
+          <div className="stagger grid grid-cols-2 gap-5 xl:grid-cols-4">
+            <Tile
+              label="Held legs"
+              loading={held.isLoading}
+              value={legs.length}
+              icon={LifeBuoy}
+              tint="bg-[var(--st-warn-bg)] text-[var(--st-warn)]"
+            />
+            <Tile
+              label="Oldest stuck"
+              loading={held.isLoading}
+              value={
+                <span className={summary.oldest >= 24 * 3_600_000 ? 'text-[var(--st-bad)]' : undefined}>
+                  {fmtAge(summary.oldest || null)}
+                </span>
+              }
+              icon={Clock}
+              tint={
+                summary.oldest >= 24 * 3_600_000
+                  ? 'bg-[var(--st-bad-bg)] text-[var(--st-bad)]'
+                  : 'bg-[var(--bg-2)] text-[var(--fg-1)] ring-1 ring-border'
+              }
+            />
+            <Tile
+              label="Kind"
+              loading={held.isLoading}
+              value={
+                <span className="flex items-baseline gap-3">
+                  <span title="Consolidation sweeps">
+                    {summary.sweeps}
+                    <Layers className="ml-1 inline size-4 align-[-2px] text-[var(--fg-2)]" />
+                  </span>
+                  <span title="Standard payouts">
+                    {summary.standard}
+                    <Send className="ml-1 inline size-4 align-[-2px] text-[var(--fg-2)]" />
+                  </span>
+                </span>
+              }
+              footer={
+                <SegmentedBar
+                  parts={[
+                    { key: 'sweep', name: 'Consolidation', value: summary.sweeps, color: 'var(--chart-2)' },
+                    { key: 'std', name: 'Standard', value: summary.standard, color: 'var(--chart-1-fill)' },
+                  ]}
+                />
+              }
+            />
+            <Tile
+              label="Networks"
+              loading={held.isLoading}
+              value={summary.chains.length}
+              footer={
+                summary.chains.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {summary.chains.slice(0, 8).map(([id, n]) => (
+                      <span key={id} title={`${n} held`} className="inline-flex">
+                        <ChainIcon chainId={id} size={20} />
+                      </span>
+                    ))}
+                  </div>
+                ) : undefined
+              }
+            />
+          </div>
+
+          <TableCard
+            toolbar={
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="text-base font-semibold">Recovery queue</h2>
+                <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+                  <Select
+                    value={chainId || 'all'}
+                    onValueChange={(v) => {
+                      setChainId(v === 'all' ? '' : v)
+                      setToken('')
+                      paged.setPage(0)
+                    }}
+                  >
+                    <SelectTrigger className="h-8 w-[160px] text-sm" aria-label="Chain">
+                      <SelectValue placeholder="All chains" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All chains</SelectItem>
+                      {chainOptions.map((c) => (
+                        <SelectItem key={c.chainId} value={String(c.chainId)}>
+                          <span className="inline-flex items-center gap-2">
+                            <ChainIcon chainId={c.chainId} size={16} />
+                            {c.displayName}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={token || 'all'}
+                    onValueChange={(v) => {
+                      setToken(v === 'all' ? '' : v)
+                      paged.setPage(0)
+                    }}
+                  >
+                    <SelectTrigger className="h-8 w-[140px] text-sm" aria-label="Token">
+                      <SelectValue placeholder="All tokens" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All tokens</SelectItem>
+                      {tokenOptions.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          <span className="inline-flex items-center gap-2">
+                            <TokenIcon symbol={t} size={16} />
+                            {t}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {filtered && (
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="Clear filters"
+                      title="Clear filters"
+                      onClick={clearFilters}
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            }
+            footer={
+              paged.total > 0 ? (
+                <Pager
+                  page={paged.page}
+                  pageSize={paged.pageSize}
+                  total={paged.total}
+                  hasNext={paged.page < paged.pageCount - 1}
+                  onPage={paged.setPage}
+                  noun="legs"
+                />
+              ) : undefined
+            }
+          >
+            {held.isLoading ? (
+              <ListSkeleton />
+            ) : legs.length === 0 ? (
+              <NoMatch onClear={clearFilters} />
+            ) : (
+              <HeldTable
+                rows={paged.rows}
+                decimalsOf={decimalsOf}
+                onRecover={setRecoverId}
+              />
+            )}
+          </TableCard>
         </>
       )}
 
@@ -271,29 +381,9 @@ export function HeldPayoutsPage() {
   )
 }
 
-/* ── summary ───────────────────────────────────────────────── */
+/* ── table ─────────────────────────────────────────────────── */
 
-function SummaryStrip({ count, oldestMs }: { count: number; oldestMs: number }) {
-  return (
-    <Callout tone="warn">
-      <span className="text-foreground">
-        <span className="font-mono font-semibold tabular-nums">{count}</span> leg
-        {count === 1 ? '' : 's'} awaiting operator recovery
-      </span>
-      {oldestMs > 0 && (
-        <span className="text-[var(--fg-2)]">
-          {' '}
-          · oldest stuck for{' '}
-          <span className="font-mono tabular-nums text-warn">{fmtAge(oldestMs)}</span>
-        </span>
-      )}
-    </Callout>
-  )
-}
-
-/* ── list / row ────────────────────────────────────────────── */
-
-function HeldList({
+function HeldTable({
   rows,
   decimalsOf,
   onRecover,
@@ -303,140 +393,108 @@ function HeldList({
   onRecover: (id: string) => void
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden h-9 grid-cols-[minmax(0,1.6fr)_160px_150px_120px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-4 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)] sm:grid">
-        <div>Leg / route</div>
-        <div className="text-right">Amount</div>
-        <div>Held for</div>
-        <div className="text-right">Action</div>
-      </div>
-      <ul>
-        {rows.map((leg) => (
-          <HeldRow
-            key={leg.id}
-            leg={leg}
-            decimals={decimalsOf(leg.chainId, leg.token)}
-            onRecover={() => onRecover(leg.id)}
-          />
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function HeldRow({
-  leg,
-  decimals,
-  onRecover,
-}: {
-  leg: HeldLeg
-  decimals: number | null
-  onRecover: () => void
-}) {
-  const amount =
-    decimals != null ? formatUnits(leg.amountRaw, decimals) : leg.amountRaw
-  const tone = ageTone(leg.heldForMs)
-
-  return (
-    <li className="border-b border-border last:border-0">
-      <div className="grid grid-cols-1 items-center gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1.6fr)_160px_150px_120px] sm:gap-4">
-        {/* Leg + route */}
-        <div className="min-w-0 space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2">
-            {leg.kind === 'consolidation_sweep' ? (
-              <Badge variant="accent" className="uppercase tracking-[0.06em]">
-                <Layers className="size-3" /> consolidation
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="uppercase tracking-[0.06em]">
-                standard
-              </Badge>
-            )}
-            <Badge variant="warn" className="lowercase">
-              {leg.status}
-            </Badge>
-            {leg.topUpTxHash && (
-              <span
-                className="inline-flex items-center text-[var(--fg-3)]"
-                title="Gas was auto-sponsored before the broadcast"
-              >
-                <Fuel className="size-3" />
-              </span>
-            )}
-            <span className="font-mono text-xs text-[var(--fg-2)]">
-              {truncateAddr(leg.id, 8, 6)}
-            </span>
-            <CopyButton value={leg.id} />
-          </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[var(--fg-2)]">
-            <ExplorerAddr chainId={leg.chainId} value={leg.sourceAddress} />
-            <ArrowRight className="size-3 shrink-0 text-[var(--fg-3)]" />
-            <ExplorerAddr chainId={leg.chainId} value={leg.destinationAddress} />
-          </div>
-          {leg.lastError && (
-            <div
-              className="truncate font-mono text-2xs text-[var(--fg-2)]"
-              title={leg.lastError}
-            >
-              {leg.lastError}
-            </div>
-          )}
-        </div>
-
-        {/* Amount + chain */}
-        <div className="min-w-0 sm:text-right">
-          <div className="truncate font-mono text-sm tabular-nums">
-            {amount} <span className="text-[var(--fg-3)]">{leg.token}</span>
-          </div>
-          <div className="mt-0.5 flex sm:justify-end">
-            <ChainPill chainId={leg.chainId} />
-          </div>
-        </div>
-
-        {/* Held for */}
-        <div className="min-w-0">
-          <Badge variant={tone}>{fmtAge(leg.heldForMs)}</Badge>
-          {leg.broadcastAttemptedAt && (
-            <div className="mt-1 text-xs text-[var(--fg-2)]">
-              tried {fmtRel(unixOf(leg.broadcastAttemptedAt))}
-            </div>
-          )}
-        </div>
-
-        {/* Action */}
-        <div className="sm:text-right">
-          <Button size="sm" onClick={onRecover}>
-            <RotateCcw className="size-3.5" /> Recover
-          </Button>
-        </div>
-      </div>
-    </li>
-  )
-}
-
-function ExplorerAddr({
-  chainId,
-  value,
-}: {
-  chainId: number
-  value: string
-}) {
-  const url = explorerAddressUrl(chainId, value)
-  if (!url) return <Addr value={value} />
-  return (
-    <span className="inline-flex items-center gap-1">
-      <a
-        href={url}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
-        title="Open in block explorer"
-      >
-        {truncateAddr(value)}
-        <ExternalLink className="size-3 shrink-0" />
-      </a>
-      <CopyButton value={value} />
-    </span>
+    <TableWrap>
+      <Table className="min-w-[960px]">
+        <THead>
+          <tr>
+            <Th>Leg</Th>
+            <Th>Route</Th>
+            <Th>Status</Th>
+            <Th align="right">Amount</Th>
+            <Th align="right">Held for</Th>
+            <Th className="w-28">
+              <span className="sr-only">Action</span>
+            </Th>
+          </tr>
+        </THead>
+        <TBody>
+          {rows.map((leg) => {
+            const decimals = decimalsOf(leg.chainId, leg.token)
+            const amount =
+              decimals != null ? formatUnits(leg.amountRaw, decimals) : leg.amountRaw
+            const sweep = leg.kind === 'consolidation_sweep'
+            return (
+              <Tr key={leg.id}>
+                <Td>
+                  <div className="flex items-center gap-3">
+                    <TokenOnChain symbol={leg.token} chainId={leg.chainId} size={32} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 font-medium">
+                        {sweep ? (
+                          <>
+                            <Layers className="size-4 text-[var(--fg-2)]" />
+                            Consolidation
+                          </>
+                        ) : (
+                          <>
+                            <Send className="size-4 text-[var(--fg-2)]" />
+                            Payout
+                          </>
+                        )}
+                        {leg.topUpTxHash && (
+                          <span
+                            className="text-[var(--fg-3)]"
+                            title="Gas was auto-sponsored before the broadcast"
+                          >
+                            <Fuel className="size-3.5" />
+                          </span>
+                        )}
+                        {leg.lastError && (
+                          <span className="text-[var(--st-warn)]" title={leg.lastError}>
+                            <AlertTriangle className="size-3.5" />
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 font-mono text-xs text-[var(--fg-3)]">
+                        {truncateAddr(leg.id, 8, 6)}
+                        <CopyButton value={leg.id} />
+                      </div>
+                    </div>
+                  </div>
+                </Td>
+                <Td>
+                  <div className="flex items-center gap-1 text-[var(--fg-2)]">
+                    <Addr value={leg.sourceAddress} chainId={leg.chainId} />
+                    <ArrowRight className="size-3.5 shrink-0 text-[var(--fg-3)]" />
+                    <Addr value={leg.destinationAddress} chainId={leg.chainId} />
+                  </div>
+                </Td>
+                <Td>
+                  <StatusPill tone="warn">{leg.status.replace(/-/g, ' ')}</StatusPill>
+                </Td>
+                <Td align="right">
+                  <span className="inline-flex items-center justify-end gap-1.5 font-medium">
+                    <TokenIcon symbol={leg.token} size={14} />
+                    {amount}
+                    <span className="font-normal text-[var(--fg-2)]">{leg.token}</span>
+                  </span>
+                </Td>
+                <Td align="right">
+                  <div className="flex flex-col items-end gap-1">
+                    <StatusPill tone={ageTone(leg.heldForMs)} icon={Clock}>
+                      {fmtAge(leg.heldForMs)}
+                    </StatusPill>
+                    {leg.broadcastAttemptedAt && (
+                      <span
+                        className="text-xs text-[var(--fg-3)]"
+                        title={fmtLocal(leg.broadcastAttemptedAt, { seconds: true })}
+                      >
+                        tried {fmtRel(unixOf(leg.broadcastAttemptedAt))}
+                      </span>
+                    )}
+                  </div>
+                </Td>
+                <Td align="right" className="w-28">
+                  <Button size="sm" onClick={() => onRecover(leg.id)}>
+                    <RotateCcw className="size-4" /> Recover
+                  </Button>
+                </Td>
+              </Tr>
+            )
+          })}
+        </TBody>
+      </Table>
+    </TableWrap>
   )
 }
 
@@ -545,7 +603,7 @@ function RecoverDialog({
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <LifeBuoy className="size-4" /> Recover held leg
+                <LifeBuoy className="size-5" /> Recover held leg
               </DialogTitle>
               <DialogDescription>
                 Verifies the on-chain transfer matches this leg
@@ -557,41 +615,41 @@ function RecoverDialog({
             </DialogHeader>
 
             <form
-              className="space-y-4"
+              className="space-y-6"
               onSubmit={(e) => {
                 e.preventDefault()
                 recover.mutate()
               }}
             >
-              <div className="space-y-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-xs">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="eyebrow">amount</span>
-                  <span className="font-mono tabular-nums">
-                    {amount} {leg.token}
-                  </span>
+              <div className="overflow-hidden rounded-xl border border-border">
+                <div className="flex items-center gap-3 bg-[var(--bg-2)] px-4 py-3">
+                  <TokenOnChain symbol={leg.token} chainId={leg.chainId} size={32} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs text-[var(--fg-2)]">Amount</div>
+                    <div className="figure truncate font-semibold">
+                      {amount} {leg.token}
+                    </div>
+                  </div>
+                  <StatusPill tone="warn" size="sm">
+                    {leg.status.replace(/-/g, ' ')}
+                  </StatusPill>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="eyebrow">from</span>
-                  {srcUrl ? (
-                    <a
-                      href={srcUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
-                    >
-                      {truncateAddr(leg.sourceAddress, 8, 6)}
-                      <ExternalLink className="size-3" />
-                    </a>
-                  ) : (
-                    <Addr value={leg.sourceAddress} />
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="eyebrow">to</span>
-                  <Addr value={leg.destinationAddress} />
-                </div>
+                <dl className="divide-y divide-border text-sm">
+                  <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+                    <dt className="text-[var(--fg-2)]">From</dt>
+                    <dd className="min-w-0">
+                      <Addr value={leg.sourceAddress} chainId={leg.chainId} />
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+                    <dt className="text-[var(--fg-2)]">To</dt>
+                    <dd className="min-w-0">
+                      <Addr value={leg.destinationAddress} chainId={leg.chainId} />
+                    </dd>
+                  </div>
+                </dl>
                 {srcUrl && (
-                  <p className="border-t border-border pt-2 text-xs text-[var(--fg-2)]">
+                  <p className="border-t border-border px-4 py-2.5 text-xs text-[var(--fg-2)]">
                     Open the source address, find the successful{' '}
                     <span className="font-medium text-foreground">OUT</span>{' '}
                     transfer of {amount} {leg.token}, and copy its tx hash.
@@ -618,7 +676,7 @@ function RecoverDialog({
               </Field>
 
               {errorMsg && (
-                <Callout tone="danger" className="rounded-md px-3 py-2.5 text-xs">
+                <Callout tone="danger">
                   <span className="whitespace-pre-wrap break-words">
                     {errorMsg}
                   </span>
@@ -639,9 +697,9 @@ function RecoverDialog({
                   disabled={recover.isPending || !TX_HASH_RE.test(trimmed)}
                 >
                   {recover.isPending ? (
-                    <Loader2 className="size-3.5 animate-spin" />
+                    <Loader2 className="size-4 animate-spin" />
                   ) : (
-                    <RotateCcw className="size-3.5" />
+                    <RotateCcw className="size-4" />
                   )}
                   {recover.isPending ? 'Verifying…' : 'Verify & recover'}
                 </Button>
@@ -654,26 +712,58 @@ function RecoverDialog({
   )
 }
 
-/* ── skeleton / empty / error ──────────────────────────────── */
+/* ── tiles / skeleton / empty / error ──────────────────────── */
+
+function Tile({
+  label,
+  value,
+  footer,
+  loading,
+  icon: Icon,
+  tint,
+}: {
+  label: string
+  value: React.ReactNode
+  footer?: React.ReactNode
+  loading?: boolean
+  icon?: React.ComponentType<{ className?: string }>
+  tint?: string
+}) {
+  return (
+    <Card className="flex flex-col p-5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm text-[var(--fg-2)]">{label}</span>
+        {Icon && (
+          <span className={cn('grid size-7 place-items-center rounded-full', tint)}>
+            <Icon className="size-4" />
+          </span>
+        )}
+      </div>
+      <div className="figure mt-2 text-xl font-semibold">
+        {loading ? <Skeleton className="h-7 w-16" /> : value}
+      </div>
+      {footer && !loading && <div className="mt-auto pt-4">{footer}</div>}
+    </Card>
+  )
+}
 
 function ListSkeleton() {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden h-9 border-b border-border bg-[var(--bg-2)] sm:block" />
+    <div>
       {Array.from({ length: 3 }).map((_, i) => (
         <div
           key={i}
-          className="grid grid-cols-1 items-center gap-3 border-b border-border px-4 py-3.5 last:border-0 sm:grid-cols-[minmax(0,1.6fr)_160px_150px_120px] sm:gap-4"
+          className="flex h-14 items-center gap-4 border-b border-border px-6 last:border-0"
         >
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-48" />
-            <Skeleton className="h-3 w-64 max-w-full" />
+          <Skeleton className="size-8 rounded-full" />
+          <div className="flex-1 space-y-1.5">
+            <Skeleton className="h-3.5 w-32" />
+            <Skeleton className="h-2.5 w-40" />
           </div>
-          <Skeleton className="h-4 w-24 sm:ml-auto" />
-          <Skeleton className="h-5 w-16" />
-          <div className="flex sm:justify-end">
-            <Skeleton className="h-8 w-24" />
-          </div>
+          <Skeleton className="hidden h-3.5 w-48 md:block" />
+          <Skeleton className="hidden h-6 w-20 rounded-full sm:block" />
+          <Skeleton className="h-3.5 w-20" />
+          <Skeleton className="h-8 w-24" />
         </div>
       ))}
     </div>
@@ -686,17 +776,11 @@ function ClearState() {
       framed
       icon={ShieldCheck}
       title="Recovery queue is clear"
-      description={
-        <>
-          No legs are stuck. Ambiguous broadcasts the auto-reconciler can
-          re-drive on its own never land here — only ones that need an
-          operator&rsquo;s eyes do.
-        </>
-      }
+      description="Only ambiguous broadcasts that need an operator land here."
       action={
         <Button asChild variant="outline" size="sm">
           <Link to="/consolidation-schedules">
-            <CalendarClock className="size-3.5" /> Auto-consolidation
+            <CalendarClock className="size-4" /> Auto-consolidation
           </Link>
         </Button>
       }
@@ -707,12 +791,11 @@ function ClearState() {
 function NoMatch({ onClear }: { onClear: () => void }) {
   return (
     <EmptyState
-      framed
       compact
       title="No held legs match these filters"
       action={
         <Button variant="outline" size="sm" onClick={onClear}>
-          <X className="size-3.5" /> Clear filters
+          <X className="size-4" /> Clear filters
         </Button>
       }
     />

@@ -1,18 +1,27 @@
 import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { AlertTriangle, RefreshCw, Target, X } from '@/components/icons'
+import {
+  ArrowRight,
+  MoreHorizontal,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Target,
+  X,
+} from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
-import { fmtUsd, truncateAddr, useNow } from '@/lib/format'
+import { fmtLocal, fmtUsd, useNow } from '@/lib/format'
 import type { OrphanTransaction } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
 import { ChainPill } from '@/components/ChainPill'
-import { CopyButton } from '@/components/CopyButton'
+import { ChainIcon, TokenIcon, TokenOnChain } from '@/components/CryptoIcon'
+import { Pager, TableCard, TableSearch, usePaged } from '@/components/DataTable'
 import { Field } from '@/components/Field'
 import { PageHeader } from '@/components/PageHeader'
-import { EmptyState, ErrorState, ListSkeleton } from '@/components/States'
+import { EmptyState, ErrorState } from '@/components/States'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import {
@@ -23,7 +32,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
   TableWrap,
@@ -34,6 +51,9 @@ import {
   Tr,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
+
+const PAGE_SIZE = 25
 
 export function OrphansPage() {
   const qc = useQueryClient()
@@ -56,12 +76,46 @@ export function OrphansPage() {
     qc.invalidateQueries({ queryKey: ['orphans'] })
   }
 
+  const [query, setQuery] = React.useState('')
+  const orphans = React.useMemo(() => list.data?.orphans ?? [], [list.data])
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return orphans
+    return orphans.filter(
+      (o) =>
+        o.txHash.toLowerCase().includes(q) ||
+        o.fromAddress.toLowerCase().includes(q) ||
+        o.toAddress.toLowerCase().includes(q) ||
+        o.token.toLowerCase().includes(q),
+    )
+  }, [orphans, query])
+  const paged = usePaged(filtered, PAGE_SIZE)
+
+  const summary = React.useMemo(() => {
+    let usd = 0
+    let noUsd = 0
+    let oldest = 0
+    const chains = new Map<number, number>()
+    for (const o of orphans) {
+      if (o.amountUsd) usd += parseFloat(o.amountUsd) || 0
+      else noUsd++
+      chains.set(o.chainId, (chains.get(o.chainId) ?? 0) + 1)
+      const t = Date.parse(o.detectedAt)
+      if (isFinite(t) && (oldest === 0 || t < oldest)) oldest = t
+    }
+    return {
+      usd,
+      noUsd,
+      oldest,
+      chains: [...chains.entries()].sort((a, b) => b[1] - a[1]),
+    }
+  }, [orphans])
+
   return (
-    <div className="fade-in space-y-5">
+    <div className="space-y-8">
       <PageHeader
-        eyebrow="Payments"
         title="Orphan transactions"
-        description="On-chain transfers the gateway couldn't attribute at ingest — usually payments on an address whose invoice has already closed."
+        description="Unattributed on-chain transfers"
         actions={
           <Button
             variant="outline"
@@ -69,105 +123,195 @@ export function OrphansPage() {
             onClick={() => list.refetch()}
             disabled={list.isFetching}
           >
-            <RefreshCw className={'size-3.5' + (list.isFetching ? ' animate-spin' : '')} />
+            <RefreshCw className={cn('size-4', list.isFetching && 'animate-spin')} />
             Refresh
           </Button>
         }
       />
 
-      {list.isLoading ? (
-        <ListSkeleton rows={5} />
-      ) : list.isError ? (
+      {list.isError ? (
         <ErrorState
           title="Could not load orphan transactions"
           message={list.error instanceof Error ? list.error.message : 'Error'}
         />
-      ) : (list.data?.orphans.length ?? 0) === 0 ? (
+      ) : !list.isLoading && orphans.length === 0 ? (
         <EmptyState
           framed
-          icon={AlertTriangle}
+          icon={ShieldCheck}
           title="No open orphans"
           description="Every on-chain transfer is attributed or dismissed."
         />
       ) : (
-        <Card className="overflow-hidden">
-          <TableWrap>
-            <Table className="min-w-[1000px]">
-              <THead>
-                <tr>
-                  <Th>Tx</Th>
-                  <Th>Chain</Th>
-                  <Th>Token</Th>
-                  <Th>From → To</Th>
-                  <Th align="right">Amount</Th>
-                  <Th align="right">USD</Th>
-                  <Th align="right">Conf</Th>
-                  <Th>Detected</Th>
-                  <Th>
-                    <span className="sr-only">Actions</span>
-                  </Th>
-                </tr>
-              </THead>
-              <TBody>
-                {list.data!.orphans.map((o) => (
-                  <Tr key={o.id}>
-                    <Td>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs">
-                          {truncateAddr(o.txHash, 8, 6)}
-                        </span>
-                        <CopyButton value={o.txHash} />
-                      </div>
-                    </Td>
-                    <Td>
-                      <ChainPill chainId={o.chainId} />
-                    </Td>
-                    <Td className="font-mono text-xs">{o.token}</Td>
-                    <Td>
-                      <div className="flex flex-col gap-0.5 text-xs">
-                        <Addr value={o.fromAddress} />
-                        <span className="text-[var(--fg-3)]">↓</span>
-                        <Addr value={o.toAddress} />
-                      </div>
-                    </Td>
-                    <Td align="right" className="text-xs">{o.amountRaw}</Td>
-                    <Td align="right" className="text-xs">
-                      {o.amountUsd ? fmtUsd(o.amountUsd) : '—'}
-                    </Td>
-                    <Td align="right" className="text-xs">{o.confirmations}</Td>
-                    <Td className="whitespace-nowrap text-xs text-[var(--fg-2)]">
-                      {formatAgo(o.detectedAt, now)}
-                    </Td>
-                    <Td align="right" className="font-sans">
-                      <div className="flex justify-end gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setTarget(o)
-                            setMode('attribute')
-                          }}
+        <>
+          <div className="stagger grid grid-cols-2 gap-5 xl:grid-cols-4">
+            <Tile label="Open" loading={list.isLoading} value={orphans.length} />
+            <Tile
+              label="Total value"
+              loading={list.isLoading}
+              value={fmtUsd(summary.usd)}
+              sub={summary.noUsd > 0 ? `${summary.noUsd} without a USD rate` : undefined}
+            />
+            <Tile
+              label="Networks"
+              loading={list.isLoading}
+              value={summary.chains.length}
+              footer={
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {summary.chains.slice(0, 8).map(([id, n]) => (
+                    <span key={id} title={`${n}`} className="inline-flex">
+                      <ChainIcon chainId={id} size={20} />
+                    </span>
+                  ))}
+                </div>
+              }
+            />
+            <Tile
+              label="Oldest"
+              loading={list.isLoading}
+              value={summary.oldest ? formatAgo(new Date(summary.oldest).toISOString(), now) : '—'}
+              sub={summary.oldest ? fmtLocal(summary.oldest) : undefined}
+            />
+          </div>
+
+          <TableCard
+            toolbar={
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="text-base font-semibold">Open orphans</h2>
+                <TableSearch
+                  value={query}
+                  onChange={(v) => {
+                    setQuery(v)
+                    paged.setPage(0)
+                  }}
+                  placeholder="Search hash, address, token…"
+                  className="w-full sm:ml-auto sm:w-64"
+                />
+              </div>
+            }
+            footer={
+              paged.total > 0 ? (
+                <Pager
+                  page={paged.page}
+                  pageSize={paged.pageSize}
+                  total={paged.total}
+                  hasNext={paged.page < paged.pageCount - 1}
+                  onPage={paged.setPage}
+                  noun="orphans"
+                />
+              ) : undefined
+            }
+          >
+            {list.isLoading ? (
+              <TableSkeleton />
+            ) : filtered.length === 0 ? (
+              <EmptyState
+                compact
+                icon={Search}
+                title="No matches"
+                action={
+                  <Button variant="outline" size="sm" onClick={() => setQuery('')}>
+                    Clear search
+                  </Button>
+                }
+              />
+            ) : (
+              <TableWrap>
+                <Table className="min-w-[980px]">
+                  <THead>
+                    <tr>
+                      <Th>Transaction</Th>
+                      <Th>Network</Th>
+                      <Th>Route</Th>
+                      <Th align="right">Amount</Th>
+                      <Th align="right">USD</Th>
+                      <Th align="right">Conf</Th>
+                      <Th align="right">Detected</Th>
+                      <Th className="w-12">
+                        <span className="sr-only">Actions</span>
+                      </Th>
+                    </tr>
+                  </THead>
+                  <TBody>
+                    {paged.rows.map((o) => (
+                      <Tr key={o.id}>
+                        <Td>
+                          <div className="flex items-center gap-3">
+                            <TokenOnChain symbol={o.token} chainId={o.chainId} size={32} />
+                            <div className="min-w-0">
+                              <div className="font-medium">{o.token}</div>
+                              <Addr
+                                value={o.txHash}
+                                chainId={o.chainId}
+                                kind="tx"
+                                className="text-[var(--fg-2)]"
+                              />
+                            </div>
+                          </div>
+                        </Td>
+                        <Td>
+                          <ChainPill chainId={o.chainId} />
+                        </Td>
+                        <Td>
+                          <div className="flex items-center gap-1 text-[var(--fg-2)]">
+                            <Addr value={o.fromAddress} chainId={o.chainId} />
+                            <ArrowRight className="size-3.5 shrink-0 text-[var(--fg-3)]" />
+                            <Addr value={o.toAddress} chainId={o.chainId} />
+                          </div>
+                        </Td>
+                        <Td align="right">
+                          <span className="inline-flex items-center justify-end gap-1.5 font-medium">
+                            <TokenIcon symbol={o.token} size={14} />
+                            {o.amountRaw}
+                          </span>
+                        </Td>
+                        <Td align="right" className="font-medium">
+                          {o.amountUsd ? fmtUsd(o.amountUsd) : <span className="text-[var(--fg-3)]">—</span>}
+                        </Td>
+                        <Td align="right" className="text-[var(--fg-2)]">{o.confirmations}</Td>
+                        <Td
+                          align="right"
+                          className="text-sm whitespace-nowrap text-[var(--fg-2)]"
+                          title={fmtLocal(o.detectedAt, { seconds: true })}
                         >
-                          <Target className="size-3.5" /> Attribute
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setTarget(o)
-                            setMode('dismiss')
-                          }}
-                        >
-                          <X className="size-3.5" /> Dismiss
-                        </Button>
-                      </div>
-                    </Td>
-                  </Tr>
-                ))}
-              </TBody>
-            </Table>
-          </TableWrap>
-        </Card>
+                          {formatAgo(o.detectedAt, now)}
+                        </Td>
+                        <Td align="right" className="w-12">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="icon-sm" variant="ghost" aria-label="Orphan actions">
+                                <MoreHorizontal className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  setTarget(o)
+                                  setMode('attribute')
+                                }}
+                              >
+                                <Target /> Attribute
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onSelect={() => {
+                                  setTarget(o)
+                                  setMode('dismiss')
+                                }}
+                              >
+                                <X /> Dismiss
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </Td>
+                      </Tr>
+                    ))}
+                  </TBody>
+                </Table>
+              </TableWrap>
+            )}
+          </TableCard>
+        </>
       )}
 
       {target && mode === 'attribute' && (
@@ -186,6 +330,29 @@ function formatAgo(iso: string, nowMs: number): string {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
   return `${Math.floor(diff / 86400)}d ago`
+}
+
+/** Compact summary of the orphan a dialog acts on. */
+function OrphanSummary({ orphan }: { orphan: OrphanTransaction }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-[var(--bg-2)] px-4 py-3">
+      <TokenOnChain symbol={orphan.token} chainId={orphan.chainId} size={32} />
+      <div className="min-w-0 flex-1">
+        <div className="figure truncate font-semibold">
+          {orphan.amountRaw} {orphan.token}
+        </div>
+        <Addr
+          value={orphan.txHash}
+          chainId={orphan.chainId}
+          kind="tx"
+          className="text-[var(--fg-2)]"
+        />
+      </div>
+      {orphan.amountUsd && (
+        <div className="figure shrink-0 text-sm font-medium">{fmtUsd(orphan.amountUsd)}</div>
+      )}
+    </div>
+  )
 }
 
 function AttributeDialog({
@@ -218,7 +385,9 @@ function AttributeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Attribute orphan to invoice</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Target className="size-5" /> Attribute orphan to invoice
+          </DialogTitle>
           <DialogDescription>
             Re-points the tx's <span className="font-mono">invoice_id</span> and
             reconciles the target invoice. Terminal invoices may flip to
@@ -226,12 +395,9 @@ function AttributeDialog({
             <span className="font-mono"> overpaid</span> if the payment covers it.
           </DialogDescription>
         </DialogHeader>
-        <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 font-mono text-xs break-all tabular-nums">
-          {truncateAddr(orphan.txHash, 10, 8)} · {orphan.token}{' '}
-          {orphan.amountRaw}
-        </div>
+        <OrphanSummary orphan={orphan} />
         <form
-          className="space-y-4"
+          className="space-y-6"
           onSubmit={(e) => {
             e.preventDefault()
             attr.mutate()
@@ -252,6 +418,7 @@ function AttributeDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={attr.isPending || !invoiceId.trim()}>
+              <Target className="size-4" />
               {attr.isPending ? 'Attributing…' : 'Attribute'}
             </Button>
           </DialogFooter>
@@ -288,17 +455,16 @@ function DismissDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Dismiss orphan</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <X className="size-5" /> Dismiss orphan
+          </DialogTitle>
           <DialogDescription>
             The tx stays in the audit log but drops off the open-orphans queue.
           </DialogDescription>
         </DialogHeader>
-        <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 font-mono text-xs break-all tabular-nums">
-          {truncateAddr(orphan.txHash, 10, 8)} · {orphan.token}{' '}
-          {orphan.amountRaw}
-        </div>
+        <OrphanSummary orphan={orphan} />
         <form
-          className="space-y-4"
+          className="space-y-6"
           onSubmit={(e) => {
             e.preventDefault()
             dismiss.mutate()
@@ -333,5 +499,54 @@ function DismissDialog({
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/* ── tiles / skeleton ──────────────────────────────────── */
+
+function Tile({
+  label,
+  value,
+  sub,
+  footer,
+  loading,
+}: {
+  label: string
+  value: React.ReactNode
+  sub?: React.ReactNode
+  footer?: React.ReactNode
+  loading?: boolean
+}) {
+  return (
+    <Card className="flex flex-col p-5">
+      <div className="text-sm text-[var(--fg-2)]">{label}</div>
+      <div className="figure mt-2 text-xl font-semibold">
+        {loading ? <Skeleton className="h-7 w-16" /> : value}
+      </div>
+      {sub && !loading && <div className="mt-1 truncate text-xs text-[var(--fg-2)]">{sub}</div>}
+      {footer && !loading && <div className="mt-auto pt-4">{footer}</div>}
+    </Card>
+  )
+}
+
+function TableSkeleton() {
+  return (
+    <div>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex h-14 items-center gap-4 border-b border-border px-6 last:border-0"
+        >
+          <Skeleton className="size-8 rounded-full" />
+          <div className="flex-1 space-y-1.5">
+            <Skeleton className="h-3.5 w-20" />
+            <Skeleton className="h-2.5 w-36" />
+          </div>
+          <Skeleton className="hidden h-3.5 w-24 md:block" />
+          <Skeleton className="hidden h-3.5 w-40 md:block" />
+          <Skeleton className="h-3.5 w-16" />
+        </div>
+      ))}
+    </div>
   )
 }
