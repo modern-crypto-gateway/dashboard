@@ -2484,7 +2484,7 @@ function ConfirmationTiersEditor({
                     onValueChange={(v) => onUpdateGroup(group.id, { token: v })}
                     disabled={tokenList.length === 0}
                   >
-                    <SelectTrigger className="h-9 bg-card">
+                    <SelectTrigger className="h-9 bg-card [&_.token-name]:hidden">
                       <SelectValue
                         placeholder={
                           group.chainId
@@ -2501,7 +2501,7 @@ function ConfirmationTiersEditor({
                           <span className="flex items-center gap-2">
                             <TokenIcon symbol={t.symbol} size={16} />
                             <span className="font-medium">{t.symbol}</span>
-                            <span className="text-xs text-[var(--fg-3)]">
+                            <span className="token-name text-xs text-[var(--fg-3)]">
                               {t.displayName}
                             </span>
                           </span>
@@ -2530,7 +2530,7 @@ function ConfirmationTiersEditor({
                   const last = idx === group.rules.length - 1
                   return (
                     <div key={rule.id} className="space-y-1.5 px-3 py-2.5">
-                      <div className="grid grid-cols-2 items-center gap-2 sm:grid-cols-[150px_minmax(0,1fr)_80px_auto]">
+                      <div className="grid grid-cols-2 items-center gap-2 sm:grid-cols-[168px_minmax(0,1fr)_84px_auto]">
                         <Select
                           value={rule.op === '' ? '__any__' : rule.op}
                           onValueChange={(v) =>
@@ -2540,7 +2540,7 @@ function ConfirmationTiersEditor({
                             })
                           }
                         >
-                          <SelectTrigger className="h-8 px-2 text-sm">
+                          <SelectTrigger className="h-8 px-2 text-sm [&>span]:truncate [&>span]:whitespace-nowrap">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -2549,7 +2549,7 @@ function ConfirmationTiersEditor({
                                 <span className="w-7 font-mono text-[var(--fg-3)]">
                                   —
                                 </span>
-                                <span>Default · catch-all</span>
+                                <span>Otherwise</span>
                               </span>
                             </SelectItem>
                             {TIER_OPS.map((op) => (
@@ -2573,7 +2573,7 @@ function ConfirmationTiersEditor({
                           }
                           placeholder={
                             isCatchAll
-                              ? 'no amount — applies to all'
+                              ? 'Any amount'
                               : `amount in ${group.token || 'token'}`
                           }
                           disabled={isCatchAll}
