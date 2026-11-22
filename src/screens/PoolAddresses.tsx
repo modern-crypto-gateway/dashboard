@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   CheckCircle2,
   ExternalLink,
-  Info,
   Loader2,
   Pause,
   Play,
@@ -30,11 +29,14 @@ import type {
 } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
+import { PageHeader } from '@/components/PageHeader'
+import { Callout, EmptyState, ErrorState } from '@/components/States'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TBody, Td, Th, THead, TableWrap, Tr } from '@/components/ui/table'
 
 type AdminFamily = Exclude<Family, 'monero'>
 
@@ -126,42 +128,37 @@ export function PoolAddressesPage() {
 
   return (
     <div className="fade-in space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow flex items-center gap-2">
-            <Button asChild variant="ghost" size="sm" className="-ml-2 h-6 px-1.5">
-              <Link to="/pool">
-                <ArrowLeft className="size-3" /> Address pool
-              </Link>
-            </Button>
-          </div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Pool addresses
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-[var(--fg-2)]">
-            Browse individual addresses across families. Park empty / idle ones
-            to keep the active set small and detection light. Reversible — never
-            risks funds.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            listQ.refetch()
-            balancesQ.refetch()
-            statsQ.refetch()
-          }}
-          disabled={listQ.isFetching || balancesQ.isFetching}
-        >
-          <RefreshCw
-            className={cn(
-              'size-3.5',
-              (listQ.isFetching || balancesQ.isFetching) && 'animate-spin',
-            )}
-          />
-          Refresh
+      <div className="space-y-2">
+        <Button asChild variant="ghost" size="sm" className="-ml-2 h-7 px-2 text-xs text-[var(--fg-2)]">
+          <Link to="/pool">
+            <ArrowLeft className="size-3.5" /> Address pool
+          </Link>
         </Button>
+        <PageHeader
+          eyebrow="Treasury"
+          title="Pool addresses"
+          description="Browse individual addresses across families. Park empty / idle ones to keep the active set small and detection light. Reversible — never risks funds."
+          actions={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                listQ.refetch()
+                balancesQ.refetch()
+                statsQ.refetch()
+              }}
+              disabled={listQ.isFetching || balancesQ.isFetching}
+            >
+              <RefreshCw
+                className={cn(
+                  'size-3.5',
+                  (listQ.isFetching || balancesQ.isFetching) && 'animate-spin',
+                )}
+              />
+              Refresh
+            </Button>
+          }
+        />
       </div>
 
       <CaveatBanner />
@@ -174,25 +171,26 @@ export function PoolAddressesPage() {
       />
 
       <Card className="overflow-hidden">
-        <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-card px-4 py-3">
           <div className="flex flex-wrap items-center gap-1.5">
             {STATUS_FILTERS.map((s) => (
               <button
                 key={s.value}
                 type="button"
                 onClick={() => setStatusFilter(s.value)}
+                aria-pressed={statusFilter === s.value}
                 className={cn(
-                  'cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                  'h-7 cursor-pointer rounded-md border px-2.5 text-xs font-medium transition-colors',
                   statusFilter === s.value
                     ? 'border-[var(--accent-border)] bg-[var(--accent-bg)] text-primary'
-                    : 'border-border text-[var(--fg-2)] hover:border-[var(--fg-3)] hover:bg-[var(--bg-hover)]',
+                    : 'border-border text-[var(--fg-2)] hover:bg-[var(--bg-hover)] hover:text-foreground',
                 )}
               >
                 {s.label}
               </button>
             ))}
           </div>
-          <div className="relative ml-auto min-w-[200px] flex-1 sm:max-w-xs">
+          <div className="relative ml-auto w-full min-w-0 sm:w-auto sm:min-w-[200px] sm:max-w-xs sm:flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[var(--fg-3)]" />
             <Input
               value={search}
@@ -204,14 +202,14 @@ export function PoolAddressesPage() {
               <button
                 type="button"
                 onClick={() => setSearch('')}
-                className="absolute top-1/2 right-2 -translate-y-1/2 text-[var(--fg-3)] hover:text-foreground"
+                className="absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer text-[var(--fg-3)] hover:text-foreground"
                 aria-label="Clear search"
               >
                 <X className="size-3.5" />
               </button>
             )}
           </div>
-          <div className="hidden whitespace-nowrap text-xs text-[var(--fg-3)] sm:block">
+          <div className="hidden whitespace-nowrap font-mono text-xs text-[var(--fg-2)] sm:block">
             {listQ.isFetching && !listQ.isFetched ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
@@ -237,7 +235,7 @@ export function PoolAddressesPage() {
             }
           />
         ) : filtered.length === 0 ? (
-          <EmptyState statusFilter={statusFilter} family={family} />
+          <NoAddresses statusFilter={statusFilter} family={family} />
         ) : (
           <AddressTable
             rows={filtered}
@@ -248,7 +246,7 @@ export function PoolAddressesPage() {
         )}
 
         {hasMore && (
-          <div className="flex justify-center border-t border-border px-5 py-3">
+          <div className="flex justify-center border-t border-border px-4 py-3">
             <Button
               type="button"
               variant="outline"
@@ -308,11 +306,9 @@ function useListQuery({
 
 function CaveatBanner() {
   return (
-    <div className="flex flex-wrap items-start gap-2.5 rounded-md border border-[var(--accent-border)] bg-[var(--accent-bg)] px-3.5 py-2.5 text-xs text-[var(--fg-1)]">
-      <Info className="size-4 shrink-0 text-primary" />
+    <Callout tone="info" title="Park is safe and reversible.">
       <div className="space-y-1">
         <p>
-          <span className="font-semibold">Park is safe and reversible.</span>{' '}
           A parked address stays in the pool, is still swept by consolidation,
           and late payments follow the usual cooldown path. The allocator may
           borrow it if the family pool is exhausted, then auto-re-park on
@@ -324,7 +320,7 @@ function CaveatBanner() {
           overhead and helps keep stranded dust contained.
         </p>
       </div>
-    </div>
+    </Callout>
   )
 }
 
@@ -349,27 +345,29 @@ function FamilyTabs({
             key={f}
             type="button"
             onClick={() => onChange(f)}
+            aria-pressed={isActive}
             className={cn(
-              'group flex flex-col gap-2 rounded-lg border bg-card px-4 py-3 text-left transition-colors cursor-pointer',
+              'group flex min-w-0 flex-col gap-2 rounded-lg border bg-card px-4 py-3 text-left transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               isActive
                 ? 'border-[var(--accent-border)] ring-1 ring-[var(--accent-border)]'
-                : 'border-border hover:border-[var(--fg-3)]',
+                : 'border-border hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)]',
             )}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span
-                  className="size-2.5 rounded-sm"
+                  aria-hidden
+                  className="size-2 rounded-full"
                   style={{ background: FAMILY_COLOR[f] }}
                 />
-                <span className="font-semibold uppercase tracking-[0.08em] text-xs">
+                <span className="text-xs font-semibold uppercase tracking-[0.06em]">
                   {f}
                 </span>
               </div>
               {loading && !s ? (
                 <Skeleton className="h-3.5 w-10" />
               ) : (
-                <span className="font-mono text-2xs text-[var(--fg-3)]">
+                <span className="font-mono text-2xs tabular-nums text-[var(--fg-3)]">
                   total {s?.total ?? 0}
                 </span>
               )}
@@ -423,19 +421,19 @@ function AddressTable({
   family: AdminFamily
 }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
-            <th className="px-4 py-2.5 text-left font-medium">Address</th>
-            <th className="px-4 py-2.5 text-left font-medium">Index</th>
-            <th className="px-4 py-2.5 text-left font-medium">State</th>
-            <th className="px-4 py-2.5 text-left font-medium">Balance</th>
-            <th className="px-4 py-2.5 text-left font-medium">Allocation</th>
-            <th className="px-4 py-2.5 text-right font-medium">Action</th>
+    <TableWrap>
+      <Table className="min-w-[760px]">
+        <THead>
+          <tr>
+            <Th>Address</Th>
+            <Th align="right">Index</Th>
+            <Th>State</Th>
+            <Th align="right">Balance</Th>
+            <Th>Allocation</Th>
+            <Th align="right">Action</Th>
           </tr>
-        </thead>
-        <tbody>
+        </THead>
+        <TBody>
           {rows.map((row) => {
             const usd = balanceByAddress.get(row.address.toLowerCase()) ?? 0
             return (
@@ -448,9 +446,9 @@ function AddressTable({
               />
             )
           })}
-        </tbody>
-      </table>
-    </div>
+        </TBody>
+      </Table>
+    </TableWrap>
   )
 }
 
@@ -470,19 +468,19 @@ function AddressRow({
   // borrowed it because the family pool was exhausted; it re-parks on release.
   const onLoan = isDisabled && row.status === 'allocated'
   return (
-    <tr className="border-b border-border last:border-0 hover:bg-[var(--bg-hover)]">
-      <td className="px-4 py-2.5 align-top">
+    <Tr>
+      <Td className="align-top">
         <Addr value={row.address} truncated />
-      </td>
-      <td className="px-4 py-2.5 align-top font-mono text-xs text-[var(--fg-2)]">
+      </Td>
+      <Td align="right" className="align-top text-xs text-[var(--fg-2)]">
         {row.addressIndex}
-      </td>
-      <td className="px-4 py-2.5 align-top">
+      </Td>
+      <Td className="align-top">
         <StateCell row={row} onLoan={onLoan} />
-      </td>
-      <td className="px-4 py-2.5 align-top">
+      </Td>
+      <Td align="right" className="align-top">
         {balancesLoading ? (
-          <Skeleton className="h-3 w-12" />
+          <Skeleton className="ml-auto h-3 w-12" />
         ) : (
           <span
             className={cn(
@@ -493,8 +491,8 @@ function AddressRow({
             {usd > 0 ? fmtUsd(usd) : '—'}
           </span>
         )}
-      </td>
-      <td className="px-4 py-2.5 align-top font-mono text-xs text-[var(--fg-2)]">
+      </Td>
+      <Td className="align-top font-mono text-xs text-[var(--fg-2)]">
         {row.allocatedToInvoiceId ? (
           <Link
             to={`/invoices?id=${encodeURIComponent(row.allocatedToInvoiceId)}`}
@@ -506,11 +504,11 @@ function AddressRow({
         ) : (
           <span className="text-[var(--fg-3)]">—</span>
         )}
-      </td>
-      <td className="px-4 py-2.5 text-right align-top">
+      </Td>
+      <Td className="text-right align-top">
         <ParkButton row={row} family={family} usd={usd} />
-      </td>
-    </tr>
+      </Td>
+    </Tr>
   )
 }
 
@@ -644,25 +642,26 @@ function ParkButton({
 
 function TableSkeleton() {
   return (
-    <div className="divide-y divide-border">
+    <div aria-busy="true">
+      <div className="h-9 border-b border-border bg-[var(--bg-2)]" />
       {Array.from({ length: 8 }).map((_, i) => (
         <div
           key={i}
-          className="grid grid-cols-[1.6fr_60px_180px_100px_120px_100px] items-center gap-4 px-4 py-3"
+          className="flex items-center gap-4 border-b border-border px-4 py-3 last:border-0"
         >
-          <Skeleton className="h-3 w-3/4" />
-          <Skeleton className="h-3 w-8" />
-          <Skeleton className="h-5 w-16 rounded-full" />
-          <Skeleton className="h-3 w-12" />
-          <Skeleton className="h-3 w-16" />
-          <Skeleton className="ml-auto h-7 w-20 rounded-md" />
+          <Skeleton className="h-3.5 w-36" />
+          <Skeleton className="hidden h-3.5 w-8 sm:block" />
+          <Skeleton className="h-5 w-16" />
+          <div className="flex-1" />
+          <Skeleton className="hidden h-3.5 w-14 sm:block" />
+          <Skeleton className="h-8 w-20" />
         </div>
       ))}
     </div>
   )
 }
 
-function EmptyState({
+function NoAddresses({
   statusFilter,
   family,
 }: {
@@ -670,38 +669,30 @@ function EmptyState({
   family: AdminFamily
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
-      <div className="flex size-11 items-center justify-center rounded-full bg-[var(--bg-2)]">
-        {statusFilter === 'disabled' ? (
-          <CheckCircle2 className="size-5 text-success" />
-        ) : (
-          <Waypoints className="size-5 text-[var(--fg-2)]" />
-        )}
-      </div>
-      <div>
-        <div className="text-sm font-medium">
-          {statusFilter === 'disabled'
-            ? `No disabled ${family} addresses`
-            : statusFilter === 'all'
-              ? `No ${family} pool addresses yet`
-              : `No ${statusFilter} addresses on ${family}`}
-        </div>
-        <p className="mt-1 max-w-md text-xs text-[var(--fg-2)]">
-          {statusFilter === 'disabled'
-            ? 'Every address in this family is in normal rotation.'
-            : statusFilter === 'all'
-              ? 'Seed the pool from Address pool to get started.'
-              : 'Try a different filter or chain family.'}
-        </p>
-      </div>
-    </div>
+    <EmptyState
+      icon={statusFilter === 'disabled' ? CheckCircle2 : Waypoints}
+      title={
+        statusFilter === 'disabled'
+          ? `No disabled ${family} addresses`
+          : statusFilter === 'all'
+            ? `No ${family} pool addresses yet`
+            : `No ${statusFilter} addresses on ${family}`
+      }
+      description={
+        statusFilter === 'disabled'
+          ? 'Every address in this family is in normal rotation.'
+          : statusFilter === 'all'
+            ? 'Seed the pool from Address pool to get started.'
+            : 'Try a different filter or chain family.'
+      }
+    />
   )
 }
 
 function ErrorRow({ message }: { message: string }) {
   return (
-    <div className="border-t border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-destructive">
-      {message}
+    <div className="p-4">
+      <ErrorState title="Could not load addresses" message={message} />
     </div>
   )
 }

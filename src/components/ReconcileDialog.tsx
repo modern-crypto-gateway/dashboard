@@ -2,7 +2,6 @@ import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  AlertTriangle,
   CheckCircle2,
   Loader2,
   Scale,
@@ -19,7 +18,9 @@ import type {
 } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
+import { ChainPill } from '@/components/ChainPill'
 import { Field } from '@/components/Field'
+import { Callout } from '@/components/States'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -38,6 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Table, TBody, Td, Th, THead, TableWrap, Tr } from '@/components/ui/table'
 
 /** Reconcile only covers account-model balances; UTXO/Monero are out of scope. */
 const ACCOUNT_FAMILIES: Family[] = ['evm', 'tron', 'solana']
@@ -155,7 +157,7 @@ export function ReconcileDialog({ open, onOpenChange, onApplied }: Props) {
         </DialogHeader>
 
         <div className="min-w-0 space-y-4">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Family" hint="Account-model only.">
               <Select
                 value={family || 'all'}
@@ -322,54 +324,50 @@ function ReconcileResult({
       </div>
 
       {nonZero.length === 0 ? (
-        <div className="flex items-center gap-2 rounded-md border border-[var(--success-border)] bg-[var(--success-bg)] px-3 py-2.5 text-xs text-success">
-          <CheckCircle2 className="size-4 shrink-0" />
+        <Callout tone="success">
           No drift — every probed address matches the ledger.
-        </div>
+        </Callout>
       ) : (
-        <div className="max-h-[320px] min-w-0 overflow-auto rounded-md border border-border">
-          <table className="w-full min-w-[560px] text-xs">
-            <thead className="sticky top-0 bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
+        <TableWrap className="max-h-[320px] min-w-0 overflow-y-auto rounded-md border border-border">
+          <Table className="min-w-[560px] text-xs">
+            <THead sticky>
               <tr>
-                <th className="px-3 py-2 text-left font-medium">Address</th>
-                <th className="px-3 py-2 text-left font-medium">Token</th>
-                <th className="px-3 py-2 text-right font-medium">On-chain</th>
-                <th className="px-3 py-2 text-right font-medium">Ledger</th>
-                <th className="px-3 py-2 text-right font-medium">Delta</th>
+                <Th>Address</Th>
+                <Th>Token</Th>
+                <Th align="right">On-chain</Th>
+                <Th align="right">Ledger</Th>
+                <Th align="right">Delta</Th>
               </tr>
-            </thead>
-            <tbody>
+            </THead>
+            <TBody>
               {nonZero.map((d) => {
                 const dec = decimalsOf(d.chainId, d.token)
-                const info = chainInfo(d.chainId)
                 const neg = d.deltaRaw.startsWith('-')
                 return (
-                  <tr
+                  <Tr
                     key={`${d.chainId}-${d.address}-${d.token}`}
-                    className="border-t border-border align-top"
+                    className="align-top"
                   >
-                    <td className="px-3 py-2">
+                    <Td>
                       <div className="flex flex-col gap-1">
                         <Addr value={d.address} />
-                        <span className="inline-flex items-center gap-1.5 text-2xs text-[var(--fg-3)]">
-                          <span
-                            className="size-[6px] rounded-full"
-                            style={{ background: info.color }}
-                          />
-                          {info.name}
-                        </span>
+                        <ChainPill
+                          chainId={d.chainId}
+                          className="text-2xs text-[var(--fg-2)]"
+                        />
                       </div>
-                    </td>
-                    <td className="px-3 py-2 font-mono">{d.token}</td>
-                    <td className="px-3 py-2 text-right font-mono tabular-nums">
+                    </Td>
+                    <Td className="font-mono">{d.token}</Td>
+                    <Td align="right">
                       {dec != null ? formatUnits(d.onChainRaw, dec) : d.onChainRaw}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono tabular-nums text-[var(--fg-2)]">
+                    </Td>
+                    <Td align="right" className="text-[var(--fg-2)]">
                       {dec != null ? formatUnits(d.ledgerRaw, dec) : d.ledgerRaw}
-                    </td>
-                    <td
+                    </Td>
+                    <Td
+                      align="right"
                       className={
-                        'px-3 py-2 text-right font-mono tabular-nums font-semibold ' +
+                        'font-semibold ' +
                         (neg ? 'text-destructive' : 'text-success')
                       }
                     >
@@ -377,42 +375,45 @@ function ReconcileResult({
                       {dec != null
                         ? formatUnitsSigned(d.deltaRaw, dec)
                         : d.deltaRaw}
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 )
               })}
-            </tbody>
-          </table>
-        </div>
+            </TBody>
+          </Table>
+        </TableWrap>
       )}
 
       {result.errors.length > 0 && (
-        <div className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs">
-          <div className="eyebrow mb-1 flex items-center gap-1.5 text-warn">
-            <AlertTriangle className="size-3.5" />
-            {result.errors.length} address
-            {result.errors.length === 1 ? '' : 'es'} could not be probed —
-            skipped, not adjusted
-          </div>
-          <ul className="space-y-1">
+        <Callout
+          tone="warn"
+          title={
+            <>
+              {result.errors.length} address
+              {result.errors.length === 1 ? '' : 'es'} could not be probed —
+              skipped, not adjusted
+            </>
+          }
+        >
+          <ul className="mt-1 space-y-1 text-xs">
             {result.errors.map((er) => (
               <li
                 key={`${er.chainId}-${er.address}`}
                 className="flex flex-wrap items-center gap-2"
               >
                 <Addr value={er.address} />
-                <span className="text-2xs text-[var(--fg-3)]">
+                <span className="text-2xs text-[var(--fg-2)]">
                   {chainInfo(er.chainId).name}
                 </span>
-                <span className="font-mono text-[var(--fg-2)]">{er.error}</span>
+                <span className="font-mono break-all text-[var(--fg-2)]">{er.error}</span>
               </li>
             ))}
           </ul>
-        </div>
+        </Callout>
       )}
 
       {result.dryRun && nonZero.length > 0 && (
-        <p className="text-2xs text-[var(--fg-2)]">
+        <p className="text-xs text-pretty text-[var(--fg-2)]">
           Review the deltas above. Applying writes one adjustment row per
           nonzero delta and can&rsquo;t be auto-undone — scope to a chain or
           address first if you only trust some of these.

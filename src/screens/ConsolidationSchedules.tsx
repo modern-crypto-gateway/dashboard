@@ -17,7 +17,6 @@ import {
 } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
-import { chainInfo } from '@/lib/chains'
 import { fmtLocal, formatUnits, useNow } from '@/lib/format'
 import type {
   AutoConsolidationSchedule,
@@ -28,7 +27,10 @@ import type {
 } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
+import { ChainPill } from '@/components/ChainPill'
 import { Field } from '@/components/Field'
+import { PageHeader } from '@/components/PageHeader'
+import { EmptyState, ErrorState, ListSkeleton } from '@/components/States'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -49,6 +51,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Table, TBody, Td, Th, THead, TableWrap, Tr } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 
 /**
@@ -105,37 +108,37 @@ export function ConsolidationSchedulesPage() {
 
   return (
     <div className="fade-in space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow">Money</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Auto-consolidation
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-[var(--fg-2)]">
+      <PageHeader
+        eyebrow="Treasury"
+        title="Auto-consolidation"
+        description={
+          <>
             Recurring sweeps of fragmented (chain, token) balances into a
             single pool address. Each schedule fires every{' '}
             <span className="font-mono">intervalHours</span>; sources below{' '}
             <span className="font-mono">minSourceBalanceRaw</span> are silently
             skipped so the cron doesn't burn more in gas than it recovers.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => q.refetch()}
-            disabled={q.isFetching}
-          >
-            <RefreshCw
-              className={'size-3.5' + (q.isFetching ? ' animate-spin' : '')}
-            />
-            Refresh
-          </Button>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-3.5" /> New schedule
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => q.refetch()}
+              disabled={q.isFetching}
+            >
+              <RefreshCw
+                className={'size-3.5' + (q.isFetching ? ' animate-spin' : '')}
+              />
+              Refresh
+            </Button>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="size-3.5" /> New schedule
+            </Button>
+          </>
+        }
+      />
 
       <ScheduleFormDialog
         mode="create"
@@ -161,15 +164,14 @@ export function ConsolidationSchedulesPage() {
       )}
 
       {q.isLoading ? (
-        <Card className="p-10 text-center text-sm text-[var(--fg-2)]">
-          Loading…
-        </Card>
+        <ListSkeleton rows={3} />
       ) : q.isError ? (
-        <Card className="p-10 text-center text-sm text-destructive">
-          {q.error instanceof Error ? q.error.message : 'Error'}
-        </Card>
+        <ErrorState
+          title="Could not load schedules"
+          message={q.error instanceof Error ? q.error.message : 'Error'}
+        />
       ) : (q.data?.schedules.length ?? 0) === 0 ? (
-        <EmptyState onCreate={() => setCreateOpen(true)} />
+        <NoSchedules onCreate={() => setCreateOpen(true)} />
       ) : (
         <div className="grid grid-cols-1 gap-4">
           {q.data!.schedules.map((s) => (
@@ -190,23 +192,19 @@ export function ConsolidationSchedulesPage() {
   )
 }
 
-function EmptyState({ onCreate }: { onCreate: () => void }) {
+function NoSchedules({ onCreate }: { onCreate: () => void }) {
   return (
-    <Card className="p-10 text-center">
-      <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-[var(--bg-2)]">
-        <CalendarClock className="size-5 text-[var(--fg-2)]" />
-      </div>
-      <div className="mt-3 text-sm text-[var(--fg-1)]">
-        No auto-consolidation schedules yet.
-      </div>
-      <p className="mx-auto mt-1 max-w-md text-xs text-[var(--fg-2)]">
-        Schedule one per (chain, token) pair to keep balances pooled into a
-        single address without operator action.
-      </p>
-      <Button size="sm" className="mt-4" onClick={onCreate}>
-        <Plus className="size-3.5" /> Create schedule
-      </Button>
-    </Card>
+    <EmptyState
+      framed
+      icon={CalendarClock}
+      title="No auto-consolidation schedules yet"
+      description="Schedule one per (chain, token) pair to keep balances pooled into a single address without operator action."
+      action={
+        <Button size="sm" onClick={onCreate}>
+          <Plus className="size-3.5" /> Create schedule
+        </Button>
+      }
+    />
   )
 }
 
@@ -219,7 +217,6 @@ function ScheduleCard({
   onEdit: () => void
   onChanged: () => void
 }) {
-  const info = chainInfo(schedule.chainId)
   const chainsQ = useQuery(CHAINS_Q)
   const chain = chainsQ.data?.chains.find((c) => c.chainId === schedule.chainId)
   const tokenMeta = chain?.tokens.find(
@@ -251,14 +248,11 @@ function ScheduleCard({
 
   return (
     <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3.5">
-        <span
-          className="size-3 rounded-sm"
-          style={{ background: info.color }}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-5 py-4">
+        <ChainPill
+          chainId={schedule.chainId}
+          className="text-base font-semibold text-foreground"
         />
-        <div className="text-base font-semibold tracking-tight">
-          {info.name}
-        </div>
         <Badge variant="outline" className="font-mono">
           {schedule.token}
         </Badge>
@@ -277,7 +271,7 @@ function ScheduleCard({
           </Badge>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             variant="outline"
@@ -298,31 +292,33 @@ function ScheduleCard({
           <DeleteScheduleButton schedule={schedule} onChanged={onChanged} />
         </div>
       </div>
-      <CardContent className="grid grid-cols-1 gap-4 pt-5 md:grid-cols-2">
+      <CardContent className="grid grid-cols-1 gap-x-6 gap-y-3 pt-4 md:grid-cols-2">
         <div className="space-y-3">
           <KeyVal label="Target address">
-            <Addr value={schedule.targetAddress} truncated={false} />
+            <span className="break-all">
+              <Addr value={schedule.targetAddress} truncated={false} />
+            </span>
           </KeyVal>
           <KeyVal label="Interval">
-            <span className="font-mono">
+            <span className="font-mono tabular-nums">
               every {schedule.intervalHours}h
             </span>
           </KeyVal>
           <KeyVal label="Per-source dust floor">
-            <span className="font-mono">
+            <span className="font-mono tabular-nums">
               {dec != null
                 ? `${formatUnits(schedule.minSourceBalanceRaw, dec)} ${schedule.token}`
                 : `${schedule.minSourceBalanceRaw} (raw)`}
             </span>
           </KeyVal>
           <KeyVal label="Max sources / run">
-            <span className="font-mono">{schedule.maxSourcesPerRun}</span>
+            <span className="font-mono tabular-nums">{schedule.maxSourcesPerRun}</span>
           </KeyVal>
           <KeyVal label="Gas ceiling">
             {schedule.maxFeeUsd ? (
-              <span className="font-mono">
+              <span className="font-mono tabular-nums">
                 ≤ ${schedule.maxFeeUsd}
-                <span className="ml-1.5 text-2xs text-[var(--fg-3)]">
+                <span className="ml-1.5 font-sans text-xs text-[var(--fg-3)]">
                   defers above this
                 </span>
               </span>
@@ -375,8 +371,8 @@ function ScheduleCard({
 
 function KeyVal({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[140px_1fr] items-start gap-3 text-sm">
-      <span className="pt-0.5 text-2xs uppercase tracking-[0.08em] text-[var(--fg-3)]">
+    <div className="grid grid-cols-1 items-start gap-1 text-sm sm:grid-cols-[160px_1fr] sm:gap-3">
+      <span className="pt-0.5 text-xs text-[var(--fg-2)]">
         {label}
       </span>
       <div className="min-w-0">{children}</div>
@@ -479,14 +475,14 @@ function SkippedReasonsList({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 text-2xs text-warn hover:underline cursor-pointer"
+        className="inline-flex items-center gap-1 text-xs text-warn hover:underline cursor-pointer"
       >
         <AlertTriangle className="size-3" />
         {open ? 'Hide' : 'Show'} skipped breakdown · {reasons.length} entr
         {reasons.length === 1 ? 'y' : 'ies'}
       </button>
       {open && (
-        <div className="mt-1.5 space-y-2 rounded-md border border-warn/40 bg-warn/10 p-2.5">
+        <div className="mt-1.5 space-y-2 rounded-md border border-[var(--warn-border)] bg-[var(--warn-bg)] p-3">
           {groups.map(([code, rows]) => (
             <details key={code} className="text-xs">
               <summary className="cursor-pointer select-none font-mono text-2xs font-semibold text-warn">
@@ -496,10 +492,10 @@ function SkippedReasonsList({
                 {rows.slice(0, 50).map((r) => (
                   <li
                     key={r.sourceAddress + r.amountRaw}
-                    className="flex flex-wrap items-center gap-2 rounded border border-warn/30 bg-card px-2 py-1"
+                    className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--warn-border)] bg-card px-2.5 py-1.5"
                   >
                     <Addr value={r.sourceAddress} />
-                    <span className="font-mono text-2xs text-[var(--fg-2)]">
+                    <span className="font-mono text-2xs tabular-nums text-[var(--fg-2)]">
                       {tokenDecimals != null
                         ? `${formatUnits(r.amountRaw, tokenDecimals)} ${token}`
                         : r.amountRaw}
@@ -539,48 +535,48 @@ function LastRunLegs({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-2xs text-primary hover:underline cursor-pointer"
+        className="text-xs text-primary hover:underline cursor-pointer"
       >
         {open ? 'Hide' : 'Show'} {status.legs.length} leg
         {status.legs.length === 1 ? '' : 's'}
       </button>
       {open && (
-        <div className="mt-1.5 overflow-hidden rounded-md border border-border">
-          <table className="w-full text-xs">
-            <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
+        <TableWrap className="mt-1.5 rounded-md border border-border">
+          <Table className="min-w-[440px] text-xs">
+            <THead>
               <tr>
-                <th className="px-2 py-1.5 text-left">Source</th>
-                <th className="px-2 py-1.5 text-left">Amount</th>
-                <th className="px-2 py-1.5 text-left">Status</th>
-                <th className="px-2 py-1.5 text-left">Tx</th>
+                <Th className="px-3">Source</Th>
+                <Th align="right" className="px-3">Amount</Th>
+                <Th className="px-3">Status</Th>
+                <Th className="px-3">Tx</Th>
               </tr>
-            </thead>
-            <tbody>
+            </THead>
+            <TBody>
               {status.legs.map((leg) => (
-                <tr key={leg.payoutId} className="border-t border-border">
-                  <td className="px-2 py-1.5">
+                <Tr key={leg.payoutId}>
+                  <Td className="px-3 py-2">
                     <Addr value={leg.sourceAddress} />
-                  </td>
-                  <td className="px-2 py-1.5 font-mono">
+                  </Td>
+                  <Td align="right" className="px-3 py-2">
                     {tokenDecimals != null
                       ? `${formatUnits(leg.amountRaw, tokenDecimals)} ${token}`
                       : leg.amountRaw}
-                  </td>
-                  <td className="px-2 py-1.5">
+                  </Td>
+                  <Td className="px-3 py-2">
                     <LegBadge status={leg.status} />
-                  </td>
-                  <td className="px-2 py-1.5">
+                  </Td>
+                  <Td className="px-3 py-2">
                     {leg.txHash ? (
                       <Addr value={leg.txHash} />
                     ) : (
                       <span className="text-[var(--fg-3)]">—</span>
                     )}
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TBody>
+          </Table>
+        </TableWrap>
       )}
     </div>
   )
@@ -650,7 +646,7 @@ function DeleteScheduleButton({
             it later — disabling preserves the forensic record of past firings.
           </DialogDescription>
         </DialogHeader>
-        <div className="rounded-md border border-border bg-secondary px-3 py-2 text-sm">
+        <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-sm">
           <div className="font-mono text-xs">
             chain {schedule.chainId} · {schedule.token}
           </div>
@@ -667,9 +663,9 @@ function DeleteScheduleButton({
             Cancel
           </Button>
           <Button
+            variant="destructive"
             onClick={() => del.mutate()}
             disabled={del.isPending}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
             {del.isPending ? (
               <Loader2 className="size-3.5 animate-spin" />
@@ -873,7 +869,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="min-w-0 sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarClock className="size-4" />
@@ -887,13 +883,13 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
         </DialogHeader>
 
         <form
-          className="space-y-3"
+          className="min-w-0 space-y-4"
           onSubmit={(e) => {
             e.preventDefault()
             save.mutate()
           }}
         >
-          <div className="grid grid-cols-[1fr_140px] gap-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px]">
             <Field label="Chain">
               <Select
                 value={chainId}
@@ -965,7 +961,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
                 <button
                   type="button"
                   onClick={() => setTarget('')}
-                  className="text-2xs text-[var(--fg-3)] hover:text-foreground cursor-pointer"
+                  className="text-xs text-[var(--fg-2)] hover:text-foreground cursor-pointer"
                 >
                   {usingPicker ? 'Custom address' : 'Use picker'}
                 </button>
@@ -1021,7 +1017,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
             )}
           </Field>
 
-          <div className="grid grid-cols-[1fr_1fr] gap-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field
               label="Interval (hours)"
               hint="1–720 (max 30 days)"
@@ -1063,7 +1059,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
                 <button
                   type="button"
                   onClick={() => setMinRaw(suggestion.raw)}
-                  className="text-2xs text-primary hover:underline cursor-pointer"
+                  className="text-xs text-primary hover:underline cursor-pointer"
                   title={`Suggested: ${suggestion.label}`}
                 >
                   Use suggested ({suggestion.label})
@@ -1099,7 +1095,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
                 <button
                   type="button"
                   onClick={() => setMaxFeeUsd('')}
-                  className="text-2xs text-[var(--fg-3)] hover:text-foreground cursor-pointer"
+                  className="text-xs text-[var(--fg-2)] hover:text-foreground cursor-pointer"
                 >
                   Clear
                 </button>
@@ -1120,7 +1116,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
             </div>
           </Field>
 
-          <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-border bg-card px-3 py-2.5">
             <input
               id="schedule-enabled"
               type="checkbox"
@@ -1134,7 +1130,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
             >
               Enabled
             </label>
-            <span className="ml-auto text-xs text-[var(--fg-3)]">
+            <span className="ml-auto text-xs text-[var(--fg-2)]">
               Disabled schedules are skipped by the cron entirely.
             </span>
           </div>
@@ -1166,7 +1162,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
         </form>
 
         {!isEdit && (
-          <p className="text-2xs text-[var(--fg-3)]">
+          <p className="text-xs text-[var(--fg-2)]">
             Use the manual flow on{' '}
             <a href="/pool" className="inline-flex items-center gap-0.5 text-primary hover:underline">
               Address pool <ExternalLink className="size-3" />

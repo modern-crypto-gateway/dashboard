@@ -20,6 +20,7 @@ import type {
 
 import { Addr } from '@/components/Addr'
 import { Field } from '@/components/Field'
+import { Callout } from '@/components/States'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -38,6 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Table, TBody, Td, Th, THead, TableWrap, Tr } from '@/components/ui/table'
 
 type Props = {
   open: boolean
@@ -218,7 +220,7 @@ export function ConsolidateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="min-w-0 sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Layers className="size-4" /> Consolidate token balance
@@ -229,20 +231,20 @@ export function ConsolidateDialog({
             the aggregate. This plans one internal sweep per holder into{' '}
             <span className="font-mono">target</span>; each leg rides the
             normal executor cron through top-up → broadcast → confirmation.
-            Poll status below; merchant payouts from <span className="font-mono">target</span>{' '}
+            Poll status below; store payouts from <span className="font-mono">target</span>{' '}
             will succeed once every leg confirms.
           </DialogDescription>
         </DialogHeader>
 
         {!plan && (
           <form
-            className="space-y-3"
+            className="min-w-0 space-y-4"
             onSubmit={(e) => {
               e.preventDefault()
               planMut.mutate()
             }}
           >
-            <div className="grid grid-cols-[1fr_140px] gap-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px]">
               <Field label="Chain">
                 <Select
                   value={chainId}
@@ -313,7 +315,7 @@ export function ConsolidateDialog({
                   <button
                     type="button"
                     onClick={() => setTarget('')}
-                    className="text-2xs text-[var(--fg-3)] hover:text-foreground cursor-pointer"
+                    className="text-xs text-[var(--fg-2)] hover:text-foreground cursor-pointer"
                   >
                     {target && !targetCandidates.some((r) => r.address === target)
                       ? 'Use picker'
@@ -378,13 +380,13 @@ export function ConsolidateDialog({
             </Field>
 
             <details className="rounded-md border border-border bg-[var(--bg-2)] open:pb-3">
-              <summary className="flex cursor-pointer select-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-[var(--fg-2)]">
+              <summary className="flex cursor-pointer select-none items-center justify-between gap-2 px-3 py-2.5 text-xs font-medium text-[var(--fg-2)] hover:text-foreground">
                 <span>Advanced — per-call overrides</span>
                 <span className="text-2xs text-[var(--fg-3)]">
                   optional
                 </span>
               </summary>
-              <div className="grid grid-cols-2 gap-2 px-3 pt-1">
+              <div className="grid grid-cols-1 gap-3 px-3 pt-1 sm:grid-cols-2">
                 <Field
                   label="Dust floor (raw)"
                   hint={
@@ -490,8 +492,8 @@ function ConsolidationStatus({
     tokenDecimals != null ? formatUnits(raw, tokenDecimals) : raw
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2 text-xs">
+    <div className="min-w-0 space-y-4">
+      <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-xs">
         <span className="eyebrow">Consolidation</span>
         <span className="font-mono">
           {plan.consolidationId.slice(0, 8)}…{plan.consolidationId.slice(-6)}
@@ -522,11 +524,11 @@ function ConsolidationStatus({
               <AlertTriangle className="size-3" /> {summary.failed} failed
             </Badge>
           ) : null}
-          <span className="text-2xs text-[var(--fg-3)]">
-            <span className="font-mono">{summary.confirmed}</span> confirmed ·{' '}
-            <span className="font-mono">{summary.failed}</span> failed ·{' '}
-            <span className="font-mono">{summary.canceled}</span> canceled ·{' '}
-            <span className="font-mono">{summary.total}</span> total
+          <span className="text-xs text-[var(--fg-2)]">
+            <span className="font-mono tabular-nums">{summary.confirmed}</span> confirmed ·{' '}
+            <span className="font-mono tabular-nums">{summary.failed}</span> failed ·{' '}
+            <span className="font-mono tabular-nums">{summary.canceled}</span> canceled ·{' '}
+            <span className="font-mono tabular-nums">{summary.total}</span> total
           </span>
           <Button
             type="button"
@@ -544,17 +546,17 @@ function ConsolidationStatus({
         </div>
       )}
 
-      <div className="overflow-hidden rounded-md border border-border">
-        <table className="w-full text-xs">
-          <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
+      <TableWrap className="rounded-md border border-border">
+        <Table className="min-w-[480px] text-xs">
+          <THead>
             <tr>
-              <th className="px-3 py-2 text-left">Source</th>
-              <th className="px-3 py-2 text-left">Amount</th>
-              <th className="px-3 py-2 text-left">Status</th>
-              <th className="px-3 py-2 text-left">Tx</th>
+              <Th>Source</Th>
+              <Th align="right">Amount</Th>
+              <Th>Status</Th>
+              <Th>Tx</Th>
             </tr>
-          </thead>
-          <tbody>
+          </THead>
+          <TBody>
             {(statusQ.data?.legs ?? plan.legs.map((l) => ({
               ...l,
               status: 'planned' as const,
@@ -562,57 +564,64 @@ function ConsolidationStatus({
               topUpTxHash: null,
               lastError: null,
             }))).map((leg) => (
-              <tr key={leg.payoutId} className="border-t border-border">
-                <td className="px-3 py-2 align-top">
+              <Tr key={leg.payoutId} className="align-top">
+                <Td>
                   <Addr value={leg.sourceAddress} />
-                </td>
-                <td className="px-3 py-2 align-top font-mono">
+                </Td>
+                <Td align="right">
                   {fmt(leg.amountRaw)}
-                </td>
-                <td className="px-3 py-2 align-top">
+                </Td>
+                <Td>
                   <LegStatusBadge status={leg.status} />
                   {leg.lastError && (
-                    <div className="mt-0.5 max-w-[260px] truncate font-mono text-2xs text-destructive">
+                    <div
+                      className="mt-1 max-w-[260px] truncate font-mono text-2xs text-destructive"
+                      title={leg.lastError}
+                    >
                       {leg.lastError}
                     </div>
                   )}
-                </td>
-                <td className="px-3 py-2 align-top">
+                </Td>
+                <Td>
                   {leg.txHash ? (
                     <Addr value={leg.txHash} />
                   ) : (
                     <span className="text-[var(--fg-3)]">—</span>
                   )}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TBody>
+        </Table>
+      </TableWrap>
 
       {plan.skipped.length > 0 && (
-        <div className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs">
-          <div className="eyebrow mb-1 text-warn">
-            {plan.skipped.length} source{plan.skipped.length === 1 ? '' : 's'}{' '}
-            skipped — fund a sponsor and re-run to pick up the rest
-          </div>
-          <ul className="space-y-1">
+        <Callout
+          tone="warn"
+          title={
+            <>
+              {plan.skipped.length} source{plan.skipped.length === 1 ? '' : 's'}{' '}
+              skipped — fund a sponsor and re-run to pick up the rest
+            </>
+          }
+        >
+          <ul className="mt-1 space-y-1 text-xs">
             {plan.skipped.map((s) => (
               <li
                 key={s.sourceAddress}
                 className="flex flex-wrap items-center gap-2"
               >
                 <Addr value={s.sourceAddress} />
-                <span className="font-mono text-[var(--fg-2)]">
+                <span className="font-mono tabular-nums text-[var(--fg-2)]">
                   {fmt(s.amountRaw)}
                 </span>
-                <span className="font-mono text-2xs text-[var(--fg-3)]">
+                <span className="font-mono text-2xs text-[var(--fg-2)]">
                   {s.reason}
                 </span>
               </li>
             ))}
           </ul>
-        </div>
+        </Callout>
       )}
 
       <DialogFooter>
