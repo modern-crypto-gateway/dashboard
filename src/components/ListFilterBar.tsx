@@ -166,7 +166,7 @@ function SegmentedToggle({
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className="flex h-9 w-full items-center rounded-[10px] bg-[var(--bg-active)] p-0.5"
+      className="flex h-9 w-full items-center gap-0.5 overflow-x-auto rounded-[10px] bg-[var(--bg-active)] p-0.5 [scrollbar-width:none]"
     >
       {options.map((o) => (
         <button
@@ -176,7 +176,7 @@ function SegmentedToggle({
           aria-checked={value === o.v}
           onClick={() => onChange(o.v)}
           className={cn(
-            'h-8 flex-1 cursor-pointer truncate rounded-lg px-2.5 text-sm font-medium text-[var(--fg-2)] transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+            'h-8 flex-1 basis-auto cursor-pointer rounded-lg px-3 text-sm font-medium whitespace-nowrap text-[var(--fg-2)] transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
             value === o.v && 'bg-[var(--bg-1)] text-foreground shadow-[var(--shadow-sm)]',
           )}
         >
@@ -488,6 +488,7 @@ function FieldRenderer({
 function isWideField(f: FilterField): boolean {
   return (
     f.kind === 'enumSet' ||
+    f.kind === 'tri' ||
     f.kind === 'tokens' ||
     f.kind === 'dateRange' ||
     f.kind === 'numberRange'
