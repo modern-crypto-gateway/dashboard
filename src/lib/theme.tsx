@@ -1,7 +1,14 @@
 import * as React from 'react'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
-export type Accent = 'blue' | 'violet' | 'mint'
+export type Accent = 'lime' | 'iris' | 'blue'
+
+/** Older stored values map onto the current presets. */
+function normalizeAccent(v: string | null): Accent {
+  if (v === 'iris' || v === 'violet') return 'iris'
+  if (v === 'blue') return 'blue'
+  return 'lime'
+}
 
 interface ThemeState {
   mode: ThemeMode
@@ -38,8 +45,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return (localStorage.getItem(STORAGE_MODE) as ThemeMode) || 'system'
   })
   const [accent, setAccentState] = React.useState<Accent>(() => {
-    if (typeof window === 'undefined') return 'blue'
-    return (localStorage.getItem(STORAGE_ACCENT) as Accent) || 'blue'
+    if (typeof window === 'undefined') return 'lime'
+    return normalizeAccent(localStorage.getItem(STORAGE_ACCENT))
   })
   const [resolvedTheme, setResolved] = React.useState<'light' | 'dark'>(() =>
     typeof window === 'undefined' ? 'light' : resolve(mode),
@@ -48,7 +55,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const setMode = React.useCallback((m: ThemeMode) => {
     setModeState(m)
     localStorage.setItem(STORAGE_MODE, m)
-    applyTheme(m, (localStorage.getItem(STORAGE_ACCENT) as Accent) || 'blue')
+    applyTheme(m, normalizeAccent(localStorage.getItem(STORAGE_ACCENT)))
     setResolved(resolve(m))
   }, [])
 

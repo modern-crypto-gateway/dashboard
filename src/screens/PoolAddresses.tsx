@@ -13,7 +13,7 @@ import {
   Search,
   Waypoints,
   X,
-} from 'lucide-react'
+} from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { FAMILY_COLOR } from '@/lib/chains'

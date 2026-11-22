@@ -9,22 +9,24 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'bg-primary text-primary-foreground hover:bg-[var(--accent-hover)]',
+          'bg-primary text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:bg-[var(--primary-hover)]',
+        signal:
+          'bg-signal text-signal-foreground hover:bg-[var(--accent-hover)]',
         destructive:
           'bg-destructive text-destructive-foreground hover:bg-destructive/90',
         outline:
-          'border border-[var(--border-strong)] bg-card text-foreground hover:bg-[var(--bg-hover)]',
+          'border border-border bg-card text-foreground shadow-[var(--shadow-sm)] hover:bg-[var(--bg-hover)]',
         secondary:
           'bg-[var(--muted-bg)] text-foreground hover:bg-[var(--bg-active)]',
         ghost: 'text-[var(--fg-1)] hover:bg-[var(--bg-hover)] hover:text-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        default: 'h-9 px-3.5',
-        sm: 'h-8 rounded-md px-2.5',
-        lg: 'h-10 rounded-md px-5 text-base',
-        icon: 'size-9',
-        'icon-sm': 'size-8',
+        default: 'h-9 px-3.5 rounded-lg',
+        sm: 'h-8 rounded-[10px] px-3',
+        lg: 'h-11 rounded-xl px-5 text-base',
+        icon: 'size-9 rounded-lg',
+        'icon-sm': 'size-8 rounded-[10px]',
       },
     },
     defaultVariants: { variant: 'default', size: 'default' },

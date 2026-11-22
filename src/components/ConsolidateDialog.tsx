@@ -7,7 +7,7 @@ import {
   Layers,
   Loader2,
   RefreshCw,
-} from 'lucide-react'
+} from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { formatUnits } from '@/lib/format'

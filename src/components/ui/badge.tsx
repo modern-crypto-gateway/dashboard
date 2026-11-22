@@ -4,12 +4,12 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const badgeVariants = cva(
-  'inline-flex h-5 items-center justify-center gap-1 rounded-sm border px-1.5 text-2xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 transition-[color,background-color]',
+  'inline-flex h-[22px] items-center justify-center gap-1 rounded-full border px-2 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 transition-[color,background-color]',
   {
     variants: {
       variant: {
         default:
-          'border-border bg-[var(--muted-bg)] text-[var(--muted-fg)]',
+          'border-transparent bg-[var(--muted-bg)] text-[var(--muted-fg)]',
         success:
           'border-[var(--success-border)] bg-[var(--success-bg)] text-success',
         warn:
@@ -17,7 +17,7 @@ const badgeVariants = cva(
         danger:
           'border-[var(--danger-border)] bg-[var(--danger-bg)] text-destructive',
         accent:
-          'border-[var(--accent-border)] bg-[var(--accent-bg)] text-primary',
+          'border-[var(--accent-border)] bg-[var(--accent-bg)] text-[var(--accent-ink)]',
         outline: 'border-border text-foreground',
       },
     },

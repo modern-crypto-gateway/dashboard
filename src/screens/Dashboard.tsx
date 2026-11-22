@@ -1,83 +1,87 @@
 import * as React from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import {
-  AlertTriangle,
-  ArrowRight,
-  CheckCircle2,
-  Link2,
-  LifeBuoy,
-  Plus,
-  RefreshCw,
-  Waypoints,
-  Webhook,
-} from 'lucide-react'
 
 import { api } from '@/lib/api'
-import { chainInfo, FAMILY_COLOR } from '@/lib/chains'
-import { fmtLocalTime, fmtUsd, fmtNum } from '@/lib/format'
+import { chainInfo } from '@/lib/chains'
+import { fmtRel, fmtUsd, truncateAddr } from '@/lib/format'
 import { useHeldQueue } from '@/lib/held'
+import { useActiveMerchant } from '@/lib/merchants'
 import { cn } from '@/lib/utils'
 import type {
   BalancesSnapshot,
   ChainInventoryEntry,
   Family,
+  GatewayInvoice,
+  GatewayPayout,
   Health,
+  InvoiceListResponse,
   OrphanTransaction,
+  PayoutListResponse,
   PoolStatsRow,
   WebhookDelivery,
 } from '@/lib/types'
 
-import { Addr } from '@/components/Addr'
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  LifeBuoy,
+  Link2,
+  Plus,
+  Waypoints,
+  Webhook,
+} from '@/components/icons'
+import {
+  BarTrend,
+  Donut,
+  Segmented,
+  SegmentedBar,
+  Spark,
+  SparkBars,
+  compactUsd,
+  fullUsd,
+  type Point,
+  type Slice,
+} from '@/components/charts'
+import { MerchantSwitcher } from '@/components/MerchantSwitcher'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/States'
-import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
-import { Skeleton } from '@/components/ui/skeleton'
 import { StatusDot } from '@/components/StatusDot'
-import { Table, TableWrap, TBody, Td, Th, THead, Tr } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+
+/* ── Queries (same requests the dedicated pages make) ─────── */
 
 const HEALTH_Q = {
   queryKey: ['gw', 'health'] as const,
   queryFn: () => api<Health>('/api/gw/health'),
   refetchInterval: 30_000,
 }
-
 const POOL_Q = {
   queryKey: ['gw', 'pool-stats'] as const,
-  queryFn: () =>
-    api<{ stats: PoolStatsRow[] }>('/api/gw/admin/pool/stats'),
+  queryFn: () => api<{ stats: PoolStatsRow[] }>('/api/gw/admin/pool/stats'),
   refetchInterval: 60_000,
 }
-
 const BAL_Q = {
   queryKey: ['gw', 'balances', 'db'] as const,
   queryFn: () =>
-    api<{ snapshot: BalancesSnapshot; cached: boolean }>(
-      '/api/gw/admin/balances',
-    ),
+    api<{ snapshot: BalancesSnapshot; cached: boolean }>('/api/gw/admin/balances'),
   refetchInterval: 60_000,
 }
-
 const CHAINS_Q = {
   queryKey: ['gw', 'chains'] as const,
-  queryFn: () =>
-    api<{ chains: ChainInventoryEntry[] }>('/api/gw/admin/chains'),
+  queryFn: () => api<{ chains: ChainInventoryEntry[] }>('/api/gw/admin/chains'),
   refetchInterval: 120_000,
 }
-
-// Same keys + requests as the Orphans and Webhooks pages, so the
-// dashboard shares their cache instead of adding traffic.
 const ORPHANS_Q = {
   queryKey: ['orphans'] as const,
   queryFn: () =>
-    api<{ orphans: OrphanTransaction[] }>(
-      '/api/gw/admin/orphan-transactions?limit=100',
-    ),
+    api<{ orphans: OrphanTransaction[] }>('/api/gw/admin/orphan-transactions?limit=100'),
   refetchInterval: 60_000,
 }
-
 const DEAD_HOOKS_Q = {
   queryKey: ['webhook-deliveries', 'dead'] as const,
   queryFn: () =>
@@ -87,11 +91,62 @@ const DEAD_HOOKS_Q = {
   refetchInterval: 60_000,
 }
 
-/** Families that participate in the reusable address pool. */
+/** Latest page, exactly as the Invoices / Payouts pages request it. */
+const STORE_PAGE = 50
 const POOL_FAMILIES: Family[] = ['evm', 'tron', 'solana']
 const LOW_POOL = 3
 
+type Range = '7' | '14' | '30'
+
+/* ── Helpers ──────────────────────────────────────────────── */
+
+const dayKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+function buildDays(n: number): Point[] {
+  const out: Point[] = []
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(today.getDate() - i)
+    out.push({
+      key: dayKey(d),
+      label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    })
+  }
+  return out
+}
+
+const num = (s: string | null | undefined) => {
+  const n = s ? parseFloat(s) : 0
+  return isFinite(n) ? n : 0
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  completed: 'var(--chart-1-fill)',
+  processing: 'var(--chart-2)',
+  pending: 'var(--chart-muted)',
+  expired: 'var(--fg-3)',
+  canceled: 'var(--chart-3)',
+}
+
+const STATUS_BADGE: Record<string, 'success' | 'accent' | 'default' | 'warn' | 'danger'> = {
+  completed: 'success',
+  processing: 'accent',
+  pending: 'default',
+  expired: 'warn',
+  canceled: 'danger',
+}
+
+function errMsg(e: unknown) {
+  return e instanceof Error ? e.message : 'Request failed'
+}
+
+/* ── Page ─────────────────────────────────────────────────── */
+
 export function DashboardPage() {
+  const [range, setRange] = React.useState<Range>('14')
   const health = useQuery(HEALTH_Q)
   const pool = useQuery(POOL_Q)
   const bal = useQuery(BAL_Q)
@@ -100,153 +155,444 @@ export function DashboardPage() {
   const deadHooks = useQuery(DEAD_HOOKS_Q)
   const held = useHeldQueue({ refetchInterval: 30_000 })
 
+  const { active } = useActiveMerchant()
+  const canList =
+    !!active && active.source !== 'gateway-only' && active.apiKeyFingerprint !== null
+
+  const invoices = useQuery({
+    enabled: canList,
+    queryKey: ['dashboard', 'invoices', active?.id ?? null] as const,
+    queryFn: () =>
+      api<Partial<InvoiceListResponse> | null>(
+        `/api/mg/${encodeURIComponent(active!.id)}/invoices?limit=${STORE_PAGE}&offset=0`,
+      ),
+    refetchInterval: 60_000,
+  })
+  const payouts = useQuery({
+    enabled: canList,
+    queryKey: ['dashboard', 'payouts', active?.id ?? null] as const,
+    queryFn: () =>
+      api<Partial<PayoutListResponse> | null>(
+        `/api/mg/${encodeURIComponent(active!.id)}/payouts?limit=${STORE_PAGE}&offset=0&kind=standard`,
+      ),
+    refetchInterval: 60_000,
+  })
+
+  const invList: GatewayInvoice[] = React.useMemo(
+    () => (Array.isArray(invoices.data?.invoices) ? invoices.data.invoices : []),
+    [invoices.data],
+  )
+  const payList: GatewayPayout[] = React.useMemo(
+    () => (Array.isArray(payouts.data?.payouts) ? payouts.data.payouts : []),
+    [payouts.data],
+  )
+
+  const n = Number(range)
+  const hasMore = invoices.data?.hasMore === true
+  const series = React.useMemo(() => {
+    const days = buildDays(n)
+    const idx = new Map(days.map((d, i) => [d.key, i]))
+    for (const d of days) {
+      d.collected = 0
+      d.invoiced = 0
+      d.count = 0
+      d.paidOut = 0
+    }
+    const statusCounts: Record<string, number> = {}
+    let collected = 0
+    let invoiced = 0
+    let count = 0
+    for (const inv of invList) {
+      const ci = idx.get(dayKey(new Date(inv.createdAt)))
+      if (ci != null) {
+        days[ci].invoiced = Number(days[ci].invoiced) + num(inv.amountUsd)
+        days[ci].count = Number(days[ci].count) + 1
+        invoiced += num(inv.amountUsd)
+        count += 1
+        statusCounts[inv.status] = (statusCounts[inv.status] ?? 0) + 1
+      }
+      const paid = num(inv.paidUsd)
+      const ui = idx.get(dayKey(new Date(inv.updatedAt)))
+      if (paid > 0 && ui != null) {
+        days[ui].collected = Number(days[ui].collected) + paid
+        collected += paid
+      }
+    }
+    let paidOut = 0
+    let payoutCount = 0
+    for (const p of payList) {
+      if (p.status !== 'confirmed') continue
+      const pi = idx.get(dayKey(new Date(p.createdAt)))
+      if (pi == null) continue
+      const usd = num(p.quotedAmountUsd)
+      days[pi].paidOut = Number(days[pi].paidOut) + usd
+      paidOut += usd
+      payoutCount += 1
+    }
+    const oldest = invList.reduce<number>(
+      (m, i) => Math.min(m, Date.parse(i.createdAt) || m),
+      Number.POSITIVE_INFINITY,
+    )
+    const truncated = hasMore && oldest > Date.parse(days[0].key + 'T00:00:00')
+    return { days, collected, invoiced, count, paidOut, payoutCount, statusCounts, truncated }
+  }, [invList, payList, n, hasMore])
+
   const bootstrapGaps = React.useMemo(() => {
-    const chainList = chains.data?.chains ?? []
-    if (chainList.length === 0) return null
-    const wired = chainList.filter((c) => c.wired)
-    const webhookGaps = wired.filter(
-      (c) => c.webhooksSupported && !c.webhooks,
-    ).length
-    const notReady = wired.filter((c) => !c.bootstrapReady).length
-    return { webhookGaps, notReady, total: wired.length }
+    const list = chains.data?.chains ?? []
+    if (list.length === 0) return null
+    const wired = list.filter((c) => c.wired)
+    return { notReady: wired.filter((c) => !c.bootstrapReady).length }
   }, [chains.data])
 
-  const lowPoolFamilies = React.useMemo(() => {
-    const rows = pool.data?.stats ?? []
-    return rows.filter(
-      (r) => POOL_FAMILIES.includes(r.family) && r.total > 0 && r.available < LOW_POOL,
-    )
-  }, [pool.data])
-
-  const balSnap = bal.data?.snapshot
-
-  const refreshAll = () => {
-    health.refetch()
-    pool.refetch()
-    bal.refetch()
-    chains.refetch()
-    orphans.refetch()
-    deadHooks.refetch()
-    held.refetch()
-  }
+  const lowPool = (pool.data?.stats ?? []).filter(
+    (r) => POOL_FAMILIES.includes(r.family) && r.total > 0 && r.available < LOW_POOL,
+  ).length
 
   const attention: AttentionItem[] = [
-    {
-      key: 'held',
-      label: 'Held payouts',
-      hint: 'Stuck legs waiting for recovery',
-      icon: LifeBuoy,
-      to: '/held-payouts',
-      count: held.data?.count,
-      loading: held.isLoading,
-      failed: held.isError,
-    },
-    {
-      key: 'orphans',
-      label: 'Orphan transactions',
-      hint: 'Deposits not matched to an invoice',
-      icon: AlertTriangle,
-      to: '/orphans',
-      count: orphans.data?.orphans.length,
-      loading: orphans.isLoading,
-      failed: orphans.isError,
-    },
-    {
-      key: 'hooks',
-      label: 'Dead webhooks',
-      hint: 'Store deliveries that gave up retrying',
-      icon: Webhook,
-      to: '/webhooks',
-      count: deadHooks.data?.deliveries.length,
-      loading: deadHooks.isLoading,
-      failed: deadHooks.isError,
-    },
-    {
-      key: 'chains',
-      label: 'Chains not ready',
-      hint:
-        bootstrapGaps && bootstrapGaps.webhookGaps > 0
-          ? `${bootstrapGaps.webhookGaps} missing Alchemy webhook${bootstrapGaps.webhookGaps === 1 ? '' : 's'}`
-          : 'Wired chains missing bootstrap config',
-      icon: Link2,
-      to: '/chains',
-      count: bootstrapGaps?.notReady,
-      loading: chains.isLoading,
-      failed: chains.isError,
-    },
-    {
-      key: 'pool',
-      label: 'Pool running low',
-      hint: `Families with fewer than ${LOW_POOL} free addresses`,
-      icon: Waypoints,
-      to: '/pool',
-      count: pool.data ? lowPoolFamilies.length : undefined,
-      loading: pool.isLoading,
-      failed: pool.isError,
-    },
+    { key: 'held', label: 'Held payouts', icon: LifeBuoy, to: '/held-payouts', count: held.data?.count, loading: held.isLoading, failed: held.isError },
+    { key: 'orphans', label: 'Orphan transactions', icon: AlertTriangle, to: '/orphans', count: orphans.data?.orphans.length, loading: orphans.isLoading, failed: orphans.isError },
+    { key: 'hooks', label: 'Dead webhooks', icon: Webhook, to: '/webhooks', count: deadHooks.data?.deliveries.length, loading: deadHooks.isLoading, failed: deadHooks.isError },
+    { key: 'chains', label: 'Chains not ready', icon: Link2, to: '/chains', count: bootstrapGaps?.notReady, loading: chains.isLoading, failed: chains.isError },
+    { key: 'pool', label: 'Low address pool', icon: Waypoints, to: '/pool', count: pool.data ? lowPool : undefined, loading: pool.isLoading, failed: pool.isError },
   ]
+  const openIssues = attention.reduce((a, i) => a + (i.count ?? 0), 0)
+
+  const snap = bal.data?.snapshot
+  const storeLoading = canList && (invoices.isLoading || payouts.isLoading)
+  const rangeLabel = `last ${n} days`
 
   return (
     <div className="fade-in space-y-6">
       <PageHeader
-        eyebrow="Overview"
-        title="Dashboard"
+        title="Overview"
         description={
-          balSnap ? (
+          active ? (
             <>
-              Balances as of{' '}
-              <span className="font-mono text-[var(--fg-1)]">
-                {fmtLocalTime(balSnap.generatedAt)}
-              </span>{' '}
-              · refreshes every minute
+              <span className="text-foreground">{active.name}</span> · {rangeLabel}
             </>
           ) : (
-            'Gateway health, balances and anything that needs an operator.'
+            'Gateway health, money in and money out.'
           )
         }
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={refreshAll}>
-              <RefreshCw className="size-3.5" /> Refresh
-            </Button>
+            <Segmented<Range>
+              ariaLabel="Time range"
+              value={range}
+              onChange={setRange}
+              options={[
+                { value: '7', label: '7D' },
+                { value: '14', label: '14D' },
+                { value: '30', label: '30D' },
+              ]}
+            />
+            <MerchantSwitcher />
             <Button size="sm" asChild>
               <Link to="/invoices">
-                <Plus className="size-3.5" /> New invoice
+                <Plus className="size-4" /> New invoice
               </Link>
             </Button>
           </>
         }
       />
 
-      <AttentionStrip items={attention} />
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <BalanceHero
-          snapshot={balSnap}
+      {/* ── KPI tiles ───────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatTile
+          label="Total balance"
           loading={bal.isLoading}
-          error={bal.isError ? errMsg(bal.error) : null}
+          value={bal.isError ? '—' : fmtUsd(snap?.totalUsd ?? 0)}
+          sub={
+            snap
+              ? `${snap.families.reduce((a, f) => a + f.chains.length, 0)} chains · updated ${fmtRel(Math.floor(Date.parse(snap.generatedAt) / 1000))}`
+              : bal.isError
+                ? errMsg(bal.error)
+                : undefined
+          }
+          footer={<BalanceBar snapshot={snap} />}
         />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1">
-          <HealthCard health={health.data} loading={health.isLoading} error={health.isError} />
-          <PoolCard stats={pool.data?.stats} loading={pool.isLoading} />
-        </div>
+        <StatTile
+          label={`Collected · ${n}D`}
+          loading={storeLoading}
+          value={canList ? fmtUsd(series.collected) : '—'}
+          sub={canList ? `of ${fmtUsd(series.invoiced)} invoiced` : 'Pick a store with an API key'}
+          footer={<Spark values={series.days.map((d) => Number(d.collected))} />}
+        />
+        <StatTile
+          label={`Invoices · ${n}D`}
+          loading={storeLoading}
+          value={canList ? String(series.count) : '—'}
+          sub={
+            canList && series.count > 0
+              ? `${Math.round(((series.statusCounts.completed ?? 0) / series.count) * 100)}% completed`
+              : canList
+                ? 'None in this range'
+                : undefined
+          }
+          footer={<SparkBars values={series.days.map((d) => Number(d.count))} />}
+        />
+        <StatTile
+          label={`Paid out · ${n}D`}
+          loading={storeLoading}
+          value={canList ? fmtUsd(series.paidOut) : '—'}
+          sub={
+            canList
+              ? `${series.payoutCount} confirmed payout${series.payoutCount === 1 ? '' : 's'}`
+              : undefined
+          }
+          footer={
+            <Spark
+              values={series.days.map((d) => Number(d.paidOut))}
+              color="var(--chart-2)"
+              fill="var(--chart-2)"
+            />
+          }
+        />
       </div>
 
-      <TopAddressesCard snapshot={balSnap} loading={bal.isLoading} />
+      {/* ── Volume + balance mix ────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <Card className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">Payment volume</h2>
+              <p className="mt-0.5 text-sm text-[var(--fg-2)]">
+                Daily USD, {rangeLabel}
+                {series.truncated && ` · from the latest ${STORE_PAGE} invoices`}
+              </p>
+            </div>
+            <Legend
+              items={[
+                { name: 'Collected', color: 'var(--chart-1-fill)' },
+                { name: 'Invoiced', color: 'var(--chart-muted)' },
+              ]}
+            />
+          </div>
+          <div className="mt-4">
+            {!canList ? (
+              <EmptyState
+                compact
+                title="No store selected"
+                description="Volume comes from a store's invoices. Add or pick a store with an API key."
+                action={
+                  <Button size="sm" variant="outline" asChild>
+                    <Link to="/stores">Open stores</Link>
+                  </Button>
+                }
+              />
+            ) : storeLoading ? (
+              <Skeleton className="h-[260px] w-full rounded-xl" />
+            ) : invoices.isError ? (
+              <div className="grid h-[260px] place-items-center text-sm text-destructive">
+                {errMsg(invoices.error)}
+              </div>
+            ) : (
+              <BarTrend
+                height={260}
+                data={series.days}
+                series={[
+                  { key: 'collected', name: 'Collected', color: 'var(--chart-1-fill)' },
+                  { key: 'invoiced', name: 'Invoiced', color: 'var(--chart-muted)' },
+                ]}
+              />
+            )}
+          </div>
+        </Card>
+
+        <BalanceMix snapshot={snap} loading={bal.isLoading} />
+      </div>
+
+      {/* ── Attention · outcomes · system ───────────────── */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card className="p-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold">Needs attention</h2>
+            {attention.every((a) => !a.loading) &&
+              (openIssues === 0 ? (
+                <Badge variant="success">
+                  <CheckCircle2 /> All clear
+                </Badge>
+              ) : (
+                <Badge variant="warn">{openIssues} open</Badge>
+              ))}
+          </div>
+          <ul className="mt-3 -mx-2">
+            {attention.map((a) => (
+              <AttentionRow key={a.key} item={a} />
+            ))}
+          </ul>
+        </Card>
+
+        <Card className="p-5">
+          <h2 className="text-base font-semibold">Invoice outcomes</h2>
+          <p className="mt-0.5 text-sm text-[var(--fg-2)]">
+            {canList ? `${series.count} invoices, ${rangeLabel}` : 'Pick a store to see outcomes'}
+          </p>
+          <StatusMix counts={series.statusCounts} loading={storeLoading} />
+        </Card>
+
+        <Card className="p-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold">System</h2>
+            <HealthBadge health={health.data} loading={health.isLoading} error={health.isError} />
+          </div>
+          <PoolMeters stats={pool.data?.stats} loading={pool.isLoading} />
+        </Card>
+      </div>
+
+      {/* ── Recent invoices ─────────────────────────────── */}
+      {canList && (
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between px-5 pt-5 pb-3">
+            <h2 className="text-base font-semibold">Recent invoices</h2>
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/invoices">
+                View all <ArrowRight className="size-3.5" />
+              </Link>
+            </Button>
+          </div>
+          {storeLoading ? (
+            <div className="space-y-3 px-5 pb-5">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-9 w-full" />
+              ))}
+            </div>
+          ) : invList.length === 0 ? (
+            <EmptyState compact title="No invoices yet" />
+          ) : (
+            <ul className="divide-y divide-border border-t border-border">
+              {invList.slice(0, 6).map((inv) => (
+                <RecentInvoiceRow key={inv.id} inv={inv} />
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
     </div>
   )
 }
 
-function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : 'Request failed'
+/* ── Pieces ──────────────────────────────────────────────── */
+
+function StatTile({
+  label,
+  value,
+  sub,
+  footer,
+  loading,
+}: {
+  label: string
+  value: React.ReactNode
+  sub?: React.ReactNode
+  footer?: React.ReactNode
+  loading?: boolean
+}) {
+  return (
+    <Card className="flex flex-col p-5">
+      <div className="text-sm text-[var(--fg-2)]">{label}</div>
+      <div className="figure mt-2 text-2xl font-semibold">
+        {loading ? <Skeleton className="h-9 w-32" /> : value}
+      </div>
+      <div className="mt-1 min-h-4 truncate text-xs text-[var(--fg-2)]">
+        {loading ? <Skeleton className="h-3 w-24" /> : sub}
+      </div>
+      {footer && <div className="mt-auto pt-4">{footer}</div>}
+    </Card>
+  )
 }
 
-/* ── Attention strip ───────────────────────────────────────── */
+function Legend({ items }: { items: Array<{ name: string; color: string }> }) {
+  return (
+    <div className="flex items-center gap-4 text-xs text-[var(--fg-2)]">
+      {items.map((i) => (
+        <span key={i.name} className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 rounded-[3px]" style={{ background: i.color }} />
+          {i.name}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function chainSlices(snapshot?: BalancesSnapshot): Slice[] {
+  const all =
+    snapshot?.families
+      .flatMap((f) =>
+        f.chains.map((c) => {
+          const info = chainInfo(c.chainId)
+          return { key: String(c.chainId), name: info.name, value: num(c.totalUsd), color: info.color }
+        }),
+      )
+      .filter((s) => s.value > 0)
+      .sort((a, b) => b.value - a.value) ?? []
+  if (all.length <= 6) return all
+  const head = all.slice(0, 5)
+  const rest = all.slice(5).reduce((a, s) => a + s.value, 0)
+  return [...head, { key: 'other', name: 'Other', value: rest, color: 'var(--chart-muted)' }]
+}
+
+function BalanceBar({ snapshot }: { snapshot?: BalancesSnapshot }) {
+  const slices = chainSlices(snapshot)
+  return (
+    <SegmentedBar
+      className="h-2"
+      parts={slices.map((s) => ({ key: s.key, name: s.name, value: s.value, color: s.color }))}
+    />
+  )
+}
+
+function BalanceMix({ snapshot, loading }: { snapshot?: BalancesSnapshot; loading: boolean }) {
+  const slices = chainSlices(snapshot)
+  const total = slices.reduce((a, s) => a + s.value, 0)
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold">Balance by chain</h2>
+        <Link to="/balances" className="text-sm text-[var(--fg-2)] hover:text-foreground">
+          Details
+        </Link>
+      </div>
+      {loading ? (
+        <div className="mt-6 flex justify-center">
+          <Skeleton className="size-[168px] rounded-full" />
+        </div>
+      ) : (
+        <div className="mt-4 flex flex-col items-center gap-5 sm:flex-row xl:flex-col">
+          <Donut
+            slices={slices}
+            size={168}
+            thickness={20}
+            center={
+              <div>
+                <div className="figure text-lg font-semibold">{compactUsd(total)}</div>
+                <div className="text-2xs text-[var(--fg-2)]">total</div>
+              </div>
+            }
+          />
+          <ul className="w-full space-y-2">
+            {slices.length === 0 && (
+              <li className="text-sm text-[var(--fg-2)]">No balances yet.</li>
+            )}
+            {slices.map((s) => (
+              <li key={s.key} className="flex items-center gap-2 text-sm">
+                <span className="size-2.5 rounded-full" style={{ background: s.color }} />
+                <span className="truncate text-[var(--fg-1)]">{s.name}</span>
+                <span className="figure ml-auto font-medium">{compactUsd(s.value)}</span>
+                <span className="figure w-12 text-right text-xs text-[var(--fg-3)]">
+                  {total ? ((s.value / total) * 100).toFixed(0) : 0}%
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Card>
+  )
+}
 
 type AttentionItem = {
   key: string
   label: string
-  hint: string
   icon: React.ComponentType<{ className?: string }>
   to: string
   count?: number
@@ -254,215 +600,83 @@ type AttentionItem = {
   failed: boolean
 }
 
-function AttentionStrip({ items }: { items: AttentionItem[] }) {
-  const settled = items.every((i) => !i.loading)
-  const open = items.filter((i) => (i.count ?? 0) > 0)
-  const failed = items.filter((i) => i.failed)
-  const allClear = settled && open.length === 0 && failed.length === 0
-
+function AttentionRow({ item }: { item: AttentionItem }) {
+  const Icon = item.icon
+  const n = item.count ?? 0
+  const hot = n > 0
   return (
-    <section aria-labelledby="attention-title">
-      <div className="mb-2 flex items-center gap-2">
-        <h2 id="attention-title" className="text-sm font-medium">
-          Needs attention
-        </h2>
-        {allClear ? (
-          <span className="inline-flex items-center gap-1.5 text-sm text-success">
-            <CheckCircle2 className="size-3.5" /> All clear
-          </span>
-        ) : settled && open.length > 0 ? (
-          <span className="text-sm text-[var(--fg-2)]">
-            {open.length} {open.length === 1 ? 'area' : 'areas'}
-          </span>
-        ) : null}
-      </div>
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-6 xl:grid-cols-5">
-        {items.map((it, idx) => {
-          const Icon = it.icon
-          const n = it.count ?? 0
-          const hot = n > 0
-          return (
-            <Link
-              key={it.key}
-              to={it.to}
-              className={cn(
-                'group relative flex flex-col gap-2 bg-card px-4 py-3.5 outline-none transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset xl:col-span-1',
-                // 2 cols on phones (last tile spans), 3+2 on tablets.
-                idx === items.length - 1 && items.length % 2 === 1 ? 'col-span-2' : 'col-span-1',
-                idx < 3 ? 'sm:col-span-2' : 'sm:col-span-3',
-              )}
-            >
-              {hot && (
-                <span aria-hidden className="absolute inset-x-0 top-0 h-[3px] bg-warn" />
-              )}
-              <div className="flex items-center justify-between gap-2">
-                <span
-                  className={cn(
-                    'flex items-center gap-1.5 text-xs',
-                    hot ? 'font-medium text-warn' : 'text-[var(--fg-2)]',
-                  )}
-                >
-                  <Icon className="size-3.5" />
-                  {it.label}
-                </span>
-                <ArrowRight className="size-3.5 text-[var(--fg-3)] opacity-0 transition-opacity group-hover:opacity-100" />
-              </div>
-              <div className="flex items-baseline gap-2">
-                {it.loading ? (
-                  <Skeleton className="h-7 w-8" />
-                ) : it.failed ? (
-                  <span className="text-sm text-destructive">Unavailable</span>
-                ) : (
-                  <span
-                    className={cn(
-                      'font-mono text-2xl font-semibold tracking-[-0.02em] tabular-nums',
-                      hot ? 'text-foreground' : 'text-[var(--fg-3)]',
-                    )}
-                  >
-                    {n}
-                  </span>
-                )}
-              </div>
-              <span className="hidden text-2xs text-[var(--fg-2)] sm:block">{it.hint}</span>
-            </Link>
-          )
-        })}
-      </div>
-    </section>
-  )
-}
-
-/* ── Balance hero ──────────────────────────────────────────── */
-
-function BalanceHero({
-  snapshot,
-  loading,
-  error,
-}: {
-  snapshot?: BalancesSnapshot
-  loading: boolean
-  error: string | null
-}) {
-  const families: Family[] = ['evm', 'tron', 'solana', 'utxo', 'monero']
-  const rows =
-    snapshot?.families.map((f) => ({
-      family: f.family,
-      usd: parseFloat(f.totalUsd),
-      chains: f.chains,
-    })) ?? []
-  const byFamily = Object.fromEntries(rows.map((r) => [r.family, r]))
-  const total = parseFloat(snapshot?.totalUsd ?? '0')
-
-  const chainShares = rows
-    .flatMap((r) =>
-      r.chains.map((c) => ({
-        chainId: c.chainId,
-        usd: parseFloat(c.totalUsd),
-        info: chainInfo(c.chainId),
-      })),
-    )
-    .filter((c) => c.usd > 0)
-    .sort((a, b) => b.usd - a.usd)
-
-  return (
-    <Card className="flex flex-col p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-sm text-[var(--fg-2)]">Total balance</div>
-          <div className="mt-1 font-mono text-3xl font-semibold tracking-[-0.03em] tabular-nums">
-            {loading ? (
-              <Skeleton className="h-10 w-48" />
-            ) : error ? (
-              <span className="text-[var(--fg-3)]">—</span>
-            ) : (
-              fmtUsd(total)
+    <li>
+      <Link
+        to={item.to}
+        className="group flex h-11 items-center gap-3 rounded-[10px] px-2 outline-none transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span
+          className={cn(
+            'grid size-7 place-items-center rounded-lg',
+            hot ? 'bg-[var(--warn-bg)] text-warn' : 'bg-[var(--bg-2)] text-[var(--fg-3)]',
+          )}
+        >
+          <Icon className="size-4" />
+        </span>
+        <span className={cn('flex-1 text-sm', hot ? 'text-foreground' : 'text-[var(--fg-2)]')}>
+          {item.label}
+        </span>
+        {item.loading ? (
+          <Skeleton className="h-4 w-6" />
+        ) : item.failed ? (
+          <span className="text-xs text-destructive">Unavailable</span>
+        ) : (
+          <span
+            className={cn(
+              'figure text-sm font-semibold',
+              hot ? 'text-foreground' : 'text-[var(--fg-3)]',
             )}
-          </div>
-          <div className="mt-1 text-xs text-[var(--fg-2)]">
-            Gateway-owned addresses · source{' '}
-            <span className="font-mono">{snapshot?.source ?? 'db'}</span>
-          </div>
-        </div>
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/balances">
-            All balances <ArrowRight className="size-3.5" />
-          </Link>
-        </Button>
-      </div>
-
-      {error && (
-        <div className="mt-4 text-sm text-destructive">
-          Balances unavailable: <span className="font-mono text-xs">{error}</span>
-        </div>
-      )}
-
-      {total > 0 && (
-        <div className="mt-5">
-          <div className="flex h-2 gap-0.5 overflow-hidden rounded-full">
-            {chainShares.map((c) => (
-              <div
-                key={c.chainId}
-                title={`${c.info.name} · ${fmtUsd(c.usd)}`}
-                className="min-w-[3px]"
-                style={{
-                  background: c.info.color,
-                  width: `${(c.usd / total) * 100}%`,
-                }}
-              />
-            ))}
-          </div>
-          <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
-            {chainShares.map((c) => (
-              <li key={c.chainId} className="flex items-center gap-1.5 text-xs">
-                <span className="size-2 rounded-full" style={{ background: c.info.color }} />
-                <span className="text-[var(--fg-1)]">{c.info.name}</span>
-                <span className="font-mono text-[var(--fg-2)] tabular-nums">
-                  {((c.usd / total) * 100).toFixed(1)}%
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <div className="mt-auto pt-5">
-        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-5">
-          {families.map((fam) => {
-            const r = byFamily[fam]
-            const usd = r?.usd ?? 0
-            const inactive = usd === 0
-            return (
-              <div key={fam} className="bg-card px-3 py-2.5">
-                <div className="flex items-center gap-1.5 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
-                  <span
-                    className="size-2 rounded-full"
-                    style={{ background: FAMILY_COLOR[fam], opacity: inactive ? 0.4 : 1 }}
-                  />
-                  {fam}
-                </div>
-                <div
-                  className={cn(
-                    'mt-1 font-mono text-sm font-medium tabular-nums',
-                    inactive && 'text-[var(--fg-3)]',
-                  )}
-                >
-                  {loading ? <Skeleton className="h-4 w-16" /> : fmtUsd(usd)}
-                </div>
-                <div className="text-2xs text-[var(--fg-3)]">
-                  {r?.chains.length ?? 0} {r?.chains.length === 1 ? 'chain' : 'chains'}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    </Card>
+          >
+            {n}
+          </span>
+        )}
+        <ArrowRight className="size-3.5 text-[var(--fg-3)] transition-transform group-hover:translate-x-0.5" />
+      </Link>
+    </li>
   )
 }
 
-/* ── Health ────────────────────────────────────────────────── */
+function StatusMix({
+  counts,
+  loading,
+}: {
+  counts: Record<string, number>
+  loading: boolean
+}) {
+  const order = ['completed', 'processing', 'pending', 'expired', 'canceled']
+  const parts = order.map((k) => ({
+    key: k,
+    name: k,
+    value: counts[k] ?? 0,
+    color: STATUS_COLORS[k],
+  }))
+  const total = parts.reduce((a, p) => a + p.value, 0)
+  if (loading) return <Skeleton className="mt-5 h-24 w-full" />
+  return (
+    <div className="mt-5">
+      <SegmentedBar className="h-3" parts={parts} />
+      <ul className="mt-4 space-y-2">
+        {parts.map((p) => (
+          <li key={p.key} className="flex items-center gap-2 text-sm">
+            <span className="size-2.5 rounded-[3px]" style={{ background: p.color }} />
+            <span className="capitalize text-[var(--fg-1)]">{p.name}</span>
+            <span className="figure ml-auto font-medium">{p.value}</span>
+            <span className="figure w-12 text-right text-xs text-[var(--fg-3)]">
+              {total ? Math.round((p.value / total) * 100) : 0}%
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
-function HealthCard({
+function HealthBadge({
   health,
   loading,
   error,
@@ -471,209 +685,95 @@ function HealthCard({
   loading: boolean
   error: boolean
 }) {
+  if (loading) return <Skeleton className="h-5 w-24 rounded-full" />
+  if (error)
+    return (
+      <Badge variant="danger">
+        <StatusDot tone="danger" /> Unreachable
+      </Badge>
+    )
   const ok = health?.status === 'ok'
   return (
-    <Card className="p-5">
-      <div className="text-sm text-[var(--fg-2)]">Gateway health</div>
-      <div className="mt-2 flex items-center gap-2.5">
-        {loading ? (
-          <Skeleton className="h-7 w-24" />
-        ) : error ? (
-          <>
-            <StatusDot tone="danger" />
-            <span className="text-xl font-semibold tracking-[-0.015em]">Unreachable</span>
-          </>
-        ) : (
-          <>
-            <StatusDot tone={ok ? 'success' : 'warn'} pulse />
-            <span className="text-xl font-semibold tracking-[-0.015em]">
-              {ok ? 'Operational' : 'Degraded'}
-            </span>
-          </>
-        )}
-      </div>
-      <div className="mt-1 text-xs text-[var(--fg-2)]">
-        Phase <span className="font-mono">{health?.phase ?? '—'}</span> · checked every 30s
-      </div>
-    </Card>
+    <Badge variant={ok ? 'success' : 'warn'}>
+      <StatusDot tone={ok ? 'success' : 'warn'} pulse /> {ok ? 'Operational' : 'Degraded'}
+    </Badge>
   )
 }
 
-/* ── Pool ──────────────────────────────────────────────────── */
-
-function PoolCard({
-  stats,
-  loading,
-}: {
-  stats?: PoolStatsRow[]
-  loading: boolean
-}) {
-  // UTXO is intentionally omitted: BTC/LTC mint a fresh BIP84 address per
-  // invoice (privacy requirement) and never participate in the pool.
+function PoolMeters({ stats, loading }: { stats?: PoolStatsRow[]; loading: boolean }) {
   const byFamily = Object.fromEntries((stats ?? []).map((s) => [s.family, s]))
-
   return (
-    <Card className="p-5">
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-[var(--fg-2)]">Address pool</div>
-        <Link
-          to="/pool"
-          className="text-xs text-[var(--fg-2)] hover:text-foreground"
-        >
+    <div className="mt-4">
+      <div className="mb-3 flex items-center justify-between text-sm">
+        <span className="text-[var(--fg-2)]">Free pool addresses</span>
+        <Link to="/pool" className="text-[var(--fg-2)] hover:text-foreground">
           Manage
         </Link>
       </div>
-      <div className="mt-3 space-y-3">
+      <div className="space-y-3.5">
         {POOL_FAMILIES.map((fam) => {
           const s = byFamily[fam]
           const tot = s?.total ?? 0
           const av = s?.available ?? 0
           const pct = tot ? (av / tot) * 100 : 0
-          const tone = av < LOW_POOL ? 'danger' : av < 6 ? 'warn' : 'success'
-          const indicator =
-            tone === 'danger'
-              ? 'bg-destructive'
-              : tone === 'warn'
-                ? 'bg-warn'
-                : 'bg-success'
-
+          const tone =
+            av < LOW_POOL ? 'var(--danger)' : av < 6 ? 'var(--warn)' : 'var(--chart-1-fill)'
           return (
             <div key={fam}>
-              <div className="mb-1 flex items-center justify-between text-xs">
-                <span className="flex items-center gap-1.5 font-medium uppercase tracking-[0.06em] text-[var(--fg-1)]">
-                  <span className="size-2 rounded-full" style={{ background: FAMILY_COLOR[fam] }} />
-                  {fam}
-                </span>
-                <span className="font-mono text-[var(--fg-2)] tabular-nums">
-                  {loading ? '…' : (
-                    <>
-                      <span
-                        className={cn(
-                          'font-medium',
-                          tone === 'danger' && 'text-destructive',
-                          tone === 'warn' && 'text-warn',
-                          tone === 'success' && 'text-foreground',
-                        )}
-                      >
-                        {av}
-                      </span>{' '}
-                      free / {tot}
-                    </>
-                  )}
-                </span>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium uppercase">{fam}</span>
+                {loading ? (
+                  <Skeleton className="h-4 w-14" />
+                ) : (
+                  <span className="figure text-[var(--fg-2)]">
+                    <span className="font-semibold text-foreground">{av}</span> / {tot}
+                  </span>
+                )}
               </div>
-              <Progress value={pct} indicatorClassName={indicator} />
-              <div className="mt-1 flex gap-3 text-2xs text-[var(--fg-3)]">
-                <span>
-                  allocated <span className="font-mono">{s?.allocated ?? 0}</span>
-                </span>
-                <span>
-                  quarantined <span className="font-mono">{s?.quarantined ?? 0}</span>
-                </span>
+              <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[var(--chart-muted)]">
+                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone }} />
               </div>
             </div>
           )
         })}
       </div>
-    </Card>
+    </div>
   )
 }
 
-/* ── Top addresses ─────────────────────────────────────────── */
-
-function TopAddressesCard({
-  snapshot,
-  loading,
-}: {
-  snapshot?: BalancesSnapshot
-  loading: boolean
-}) {
-  const rows: Array<{
-    address: string
-    chainId: number
-    usd: number
-    token: string
-    amountDecimal: string
-  }> = []
-  snapshot?.families.forEach((f) =>
-    f.chains.forEach((c) =>
-      c.addresses.forEach((a) => {
-        const top = a.tokens[0]
-        rows.push({
-          address: a.address,
-          chainId: c.chainId,
-          usd: parseFloat(a.totalUsd),
-          token: top?.token ?? '—',
-          amountDecimal: top?.amountDecimal ?? '0',
-        })
-      }),
-    ),
-  )
-  rows.sort((a, b) => b.usd - a.usd)
-  const top = rows.slice(0, 8)
-
+function RecentInvoiceRow({ inv }: { inv: GatewayInvoice }) {
+  const info = chainInfo(inv.chainId)
+  const amount = inv.amountUsd
+    ? fullUsd(num(inv.amountUsd))
+    : `${inv.requiredAmountRaw} ${inv.token}`
+  const when = Math.floor(Date.parse(inv.createdAt) / 1000)
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="border-b">
-        <CardTitle>Largest pool addresses</CardTitle>
-        <CardDescription>Top 8 by USD value across all chains</CardDescription>
-      </CardHeader>
-      {loading ? (
-        <div className="space-y-3 p-5">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-4 w-full" />
-          ))}
+    <li>
+      <Link
+        to="/invoices"
+        className="flex items-center gap-4 px-5 py-3 text-sm outline-none transition-colors hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)]"
+      >
+        <span
+          className="grid size-8 shrink-0 place-items-center rounded-full text-2xs font-semibold text-white"
+          style={{ background: info.color }}
+          aria-hidden
+        >
+          {inv.token.slice(0, 1)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-medium">{inv.externalId ?? truncateAddr(inv.id, 8, 4)}</div>
+          <div className="truncate text-xs text-[var(--fg-2)]">
+            {info.name} · {inv.token}
+          </div>
         </div>
-      ) : top.length === 0 ? (
-        <EmptyState
-          compact
-          icon={Waypoints}
-          title="No balances yet"
-          description="Funds received on pool addresses show up here once the first invoice is paid."
-        />
-      ) : (
-        <TableWrap>
-          <Table className="min-w-[560px]">
-            <THead>
-              <tr>
-                <Th>Address</Th>
-                <Th>Chain</Th>
-                <Th>Token</Th>
-                <Th align="right">Amount</Th>
-                <Th align="right">USD</Th>
-              </tr>
-            </THead>
-            <TBody>
-              {top.map((r, i) => {
-                const info = chainInfo(r.chainId)
-                return (
-                  <Tr key={i}>
-                    <Td>
-                      <Addr value={r.address} />
-                    </Td>
-                    <Td>
-                      <span className="inline-flex items-center gap-1.5">
-                        <span
-                          className="size-2 rounded-full"
-                          style={{ background: info.color }}
-                        />
-                        {info.name}
-                      </span>
-                    </Td>
-                    <Td className="font-mono text-xs">{r.token}</Td>
-                    <Td align="right" className="text-xs">
-                      {fmtNum(r.amountDecimal)}
-                    </Td>
-                    <Td align="right" className="font-medium">
-                      {fmtUsd(r.usd)}
-                    </Td>
-                  </Tr>
-                )
-              })}
-            </TBody>
-          </Table>
-        </TableWrap>
-      )}
-    </Card>
+        <Badge variant={STATUS_BADGE[inv.status] ?? 'default'} className="capitalize">
+          {inv.status}
+        </Badge>
+        <div className="figure w-28 text-right font-medium">{amount}</div>
+        <div className="hidden w-20 text-right text-xs text-[var(--fg-3)] sm:block">
+          {fmtRel(when)}
+        </div>
+      </Link>
+    </li>
   )
 }

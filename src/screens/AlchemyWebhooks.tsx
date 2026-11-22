@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { AlertTriangle, CheckCircle2, KeyRound, Rocket } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, KeyRound, Rocket } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import type { AlchemyBootstrapResult, ChainInventoryEntry } from '@/lib/types'

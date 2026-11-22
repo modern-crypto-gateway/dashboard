@@ -73,7 +73,7 @@ export function Th({
   return (
     <th
       className={cn(
-        'h-9 whitespace-nowrap border-b border-border bg-[var(--bg-2)] px-4 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]',
+        'h-10 whitespace-nowrap border-b border-border px-4 text-xs font-medium text-[var(--fg-2)]',
         align === 'right' && 'text-right',
         align === 'center' && 'text-center',
         align === 'left' && 'text-left',
@@ -92,8 +92,8 @@ export function Td({
   return (
     <td
       className={cn(
-        'border-b border-border px-4 py-2.5 align-middle',
-        align === 'right' && 'text-right font-mono tabular-nums',
+        'h-12 border-b border-border px-4 py-2 align-middle',
+        align === 'right' && 'figure text-right',
         align === 'center' && 'text-center',
         className,
       )}

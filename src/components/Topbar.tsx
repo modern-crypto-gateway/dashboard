@@ -1,9 +1,11 @@
+import { useLocation } from 'react-router-dom'
 import { useIsFetching, useQueryClient } from '@tanstack/react-query'
-import { Menu, Monitor, Moon, RefreshCw, Search, Sun } from 'lucide-react'
 
+import { NAV_SECTIONS } from '@/lib/nav'
 import { useTheme, type Accent, type ThemeMode } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 
+import { ChevronRight, Menu, Monitor, Moon, RefreshCw, Search, Sun } from './icons'
 import { Button } from './ui/button'
 import { LogoMark } from './Logo'
 import {
@@ -22,18 +24,37 @@ interface TopbarProps {
 }
 
 const ACCENTS: Array<{ value: Accent; label: string; color: string }> = [
-  { value: 'blue', label: 'Blue', color: 'oklch(0.53 0.19 262)' },
-  { value: 'violet', label: 'Violet', color: 'oklch(0.52 0.21 293)' },
-  { value: 'mint', label: 'Mint', color: 'oklch(0.52 0.11 172)' },
+  { value: 'lime', label: 'Lime', color: '#c8f04f' },
+  { value: 'iris', label: 'Iris', color: '#6e56cf' },
+  { value: 'blue', label: 'Blue', color: '#2f6df6' },
 ]
+
+const EXTRA_CRUMBS: Record<string, [string, string]> = {
+  '/pool/addresses': ['Treasury', 'Pool addresses'],
+  '/payouts/batch': ['Payments', 'Batch payouts'],
+  '/settings': ['System', 'Settings'],
+}
+
+function useCrumbs(): [string, string] | null {
+  const { pathname } = useLocation()
+  if (EXTRA_CRUMBS[pathname]) return EXTRA_CRUMBS[pathname]
+  for (const s of NAV_SECTIONS) {
+    for (const it of s.items) {
+      if (it.end ? pathname === it.to : pathname === it.to || pathname.startsWith(it.to + '/'))
+        return [s.group, it.label]
+    }
+  }
+  return null
+}
 
 export function Topbar({ onMobileMenu, onOpenCommandPalette }: TopbarProps) {
   const { mode, accent, resolvedTheme, setMode, setAccent } = useTheme()
   const qc = useQueryClient()
   const fetching = useIsFetching() > 0
+  const crumbs = useCrumbs()
 
   return (
-    <div className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md md:px-6 xl:px-8">
+    <div className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-[var(--bg-0)]/85 px-4 backdrop-blur-md md:px-6 lg:px-8">
       <Button
         size="icon-sm"
         variant="ghost"
@@ -41,33 +62,28 @@ export function Topbar({ onMobileMenu, onOpenCommandPalette }: TopbarProps) {
         onClick={onMobileMenu}
         aria-label="Open menu"
       >
-        <Menu />
+        <Menu className="size-5" />
       </Button>
-      <LogoMark size={24} className="md:hidden" />
+      <LogoMark size={26} className="md:hidden" />
 
-      <button
-        type="button"
-        onClick={onOpenCommandPalette}
-        className="hidden h-8 w-full max-w-sm cursor-pointer items-center gap-2 rounded-md border border-border bg-card px-2.5 text-left text-sm text-[var(--fg-2)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--fg-1)] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none md:flex"
-      >
-        <Search className="size-3.5" />
-        <span>Jump to…</span>
-        <span className="flex-1" />
-        <kbd className="rounded-sm border border-border bg-[var(--bg-2)] px-1.5 font-mono text-2xs text-[var(--fg-2)]">
-          ⌘K
-        </kbd>
-      </button>
+      {crumbs && (
+        <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1.5 text-sm md:flex">
+          <span className="text-[var(--fg-2)]">{crumbs[0]}</span>
+          <ChevronRight className="size-3.5 text-[var(--fg-3)]" />
+          <span className="truncate font-medium">{crumbs[1]}</span>
+        </nav>
+      )}
 
       <div className="flex-1" />
 
       <Button
         size="icon-sm"
         variant="ghost"
-        className="md:hidden"
+        className="xl:hidden"
         onClick={onOpenCommandPalette}
         aria-label="Search"
       >
-        <Search />
+        <Search className="size-[18px]" />
       </Button>
       <Button
         size="icon-sm"
@@ -76,13 +92,13 @@ export function Topbar({ onMobileMenu, onOpenCommandPalette }: TopbarProps) {
         aria-label="Refresh all data"
         title="Refresh all data"
       >
-        <RefreshCw className={cn('size-4', fetching && 'animate-spin')} />
+        <RefreshCw className={cn('size-[18px]', fetching && 'animate-spin')} />
       </Button>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button size="icon-sm" variant="ghost" aria-label="Theme" title="Theme">
-            {resolvedTheme === 'dark' ? <Moon /> : <Sun />}
+            {resolvedTheme === 'dark' ? <Moon className="size-[18px]" /> : <Sun className="size-[18px]" />}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
@@ -92,17 +108,17 @@ export function Topbar({ onMobileMenu, onOpenCommandPalette }: TopbarProps) {
             onValueChange={(v) => setMode(v as ThemeMode)}
           >
             <DropdownMenuRadioItem value="light">
-              <Sun className="mr-2 size-3.5" /> Light
+              <Sun className="mr-2 size-4" /> Light
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="dark">
-              <Moon className="mr-2 size-3.5" /> Dark
+              <Moon className="mr-2 size-4" /> Dark
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="system">
-              <Monitor className="mr-2 size-3.5" /> System
+              <Monitor className="mr-2 size-4" /> System
             </DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel>Accent</DropdownMenuLabel>
+          <DropdownMenuLabel>Signal colour</DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={accent}
             onValueChange={(v) => setAccent(v as Accent)}
@@ -111,7 +127,7 @@ export function Topbar({ onMobileMenu, onOpenCommandPalette }: TopbarProps) {
               <DropdownMenuRadioItem key={a.value} value={a.value}>
                 <span
                   aria-hidden
-                  className="mr-2 inline-block size-3 rounded-full"
+                  className="mr-2 inline-block size-3 rounded-full ring-1 ring-black/10"
                   style={{ background: a.color }}
                 />
                 {a.label}

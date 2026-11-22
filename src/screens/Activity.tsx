@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity as ActivityIcon, RefreshCw } from 'lucide-react'
+import { Activity as ActivityIcon, RefreshCw } from '@/components/icons'
 
 import { api } from '@/lib/api'
 import type { WebhookDelivery } from '@/lib/types'

@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Search, Shield } from 'lucide-react'
+import { Search, Shield } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { fmtLocalDate } from '@/lib/format'

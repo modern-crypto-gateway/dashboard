@@ -14,7 +14,7 @@ import {
   Plus,
   RefreshCw,
   Trash2,
-} from 'lucide-react'
+} from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { fmtLocal, formatUnits, useNow } from '@/lib/format'

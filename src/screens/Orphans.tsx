@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { AlertTriangle, RefreshCw, Target, X } from 'lucide-react'
+import { AlertTriangle, RefreshCw, Target, X } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { fmtUsd, truncateAddr, useNow } from '@/lib/format'

@@ -6,12 +6,12 @@ import { cn } from '@/lib/utils'
  * one-line description, actions on the right (wrap under on narrow).
  */
 export function PageHeader({
-  eyebrow,
   title,
   description,
   actions,
   className,
 }: {
+  /** Kept for call sites; the group now shows as a breadcrumb in the top bar. */
   eyebrow?: React.ReactNode
   title: React.ReactNode
   description?: React.ReactNode
@@ -21,13 +21,12 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        'flex flex-wrap items-end justify-between gap-x-6 gap-y-3',
+        'flex flex-wrap items-end justify-between gap-x-6 gap-y-3 pb-1',
         className,
       )}
     >
       <div className="min-w-0 max-w-2xl">
-        {eyebrow && <div className="eyebrow mb-1">{eyebrow}</div>}
-        <h1 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.015em]">
+        <h1 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.02em]">
           {title}
         </h1>
         {description && (

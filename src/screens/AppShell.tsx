@@ -36,10 +36,10 @@ export function AppShell() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex min-h-dvh">
+      <div className="flex min-h-dvh bg-[var(--canvas)]">
         {/* Desktop / tablet sidebar */}
         <div className="hidden md:block">
-          <Sidebar rail={!wide} username={username} />
+          <Sidebar rail={!wide} username={username} onSearch={() => setPaletteOpen(true)} />
         </div>
 
         {/* Phone drawer */}
@@ -52,7 +52,7 @@ export function AppShell() {
         >
           <div
             className={cn(
-              'absolute inset-0 bg-[oklch(0.15_0.01_265/0.4)] transition-opacity duration-200',
+              'absolute inset-0 bg-black/40 transition-opacity duration-200',
               mobileOpen ? 'opacity-100' : 'opacity-0',
             )}
             onClick={() => setMobileOpen(false)}
@@ -67,13 +67,13 @@ export function AppShell() {
           </div>
         </div>
 
-        <main className="flex min-w-0 flex-1 flex-col">
+        <main className="flex min-w-0 flex-1 flex-col bg-[var(--bg-0)] md:my-2 md:mr-2 md:rounded-[18px] md:shadow-[var(--shadow-panel)] md:overflow-clip">
           <Topbar
             onMobileMenu={() => setMobileOpen(true)}
             onOpenCommandPalette={() => setPaletteOpen(true)}
           />
           <div
-            className="mx-auto w-full max-w-[1440px] flex-1 px-4 pt-6 pb-16 md:px-6 xl:px-8"
+            className="mx-auto w-full max-w-[1360px] flex-1 px-4 pt-7 pb-16 md:px-6 lg:px-8"
           >
             <Outlet />
           </div>

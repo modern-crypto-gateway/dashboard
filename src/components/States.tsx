@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { AlertTriangle, Info, OctagonAlert, CheckCircle2 } from 'lucide-react'
+import { AlertTriangle, Info, OctagonAlert, CheckCircle2 } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { Skeleton } from './ui/skeleton'
 
@@ -27,13 +27,13 @@ export function EmptyState({
       className={cn(
         'flex flex-col items-center justify-center text-center',
         compact ? 'gap-2 px-6 py-8' : 'gap-3 px-6 py-14',
-        framed && 'rounded-lg border border-dashed border-[var(--border-strong)] bg-card',
+        framed && 'rounded-lg border border-border bg-card',
         className,
       )}
     >
       {Icon && (
-        <div className="grid size-10 place-items-center rounded-lg border border-border bg-[var(--bg-2)] text-[var(--fg-2)]">
-          <Icon className="size-[18px]" />
+        <div className="grid size-11 place-items-center rounded-2xl bg-[var(--bg-2)] text-[var(--fg-1)] ring-1 ring-border">
+          <Icon className="size-5" />
         </div>
       )}
       <div className="space-y-1">
@@ -53,8 +53,8 @@ type CalloutTone = 'info' | 'warn' | 'danger' | 'success'
 
 const calloutTone: Record<CalloutTone, { box: string; icon: string; Icon: React.ComponentType<{ className?: string }> }> = {
   info: {
-    box: 'border-[var(--accent-border)] bg-[var(--accent-bg)]',
-    icon: 'text-primary',
+    box: 'border-border bg-[var(--bg-2)]',
+    icon: 'text-[var(--fg-2)]',
     Icon: Info,
   },
   warn: {
@@ -96,7 +96,7 @@ export function Callout({
     <div
       role={tone === 'danger' || tone === 'warn' ? 'alert' : undefined}
       className={cn(
-        'flex flex-wrap items-start gap-3 rounded-lg border px-4 py-3 text-sm',
+        'flex flex-wrap items-start gap-3 rounded-xl border px-4 py-3 text-sm',
         t.box,
         className,
       )}
@@ -187,7 +187,7 @@ export function Stat({
       <div className="text-xs text-[var(--fg-2)]">{label}</div>
       <div
         className={cn(
-          'mt-1 font-mono text-xl font-semibold tracking-[-0.02em] tabular-nums',
+          'figure mt-1 text-xl font-semibold',
           tone === 'success' && 'text-success',
           tone === 'warn' && 'text-warn',
           tone === 'danger' && 'text-destructive',

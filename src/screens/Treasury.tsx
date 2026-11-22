@@ -17,7 +17,7 @@ import {
   RefreshCw,
   Send,
   Trash2,
-} from 'lucide-react'
+} from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { chainInfo } from '@/lib/chains'

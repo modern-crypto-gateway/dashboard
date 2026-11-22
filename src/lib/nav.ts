@@ -16,7 +16,7 @@ import {
   Store,
   Waypoints,
   Webhook,
-} from 'lucide-react'
+} from '@/components/icons'
 
 export type NavItem = {
   to: string

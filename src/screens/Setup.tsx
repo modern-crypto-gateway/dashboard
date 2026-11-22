@@ -10,7 +10,7 @@ import {
   Eye,
   EyeOff,
   Shield,
-} from 'lucide-react'
+} from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { sessionQuery, setupStatusQuery } from '@/lib/session'

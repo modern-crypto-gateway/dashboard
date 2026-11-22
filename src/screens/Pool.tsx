@@ -15,7 +15,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Waypoints,
-} from 'lucide-react'
+} from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { chainInfo, FAMILY_COLOR } from '@/lib/chains'

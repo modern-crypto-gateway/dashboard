@@ -2,7 +2,7 @@ import * as React from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { KeyRound, Lock } from 'lucide-react'
+import { KeyRound, Lock } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { sessionQuery, useSetupStatus } from '@/lib/session'

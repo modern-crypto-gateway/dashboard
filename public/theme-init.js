@@ -1,7 +1,8 @@
 (function () {
   try {
     var mode = localStorage.getItem('gw:theme') || 'system'
-    var accent = localStorage.getItem('gw:accent') || 'blue'
+    var stored = localStorage.getItem('gw:accent')
+    var accent = stored === 'violet' || stored === 'iris' ? 'iris' : stored === 'blue' ? 'blue' : 'lime'
     var isDark =
       mode === 'dark' ||
       (mode === 'system' &&

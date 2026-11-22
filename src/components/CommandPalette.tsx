@@ -22,7 +22,7 @@ import {
   Wallet,
   Waypoints,
   Webhook,
-} from 'lucide-react'
+} from '@/components/icons'
 
 import { useTheme } from '@/lib/theme'
 import {

@@ -20,7 +20,7 @@ import {
   Trash2,
   Webhook,
   X,
-} from 'lucide-react'
+} from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { chainInfo } from '@/lib/chains'

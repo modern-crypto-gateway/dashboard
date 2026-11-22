@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Fuel } from 'lucide-react'
+import { AlertTriangle, Fuel } from '@/components/icons'
 
 import { api } from '@/lib/api'
 import type { ChainInventoryEntry, ChainToken } from '@/lib/types'

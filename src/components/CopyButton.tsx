@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy } from '@/components/icons'
 import { cn } from '@/lib/utils'
 
 interface CopyButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {

@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CheckCircle2, Save } from 'lucide-react'
+import { CheckCircle2, Save } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { configQuery, useMerchants } from '@/lib/merchants'

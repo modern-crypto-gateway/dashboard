@@ -15,7 +15,7 @@ import {
   Pause,
   Play,
   RefreshCw,
-} from 'lucide-react'
+} from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { fmtLocal, useNow } from '@/lib/format'

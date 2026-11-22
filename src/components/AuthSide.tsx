@@ -1,4 +1,4 @@
-import { ShieldCheck } from 'lucide-react'
+import { ShieldCheck } from '@/components/icons'
 import { Logo } from './Logo'
 
 /**

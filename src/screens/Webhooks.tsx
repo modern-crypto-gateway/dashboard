@@ -13,7 +13,7 @@ import {
   Search,
   Send,
   Webhook,
-} from 'lucide-react'
+} from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { fmtLocal, fmtLocalTime, truncateAddr, useNow } from '@/lib/format'

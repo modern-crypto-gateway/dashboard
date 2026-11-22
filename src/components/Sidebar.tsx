@@ -1,6 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ChevronsUpDown, LogOut, Settings } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
@@ -8,6 +7,7 @@ import { sessionQuery } from '@/lib/session'
 import { useHeldQueue } from '@/lib/held'
 import { useTheme, type Accent } from '@/lib/theme'
 import { NAV_SECTIONS, type NavItem } from '@/lib/nav'
+import { ChevronsUpDown, LogOut, Search, Settings } from './icons'
 import { Logo, LogoMark } from './Logo'
 import {
   DropdownMenu,
@@ -19,17 +19,25 @@ import {
 } from './ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
+type NavIcon = React.ComponentType<{
+  className?: string
+  weight?: 'regular' | 'duotone' | 'fill' | 'bold'
+}>
+
 /**
- * Sidebar in two densities:
- *  - full (xl+, and the mobile drawer): icon + label, grouped.
+ * Sidebar sits directly on the canvas (no border); the page content
+ * floats beside it in its own panel. Two densities:
+ *  - full (xl+, and the phone drawer): icon + label, grouped.
  *  - rail (tablet, md–xl): icons only, labels in tooltips.
  */
 export function Sidebar({
   onNavigate,
+  onSearch,
   rail = false,
   username,
 }: {
   onNavigate?: () => void
+  onSearch?: () => void
   rail?: boolean
   username: string
 }) {
@@ -42,18 +50,27 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        'sticky top-0 flex h-dvh shrink-0 flex-col border-r border-border bg-[var(--bg-sidebar)]',
-        rail ? 'w-[60px]' : 'w-60',
+        'sticky top-0 flex h-dvh shrink-0 flex-col bg-[var(--bg-sidebar)]',
+        rail ? 'w-[64px]' : 'w-[232px]',
       )}
     >
-      <div
-        className={cn(
-          'flex h-14 shrink-0 items-center',
-          rail ? 'justify-center' : 'px-4',
-        )}
-      >
-        {rail ? <LogoMark size={28} /> : <Logo />}
+      <div className={cn('flex h-16 shrink-0 items-center', rail ? 'justify-center' : 'px-5')}>
+        {rail ? <LogoMark size={30} /> : <Logo />}
       </div>
+
+      {onSearch && !rail && (
+        <div className="px-3 pb-1">
+          <button
+            type="button"
+            onClick={onSearch}
+            className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-[10px] bg-[var(--bg-1)] px-3 text-left text-sm text-[var(--fg-2)] shadow-[var(--shadow-sm)] ring-1 ring-border transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <Search className="size-4" />
+            <span className="flex-1">Search</span>
+            <kbd className="font-sans text-2xs text-[var(--fg-3)]">⌘K</kbd>
+          </button>
+        </div>
+      )}
 
       <nav
         aria-label="Primary"
@@ -63,11 +80,11 @@ export function Sidebar({
         )}
       >
         {NAV_SECTIONS.map((section, i) => (
-          <div key={section.group} className={cn('flex flex-col gap-px', rail && 'items-center')}>
+          <div key={section.group} className={cn('flex flex-col gap-0.5', rail && 'items-center')}>
             {rail ? (
-              i > 0 && <div className="my-2 h-px w-6 bg-border" aria-hidden />
+              i > 0 && <div className="my-2 h-px w-6 bg-[var(--border-strong)]" aria-hidden />
             ) : (
-              <div className="px-2.5 pt-4 pb-1 text-2xs font-medium text-[var(--fg-3)]">
+              <div className="px-3 pt-5 pb-1.5 text-xs font-medium text-[var(--fg-3)]">
                 {section.group}
               </div>
             )}
@@ -86,7 +103,7 @@ export function Sidebar({
 
       <div
         className={cn(
-          'flex shrink-0 flex-col gap-px border-t border-border py-2',
+          'flex shrink-0 flex-col gap-0.5 py-3',
           rail ? 'items-center px-2' : 'px-3',
         )}
       >
@@ -112,7 +129,7 @@ function SidebarLink({
   count?: number
   onNavigate?: () => void
 }) {
-  const Icon = item.icon
+  const Icon = item.icon as NavIcon
   const link = (
     <NavLink
       to={item.to}
@@ -121,23 +138,25 @@ function SidebarLink({
       aria-label={rail ? item.label : undefined}
       className={({ isActive }) =>
         cn(
-          'group relative flex h-8 items-center rounded-md text-sm text-[var(--fg-1)] outline-none transition-colors duration-150',
-          'hover:bg-[var(--bg-hover)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
-          rail ? 'w-10 justify-center' : 'gap-2.5 px-2.5',
+          'group relative flex h-9 items-center rounded-[10px] text-sm text-[var(--fg-1)] outline-none transition-[background-color,color,box-shadow] duration-150',
+          'hover:bg-[var(--bg-active)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
+          rail ? 'w-10 justify-center' : 'gap-3 px-3',
           isActive &&
-            'bg-[var(--bg-active)] font-medium text-foreground [&_svg]:text-primary',
+            'bg-[var(--bg-1)] font-medium text-foreground shadow-[var(--shadow-sm)] ring-1 ring-border hover:bg-[var(--bg-1)]',
         )
       }
     >
       {({ isActive }) => (
         <>
-          {isActive && !rail && (
-            <span
-              aria-hidden
-              className="absolute top-1.5 bottom-1.5 -left-3 w-[3px] rounded-r-full bg-primary"
-            />
-          )}
-          <Icon className="size-4 shrink-0 text-[var(--fg-2)] transition-colors group-hover:text-foreground" />
+          <Icon
+            weight={isActive ? 'fill' : 'regular'}
+            className={cn(
+              'size-[18px] shrink-0 transition-colors',
+              isActive
+                ? 'text-[var(--accent-ink)]'
+                : 'text-[var(--fg-2)] group-hover:text-foreground',
+            )}
+          />
           {!rail && <span className="truncate">{item.label}</span>}
           {count != null &&
             (rail ? (
@@ -146,7 +165,7 @@ function SidebarLink({
                 className="absolute top-1 right-1 size-2 rounded-full bg-warn ring-2 ring-[var(--bg-sidebar)]"
               />
             ) : (
-              <span className="ml-auto rounded-sm bg-[var(--warn-bg)] px-1.5 font-mono text-2xs font-medium text-warn tabular-nums">
+              <span className="figure ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-[var(--warn-bg)] px-1.5 text-2xs font-semibold text-warn ring-1 ring-[var(--warn-border)]">
                 {count}
               </span>
             ))}
@@ -168,9 +187,9 @@ function SidebarLink({
 }
 
 const ACCENT_AVATAR_BG: Record<Accent, string> = {
-  blue: 'd0e1ff,bfd3ff',
-  violet: 'e6d4ff,d3baff',
-  mint: 'c8f2e0,b0ecd3',
+  lime: 'e4f7a6,c8f04f',
+  iris: 'e6dcff,c4b5fd',
+  blue: 'd6e4ff,a9c4ff',
 }
 
 function AccountMenu({ username, rail }: { username: string; rail: boolean }) {
@@ -188,16 +207,6 @@ function AccountMenu({ username, rail }: { username: string; rail: boolean }) {
   })
 
   const avatarUrl = `/api/avatar?seed=${encodeURIComponent(username)}&bg=${encodeURIComponent(ACCENT_AVATAR_BG[accent])}`
-  const avatar = (
-    <img
-      src={avatarUrl}
-      alt=""
-      width={24}
-      height={24}
-      className="size-6 shrink-0 rounded-full border border-border bg-[var(--bg-2)]"
-      loading="lazy"
-    />
-  )
 
   return (
     <DropdownMenu>
@@ -206,18 +215,25 @@ function AccountMenu({ username, rail }: { username: string; rail: boolean }) {
           type="button"
           aria-label={`Account: ${username}`}
           className={cn(
-            'flex h-10 cursor-pointer items-center rounded-md text-left text-sm outline-none transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-[var(--bg-hover)]',
+            'flex h-11 cursor-pointer items-center rounded-[10px] text-left text-sm outline-none transition-colors hover:bg-[var(--bg-active)] focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-[var(--bg-active)]',
             rail ? 'w-10 justify-center' : 'gap-2.5 px-2',
           )}
         >
-          {avatar}
+          <img
+            src={avatarUrl}
+            alt=""
+            width={28}
+            height={28}
+            className="size-7 shrink-0 rounded-full bg-[var(--bg-2)] ring-1 ring-border"
+            loading="lazy"
+          />
           {!rail && (
             <>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{username}</span>
-                <span className="block text-2xs text-[var(--fg-2)]">Operator</span>
+                <span className="block text-xs text-[var(--fg-2)]">Operator</span>
               </span>
-              <ChevronsUpDown className="size-3.5 text-[var(--fg-3)]" />
+              <ChevronsUpDown className="size-4 text-[var(--fg-3)]" />
             </>
           )}
         </button>
