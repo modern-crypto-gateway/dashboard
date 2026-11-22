@@ -18,7 +18,6 @@ import {
   type FilterValues,
   type SortConfig,
 } from '@/lib/listFilters'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -33,7 +32,8 @@ import {
   SheetBody,
   SheetContent,
   SheetFooter,
-  SheetHeader,
+  SheetHero,
+  SheetSection,
 } from '@/components/ui/sheet'
 
 /* ── csv + date helpers ──────────────────────────────────── */
@@ -68,7 +68,7 @@ const CHAIN_ANY = '__any'
 
 /* ── active-filter chips ─────────────────────────────────── */
 
-type Chip = { id: string; label: string; clearKeys: string[] }
+type Chip = { id: string; field: string; value: string; clearKeys: string[] }
 
 function chipsFor(
   sections: FilterSection[],
@@ -91,7 +91,8 @@ function chipsFor(
         if (from || to) {
           chips.push({
             id: f.keyFrom,
-            label: `${f.label}: ${from ? shortDate(from) : '…'} → ${to ? shortDate(to) : '…'}`,
+            field: f.label,
+            value: `${from ? shortDate(from) : '…'} → ${to ? shortDate(to) : '…'}`,
             clearKeys: [f.keyFrom, f.keyTo],
           })
         }
@@ -103,7 +104,8 @@ function chipsFor(
         if (min || max) {
           chips.push({
             id: f.keyMin,
-            label: `${f.label}: ${min || '…'} – ${max || '…'}`,
+            field: f.label,
+            value: `${min || '…'} – ${max || '…'}`,
             clearKeys: [f.keyMin, f.keyMax],
           })
         }
@@ -112,11 +114,10 @@ function chipsFor(
       const raw = values[f.key] ?? ''
       if (raw === '') continue
       let text: string
-      if (f.kind === 'enumSet') text = `${f.label}: ${labelEnum(f, raw)}`
-      else if (f.kind === 'tri')
-        text = `${f.label}: ${raw === 'true' ? f.yes : f.no}`
-      else text = `${f.label}: ${raw}`
-      chips.push({ id: f.key, label: text, clearKeys: [f.key] })
+      if (f.kind === 'enumSet') text = labelEnum(f, raw)
+      else if (f.kind === 'tri') text = raw === 'true' ? f.yes : f.no
+      else text = raw
+      chips.push({ id: f.key, field: f.label, value: text, clearKeys: [f.key] })
     }
   }
   return chips
@@ -125,13 +126,10 @@ function chipsFor(
 /* ── field primitives ────────────────────────────────────── */
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
-      {children}
-    </div>
-  )
+  return <div className="text-xs font-medium text-[var(--fg-2)]">{children}</div>
 }
 
+/** Multi-select pill: tick + label when on. */
 function ChipToggle({
   on,
   onClick,
@@ -147,16 +145,55 @@ function ChipToggle({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={on}
       className={cn(
-        'inline-flex h-7 cursor-pointer items-center rounded-md border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        mono && 'font-mono',
+        'inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+        mono && 'font-mono text-xs',
         on
-          ? 'border-[var(--accent-border)] bg-[var(--accent-bg)] text-primary'
-          : 'border-input bg-card text-[var(--fg-2)] hover:border-[var(--fg-3)] hover:bg-[var(--bg-hover)] hover:text-foreground',
+          ? 'border-foreground bg-foreground pl-2 text-background'
+          : 'border-border bg-card text-[var(--fg-1)] hover:border-[var(--fg-3)] hover:bg-[var(--bg-hover)]',
       )}
     >
+      {on && <Check weight="bold" className="size-3.5" />}
       {children}
     </button>
+  )
+}
+
+/** Single-select segmented control (Any / yes / no). */
+function SegmentedToggle({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+}: {
+  value: string
+  onChange: (v: string) => void
+  options: Array<{ v: string; label: string }>
+  ariaLabel: string
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className="flex h-9 w-full items-center rounded-[10px] bg-[var(--bg-active)] p-0.5"
+    >
+      {options.map((o) => (
+        <button
+          key={o.v || 'any'}
+          type="button"
+          role="radio"
+          aria-checked={value === o.v}
+          onClick={() => onChange(o.v)}
+          className={cn(
+            'h-8 flex-1 cursor-pointer truncate rounded-lg px-2.5 text-sm font-medium text-[var(--fg-2)] transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+            value === o.v && 'bg-[var(--bg-1)] text-foreground shadow-[var(--shadow-sm)]',
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -177,9 +214,9 @@ function EnumSetField({
     onChange(toCsv(field.options.filter((o) => next.has(o.value)).map((o) => o.value)))
   }
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <FieldLabel>{field.label}</FieldLabel>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-2">
         {field.options.map((o) => (
           <ChipToggle key={o.value} on={picked.has(o.value)} onClick={() => toggle(o.value)}>
             {o.label}
@@ -209,12 +246,12 @@ function TokensField({
     onChange(toCsv(tokenOptions.filter((o) => next.has(o))))
   }
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <FieldLabel>{field.label}</FieldLabel>
       {tokenOptions.length === 0 ? (
-        <div className="text-xs text-[var(--fg-3)]">No tokens discovered.</div>
+        <div className="text-sm text-[var(--fg-3)]">No tokens found</div>
       ) : (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-2">
           {tokenOptions.map((t) => (
             <ChipToggle key={t} mono on={picked.has(t)} onClick={() => toggle(t)}>
               {t}
@@ -235,31 +272,19 @@ function TriField({
   value: string
   onChange: (v: string) => void
 }) {
-  const opts = [
-    { v: '', label: 'Any' },
-    { v: 'true', label: field.yes },
-    { v: 'false', label: field.no },
-  ]
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <FieldLabel>{field.label}</FieldLabel>
-      <div className="inline-flex h-9 w-full rounded-md border border-input bg-[var(--bg-2)] p-0.5">
-        {opts.map((o) => (
-          <button
-            key={o.v || 'any'}
-            type="button"
-            onClick={() => onChange(o.v)}
-            className={cn(
-              'flex-1 cursor-pointer rounded-sm px-2 text-sm font-medium transition-colors',
-              value === o.v
-                ? 'bg-card text-foreground ring-1 ring-border'
-                : 'text-[var(--fg-2)] hover:text-foreground',
-            )}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
+      <SegmentedToggle
+        ariaLabel={field.label}
+        value={value}
+        onChange={onChange}
+        options={[
+          { v: '', label: 'Any' },
+          { v: 'true', label: field.yes },
+          { v: 'false', label: field.no },
+        ]}
+      />
     </div>
   )
 }
@@ -276,13 +301,13 @@ function ChainField({
   chainOptions: Array<{ chainId: number; name: string }>
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <FieldLabel>{field.label}</FieldLabel>
       <Select
         value={value === '' ? CHAIN_ANY : value}
         onValueChange={(v) => onChange(v === CHAIN_ANY ? '' : v)}
       >
-        <SelectTrigger className="h-9 text-sm">
+        <SelectTrigger className="h-9 rounded-[10px] text-sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -291,7 +316,7 @@ function ChainField({
             <SelectItem key={c.chainId} value={String(c.chainId)}>
               <span className="flex items-center gap-2">
                 <span>{c.name}</span>
-                <span className="font-mono text-2xs text-[var(--fg-3)]">
+                <span className="font-mono text-xs text-[var(--fg-3)]">
                   {c.chainId}
                 </span>
               </span>
@@ -300,6 +325,23 @@ function ChainField({
         </SelectContent>
       </Select>
     </div>
+  )
+}
+
+/** Two inputs joined into one control with a separator between them. */
+function RangeShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[1fr_auto_1fr]">
+      {children}
+    </div>
+  )
+}
+
+function RangeDash() {
+  return (
+    <span aria-hidden className="hidden text-sm text-[var(--fg-3)] sm:block">
+      –
+    </span>
   )
 }
 
@@ -313,22 +355,25 @@ function DateRangeField({
   setValue: (key: string, v: string) => void
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <FieldLabel>{field.label}</FieldLabel>
-      <div className="grid grid-cols-2 gap-2">
+      <RangeShell>
         <Input
           type="datetime-local"
+          aria-label={`${field.label} from`}
           value={msToLocalInput(values[field.keyFrom] ?? '')}
           onChange={(e) => setValue(field.keyFrom, localInputToMs(e.target.value))}
-          className="h-9 text-sm"
+          className="h-9 rounded-[10px] text-sm"
         />
+        <RangeDash />
         <Input
           type="datetime-local"
+          aria-label={`${field.label} to`}
           value={msToLocalInput(values[field.keyTo] ?? '')}
           onChange={(e) => setValue(field.keyTo, localInputToMs(e.target.value))}
-          className="h-9 text-sm"
+          className="h-9 rounded-[10px] text-sm"
         />
-      </div>
+      </RangeShell>
     </div>
   )
 }
@@ -345,26 +390,28 @@ function NumberRangeField({
   const cell = (key: string, placeholder: string) => (
     <div className="relative">
       {field.prefix && (
-        <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-[var(--fg-3)]">
+        <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm text-[var(--fg-3)]">
           {field.prefix}
         </span>
       )}
       <Input
         inputMode="decimal"
         placeholder={placeholder}
+        aria-label={`${field.label} ${placeholder}`}
         value={values[key] ?? ''}
         onChange={(e) => setValue(key, e.target.value)}
-        className={cn('h-9 font-mono text-sm tabular-nums', field.prefix && 'pl-6')}
+        className={cn('figure h-9 rounded-[10px] text-sm', field.prefix && 'pl-7')}
       />
     </div>
   )
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <FieldLabel>{field.label}</FieldLabel>
-      <div className="grid grid-cols-2 gap-2">
-        {cell(field.keyMin, 'min')}
-        {cell(field.keyMax, 'max')}
-      </div>
+      <RangeShell>
+        {cell(field.keyMin, 'Min')}
+        <RangeDash />
+        {cell(field.keyMax, 'Max')}
+      </RangeShell>
     </div>
   )
 }
@@ -385,26 +432,26 @@ function FieldRenderer({
   switch (field.kind) {
     case 'text':
       return (
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <FieldLabel>{field.label}</FieldLabel>
           <Input
             value={values[field.key] ?? ''}
             placeholder={field.placeholder}
             onChange={(e) => setValue(field.key, e.target.value)}
-            className="h-9 font-mono text-sm"
+            className="h-9 rounded-[10px] font-mono text-sm"
           />
         </div>
       )
     case 'number':
       return (
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <FieldLabel>{field.label}</FieldLabel>
           <Input
             inputMode="decimal"
             value={values[field.key] ?? ''}
             placeholder={field.placeholder}
             onChange={(e) => setValue(field.key, e.target.value)}
-            className="h-9 font-mono text-sm"
+            className="figure h-9 rounded-[10px] text-sm"
           />
         </div>
       )
@@ -459,6 +506,13 @@ function isWideField(f: FilterField): boolean {
     f.kind === 'dateRange' ||
     f.kind === 'numberRange'
   )
+}
+
+/** Active fields in one section, for the section's counter. */
+function sectionActive(sec: FilterSection, values: FilterValues): number {
+  return sec.fields.filter((f) =>
+    fieldKeys(f).some((k) => (values[k] ?? '') !== ''),
+  ).length
 }
 
 /* ── the bar ─────────────────────────────────────────────── */
@@ -519,25 +573,60 @@ export function ListFilterBar({
   const clearAll = () => onChange({})
 
   return (
-    <div className="space-y-2.5">
-      {/* primary row */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant={advancedCount > 0 ? 'secondary' : 'outline'}
-          size="sm"
-          onClick={openSheet}
-          className={cn(advancedCount > 0 && 'border-[var(--accent-border)]')}
-        >
-          <SlidersHorizontal className="size-3.5" />
-          Filters
-          {advancedCount > 0 && (
-            <Badge variant="accent" className="h-4 min-w-4 px-1 tabular-nums">
-              {advancedCount}
-            </Badge>
-          )}
-        </Button>
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={openSheet}
+        className={cn(advancedCount > 0 && 'border-[var(--fg-3)]')}
+      >
+        <SlidersHorizontal className="size-4" />
+        Filters
+        {advancedCount > 0 && (
+          <span className="figure grid h-5 min-w-5 place-items-center rounded-full bg-foreground px-1.5 text-2xs font-semibold text-background">
+            {advancedCount}
+          </span>
+        )}
+      </Button>
 
+      {chips.map((c) => (
+        <span
+          key={c.id}
+          className="fade-in inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border bg-card pr-1 pl-3 text-sm shadow-[var(--shadow-sm)]"
+        >
+          <span className="shrink-0 text-[var(--fg-2)]">{c.field}</span>
+          <span className="max-w-[220px] truncate font-medium text-foreground">
+            {c.value}
+          </span>
+          <button
+            type="button"
+            onClick={() => clearKeys(c.clearKeys)}
+            className="grid size-6 shrink-0 cursor-pointer place-items-center rounded-full text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            aria-label={`Remove ${c.field} filter`}
+          >
+            <X className="size-3.5" />
+          </button>
+        </span>
+      ))}
+      {chips.length > 0 && (
+        <Button type="button" variant="ghost" size="sm" onClick={clearAll}>
+          Clear all
+        </Button>
+      )}
+
+      <div className="ml-auto flex items-center gap-3">
+        {(loading || resultCount != null) && (
+          <span className="flex items-center gap-1.5 text-sm whitespace-nowrap text-[var(--fg-2)]">
+            {loading && <Loader2 className="size-4 animate-spin" />}
+            {resultCount != null && (
+              <>
+                <span className="figure font-medium text-foreground">{resultCount}</span>
+                shown
+              </>
+            )}
+          </span>
+        )}
         <SortControl
           sort={sort}
           sortBy={sortBy}
@@ -546,83 +635,43 @@ export function ListFilterBar({
           onChangeBy={(v) => onChange({ ...values, [sort.byKey]: v })}
           onChangeDir={(v) => onChange({ ...values, [sort.dirKey]: v })}
         />
-
-        <div className="ml-auto flex items-center gap-2 text-xs text-[var(--fg-2)]">
-          {loading && <Loader2 className="size-3.5 animate-spin" />}
-          {resultCount != null && (
-            <span className="whitespace-nowrap tabular-nums">
-              {resultCount} loaded
-            </span>
-          )}
-        </div>
       </div>
-
-      {/* applied-filter chips */}
-      {chips.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="mr-0.5 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-3)]">
-            Applied
-          </span>
-          {chips.map((c) => (
-            <span
-              key={c.id}
-              className="inline-flex h-6 max-w-full items-center gap-1 rounded-sm border border-border bg-[var(--muted-bg)] pr-0.5 pl-2 text-xs text-[var(--fg-1)]"
-            >
-              <span className="max-w-[300px] truncate">{c.label}</span>
-              <button
-                type="button"
-                onClick={() => clearKeys(c.clearKeys)}
-                className="grid size-5 cursor-pointer place-items-center rounded-sm text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
-                aria-label={`Remove ${c.label}`}
-              >
-                <X className="size-3" />
-              </button>
-            </span>
-          ))}
-          <button
-            type="button"
-            onClick={clearAll}
-            className="ml-1 inline-flex h-6 cursor-pointer items-center gap-1 rounded-sm px-1.5 text-xs font-medium text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
-          >
-            <RotateCcw className="size-3" /> Clear all
-          </button>
-        </div>
-      )}
 
       {/* filter sheet */}
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent className="max-w-[460px]">
-          <SheetHeader>
-            <div className="flex items-center gap-2.5">
-              <span className="flex size-8 items-center justify-center rounded-md bg-[var(--accent-bg)] text-primary">
-                <SlidersHorizontal className="size-4" />
-              </span>
-              <div>
-                <div className="text-base font-semibold tracking-tight">
-                  Filters
-                </div>
-                <div className="text-xs text-[var(--fg-2)]">
-                  Changes apply when you hit Apply.
-                </div>
-              </div>
-            </div>
-          </SheetHeader>
+        <SheetContent className="max-w-[480px]">
+          <SheetHero
+            icon={SlidersHorizontal}
+            title="Filters"
+            meta={
+              draftCount > 0 ? (
+                <span>
+                  <span className="figure font-medium text-foreground">{draftCount}</span>{' '}
+                  selected
+                </span>
+              ) : (
+                <span>None selected</span>
+              )
+            }
+          />
 
-          <SheetBody className="space-y-6">
+          <SheetBody className="space-y-8 border-t border-border py-6">
             {sections.map((sec) => {
-              const Icon = sec.icon
+              const n = sectionActive(sec, draft)
               return (
-                <section key={sec.title} className="space-y-3.5">
-                  <div className="flex items-center gap-2">
-                    {Icon && (
-                      <Icon className="size-3.5 text-[var(--fg-3)]" />
-                    )}
-                    <h3 className="text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
-                      {sec.title}
-                    </h3>
-                    <div className="h-px flex-1 bg-border" />
-                  </div>
-                  <div className="grid grid-cols-1 gap-x-3 gap-y-4 sm:grid-cols-2">
+                <SheetSection
+                  key={sec.title}
+                  title={sec.title}
+                  icon={sec.icon}
+                  action={
+                    n > 0 ? (
+                      <span className="figure rounded-full bg-[var(--bg-active)] px-2 py-0.5 text-xs font-medium text-[var(--fg-1)]">
+                        {n}
+                      </span>
+                    ) : undefined
+                  }
+                >
+                  <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
                     {sec.fields.map((f) => (
                       <div
                         key={fieldKeys(f).join('|')}
@@ -640,7 +689,7 @@ export function ListFilterBar({
                       </div>
                     ))}
                   </div>
-                </section>
+                </SheetSection>
               )
             })}
           </SheetBody>
@@ -653,7 +702,7 @@ export function ListFilterBar({
               onClick={() => setDraft({})}
               disabled={draftCount === 0}
             >
-              <RotateCcw className="size-3.5" /> Reset
+              <RotateCcw className="size-4" /> Reset
             </Button>
             <div className="flex items-center gap-2">
               <Button
@@ -665,7 +714,7 @@ export function ListFilterBar({
                 Cancel
               </Button>
               <Button type="button" size="sm" onClick={applyDraft}>
-                <Check className="size-3.5" />
+                <Check className="size-4" />
                 Apply{draftCount > 0 ? ` (${draftCount})` : ''}
               </Button>
             </div>
@@ -696,16 +745,19 @@ function SortControl({
   return (
     <div
       className={cn(
-        'flex h-8 items-center rounded-md border bg-card',
-        dirty ? 'border-[var(--accent-border)]' : 'border-input',
+        'flex h-8 items-center rounded-[10px] border bg-card shadow-[var(--shadow-sm)]',
+        dirty ? 'border-[var(--fg-3)]' : 'border-border',
       )}
     >
       <Select value={sortBy} onValueChange={onChangeBy}>
-        <SelectTrigger className="h-full gap-1.5 border-0 bg-transparent px-2.5 text-sm shadow-none hover:border-0 focus-visible:ring-0">
+        <SelectTrigger
+          aria-label="Sort by"
+          className="h-full w-auto gap-1.5 rounded-l-[10px] rounded-r-none border-0 bg-transparent pr-2 pl-3 text-sm shadow-none hover:border-0 focus-visible:ring-0"
+        >
           <span className="text-[var(--fg-2)]">Sort</span>
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent align="end">
           {sort.options.map((o) => (
             <SelectItem key={o.value} value={o.value}>
               {o.label}
@@ -713,17 +765,18 @@ function SortControl({
           ))}
         </SelectContent>
       </Select>
-      <div className="h-5 w-px bg-border" />
+      <div className="h-4 w-px bg-border" />
       <button
         type="button"
         onClick={() => onChangeDir(sortDir === 'asc' ? 'desc' : 'asc')}
         title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
-        className="flex h-full cursor-pointer items-center rounded-r-md px-2 text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
+        aria-label={sortDir === 'asc' ? 'Sort ascending' : 'Sort descending'}
+        className="flex h-full cursor-pointer items-center rounded-r-[10px] px-2.5 text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         {sortDir === 'asc' ? (
-          <ArrowUpWideNarrow className="size-3.5" />
+          <ArrowUpWideNarrow className="size-4" />
         ) : (
-          <ArrowDownWideNarrow className="size-3.5" />
+          <ArrowDownWideNarrow className="size-4" />
         )}
       </button>
     </div>
