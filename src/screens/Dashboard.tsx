@@ -1,25 +1,42 @@
 import * as React from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, ArrowUp, Link2, Plus, RefreshCw, Terminal } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  Link2,
+  LifeBuoy,
+  Plus,
+  RefreshCw,
+  Waypoints,
+  Webhook,
+} from 'lucide-react'
 
 import { api } from '@/lib/api'
 import { chainInfo, FAMILY_COLOR } from '@/lib/chains'
 import { fmtLocalTime, fmtUsd, fmtNum } from '@/lib/format'
+import { useHeldQueue } from '@/lib/held'
+import { cn } from '@/lib/utils'
 import type {
   BalancesSnapshot,
   ChainInventoryEntry,
   Family,
   Health,
+  OrphanTransaction,
   PoolStatsRow,
+  WebhookDelivery,
 } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
+import { PageHeader } from '@/components/PageHeader'
+import { EmptyState } from '@/components/States'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { Sparkline } from '@/components/Sparkline'
+import { Skeleton } from '@/components/ui/skeleton'
 import { StatusDot } from '@/components/StatusDot'
+import { Table, TableWrap, TBody, Td, Th, THead, Tr } from '@/components/ui/table'
 
 const HEALTH_Q = {
   queryKey: ['gw', 'health'] as const,
@@ -50,11 +67,38 @@ const CHAINS_Q = {
   refetchInterval: 120_000,
 }
 
+// Same keys + requests as the Orphans and Webhooks pages, so the
+// dashboard shares their cache instead of adding traffic.
+const ORPHANS_Q = {
+  queryKey: ['orphans'] as const,
+  queryFn: () =>
+    api<{ orphans: OrphanTransaction[] }>(
+      '/api/gw/admin/orphan-transactions?limit=100',
+    ),
+  refetchInterval: 60_000,
+}
+
+const DEAD_HOOKS_Q = {
+  queryKey: ['webhook-deliveries', 'dead'] as const,
+  queryFn: () =>
+    api<{ deliveries: WebhookDelivery[] }>(
+      '/api/gw/admin/webhook-deliveries?status=dead&limit=100',
+    ),
+  refetchInterval: 60_000,
+}
+
+/** Families that participate in the reusable address pool. */
+const POOL_FAMILIES: Family[] = ['evm', 'tron', 'solana']
+const LOW_POOL = 3
+
 export function DashboardPage() {
   const health = useQuery(HEALTH_Q)
   const pool = useQuery(POOL_Q)
   const bal = useQuery(BAL_Q)
   const chains = useQuery(CHAINS_Q)
+  const orphans = useQuery(ORPHANS_Q)
+  const deadHooks = useQuery(DEAD_HOOKS_Q)
+  const held = useHeldQueue({ refetchInterval: 30_000 })
 
   const bootstrapGaps = React.useMemo(() => {
     const chainList = chains.data?.chains ?? []
@@ -67,184 +111,235 @@ export function DashboardPage() {
     return { webhookGaps, notReady, total: wired.length }
   }, [chains.data])
 
-  const showGapsCard = !!bootstrapGaps && bootstrapGaps.notReady > 0
-
-  const poolTotals = React.useMemo(() => {
+  const lowPoolFamilies = React.useMemo(() => {
     const rows = pool.data?.stats ?? []
-    const total = rows.reduce((s, r) => s + r.total, 0)
-    const available = rows.reduce((s, r) => s + r.available, 0)
-    return { total, available }
+    return rows.filter(
+      (r) => POOL_FAMILIES.includes(r.family) && r.total > 0 && r.available < LOW_POOL,
+    )
   }, [pool.data])
 
   const balSnap = bal.data?.snapshot
-  const balTotal = balSnap ? parseFloat(balSnap.totalUsd) : 0
+
+  const refreshAll = () => {
+    health.refetch()
+    pool.refetch()
+    bal.refetch()
+    chains.refetch()
+    orphans.refetch()
+    deadHooks.refetch()
+    held.refetch()
+  }
+
+  const attention: AttentionItem[] = [
+    {
+      key: 'held',
+      label: 'Held payouts',
+      hint: 'Stuck legs waiting for recovery',
+      icon: LifeBuoy,
+      to: '/held-payouts',
+      count: held.data?.count,
+      loading: held.isLoading,
+      failed: held.isError,
+    },
+    {
+      key: 'orphans',
+      label: 'Orphan transactions',
+      hint: 'Deposits not matched to an invoice',
+      icon: AlertTriangle,
+      to: '/orphans',
+      count: orphans.data?.orphans.length,
+      loading: orphans.isLoading,
+      failed: orphans.isError,
+    },
+    {
+      key: 'hooks',
+      label: 'Dead webhooks',
+      hint: 'Merchant deliveries that gave up retrying',
+      icon: Webhook,
+      to: '/webhooks',
+      count: deadHooks.data?.deliveries.length,
+      loading: deadHooks.isLoading,
+      failed: deadHooks.isError,
+    },
+    {
+      key: 'chains',
+      label: 'Chains not ready',
+      hint:
+        bootstrapGaps && bootstrapGaps.webhookGaps > 0
+          ? `${bootstrapGaps.webhookGaps} missing Alchemy webhook${bootstrapGaps.webhookGaps === 1 ? '' : 's'}`
+          : 'Wired chains missing bootstrap config',
+      icon: Link2,
+      to: '/chains',
+      count: bootstrapGaps?.notReady,
+      loading: chains.isLoading,
+      failed: chains.isError,
+    },
+    {
+      key: 'pool',
+      label: 'Pool running low',
+      hint: `Families with fewer than ${LOW_POOL} free addresses`,
+      icon: Waypoints,
+      to: '/pool',
+      count: pool.data ? lowPoolFamilies.length : undefined,
+      loading: pool.isLoading,
+      failed: pool.isError,
+    },
+  ]
 
   return (
-    <div className="fade-in space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow">Overview</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Dashboard</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          {balSnap && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-[var(--muted-bg)] px-2 py-0.5 text-[11.5px] text-[var(--muted-fg)]">
-              <StatusDot tone="success" />
-              Last sync{' '}
-              <span className="font-mono">
-                {fmtLocalTime(balSnap.generatedAt)}
-              </span>
-            </span>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              health.refetch()
-              pool.refetch()
-              bal.refetch()
-            }}
-          >
-            <RefreshCw className="size-3.5" /> Refresh
-          </Button>
-          <Button size="sm">
-            <Plus className="size-3.5" /> New invoice
-          </Button>
-        </div>
-      </div>
-
-      {showGapsCard && bootstrapGaps && (
-        <BootstrapGapsCard
-          notReady={bootstrapGaps.notReady}
-          webhookGaps={bootstrapGaps.webhookGaps}
-          total={bootstrapGaps.total}
-        />
-      )}
-
-      {/* KPI row */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          label="Total balance (USD)"
-          value={bal.isLoading ? '—' : fmtUsd(balTotal)}
-          big
-          sub={
-            <span className="inline-flex items-center gap-1 text-success">
-              <ArrowUp className="size-3" /> live
-            </span>
-          }
-          spark={SPARK}
-        />
-        <KpiCard
-          label="Health"
-          loading={health.isLoading}
-          value={
-            <span className="inline-flex items-center gap-2">
-              <StatusDot
-                tone={health.data?.status === 'ok' ? 'success' : 'warn'}
-                pulse
-              />
-              {health.data?.status === 'ok' ? 'OK' : (health.data?.status ?? '—')}
-            </span>
-          }
-          sub={
+    <div className="fade-in space-y-6">
+      <PageHeader
+        eyebrow="Overview"
+        title="Dashboard"
+        description={
+          balSnap ? (
             <>
-              Phase <span className="font-mono">{health.data?.phase ?? '—'}</span>
+              Balances as of{' '}
+              <span className="font-mono text-[var(--fg-1)]">
+                {fmtLocalTime(balSnap.generatedAt)}
+              </span>{' '}
+              · refreshes every minute
             </>
-          }
+          ) : (
+            'Gateway health, balances and anything that needs an operator.'
+          )
+        }
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={refreshAll}>
+              <RefreshCw className="size-3.5" /> Refresh
+            </Button>
+            <Button size="sm" asChild>
+              <Link to="/invoices">
+                <Plus className="size-3.5" /> New invoice
+              </Link>
+            </Button>
+          </>
+        }
+      />
+
+      <AttentionStrip items={attention} />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <BalanceHero
+          snapshot={balSnap}
+          loading={bal.isLoading}
+          error={bal.isError ? errMsg(bal.error) : null}
         />
-        <KpiCard
-          label="Active pool"
-          value={
-            pool.isLoading
-              ? '—'
-              : `${poolTotals.available} / ${poolTotals.total}`
-          }
-          sub={<>{pool.data?.stats.length ?? 0} families wired</>}
-        />
-        <KpiCard
-          label="Pool availability"
-          value={
-            <span className="font-mono">
-              {poolTotals.total
-                ? Math.round((poolTotals.available / poolTotals.total) * 100)
-                : 0}
-              %
-            </span>
-          }
-          sub={
-            <Progress
-              value={
-                poolTotals.total
-                  ? (poolTotals.available / poolTotals.total) * 100
-                  : 0
-              }
-            />
-          }
-          subRaw
-        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1">
+          <HealthCard health={health.data} loading={health.isLoading} error={health.isError} />
+          <PoolCard stats={pool.data?.stats} loading={pool.isLoading} />
+        </div>
       </div>
 
-      {/* Balances + Pool */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
-        <BalancesCard snapshot={balSnap} loading={bal.isLoading} />
-        <PoolCard stats={pool.data?.stats} loading={pool.isLoading} />
-      </div>
-
-      {/* Top addresses + Activity */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_1fr]">
-        <TopAddressesCard snapshot={balSnap} loading={bal.isLoading} />
-        <ActivityCard />
-      </div>
-
-      <RuntimeCard />
+      <TopAddressesCard snapshot={balSnap} loading={bal.isLoading} />
     </div>
   )
 }
 
-const SPARK = [8.1, 8.4, 8.2, 8.9, 9.3, 9.1, 9.6, 9.8, 9.4, 10.0, 10.1, 9.8, 10.2, 10.23]
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : 'Request failed'
+}
 
-function KpiCard({
-  label,
-  value,
-  sub,
-  big,
-  spark,
-  subRaw,
-  loading,
-}: {
+/* ── Attention strip ───────────────────────────────────────── */
+
+type AttentionItem = {
+  key: string
   label: string
-  value: React.ReactNode
-  sub?: React.ReactNode
-  big?: boolean
-  spark?: number[]
-  subRaw?: boolean
-  loading?: boolean
-}) {
+  hint: string
+  icon: React.ComponentType<{ className?: string }>
+  to: string
+  count?: number
+  loading: boolean
+  failed: boolean
+}
+
+function AttentionStrip({ items }: { items: AttentionItem[] }) {
+  const settled = items.every((i) => !i.loading)
+  const open = items.filter((i) => (i.count ?? 0) > 0)
+  const failed = items.filter((i) => i.failed)
+  const allClear = settled && open.length === 0 && failed.length === 0
+
   return (
-    <Card className="flex flex-col gap-2 p-4">
-      <div className="eyebrow">{label}</div>
-      <div
-        className={
-          big
-            ? 'font-mono text-[30px] font-semibold leading-tight tracking-tight tabular-nums'
-            : 'text-[22px] font-semibold leading-tight tracking-tight tabular-nums'
-        }
-      >
-        {loading ? <span className="text-[var(--fg-3)]">—</span> : value}
+    <section aria-labelledby="attention-title">
+      <div className="mb-2 flex items-center gap-2">
+        <h2 id="attention-title" className="text-sm font-medium">
+          Needs attention
+        </h2>
+        {allClear ? (
+          <span className="inline-flex items-center gap-1.5 text-sm text-success">
+            <CheckCircle2 className="size-3.5" /> All clear
+          </span>
+        ) : settled && open.length > 0 ? (
+          <span className="text-sm text-[var(--fg-2)]">
+            {open.length} {open.length === 1 ? 'area' : 'areas'}
+          </span>
+        ) : null}
       </div>
-      <div className={subRaw ? '' : 'text-xs text-[var(--fg-2)]'}>{sub}</div>
-      {spark && <Sparkline data={spark} />}
-    </Card>
+      <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-border gap-px sm:grid-cols-3 xl:grid-cols-5">
+        {items.map((it) => {
+          const Icon = it.icon
+          const n = it.count ?? 0
+          const hot = n > 0
+          return (
+            <Link
+              key={it.key}
+              to={it.to}
+              className={cn(
+                'group relative flex flex-col gap-2 bg-card px-4 py-3.5 outline-none transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+                hot && 'bg-[var(--warn-bg)] hover:bg-[var(--warn-bg)]',
+              )}
+            >
+              {hot && (
+                <span aria-hidden className="absolute inset-x-0 top-0 h-0.5 bg-warn" />
+              )}
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={cn(
+                    'flex items-center gap-1.5 text-xs',
+                    hot ? 'font-medium text-warn' : 'text-[var(--fg-2)]',
+                  )}
+                >
+                  <Icon className="size-3.5" />
+                  {it.label}
+                </span>
+                <ArrowRight className="size-3.5 text-[var(--fg-3)] opacity-0 transition-opacity group-hover:opacity-100" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                {it.loading ? (
+                  <Skeleton className="h-7 w-8" />
+                ) : it.failed ? (
+                  <span className="text-sm text-destructive">Unavailable</span>
+                ) : (
+                  <span
+                    className={cn(
+                      'font-mono text-2xl font-semibold tracking-[-0.02em] tabular-nums',
+                      hot ? 'text-foreground' : 'text-[var(--fg-3)]',
+                    )}
+                  >
+                    {n}
+                  </span>
+                )}
+              </div>
+              <span className="hidden text-2xs text-[var(--fg-2)] sm:block">{it.hint}</span>
+            </Link>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
-function BalancesCard({
+/* ── Balance hero ──────────────────────────────────────────── */
+
+function BalanceHero({
   snapshot,
   loading,
+  error,
 }: {
   snapshot?: BalancesSnapshot
   loading: boolean
+  error: string | null
 }) {
   const families: Family[] = ['evm', 'tron', 'solana', 'utxo', 'monero']
   const rows =
@@ -256,7 +351,6 @@ function BalancesCard({
   const byFamily = Object.fromEntries(rows.map((r) => [r.family, r]))
   const total = parseFloat(snapshot?.totalUsd ?? '0')
 
-  // Flatten chain shares across all families (sorted)
   const chainShares = rows
     .flatMap((r) =>
       r.chains.map((c) => ({
@@ -265,28 +359,49 @@ function BalancesCard({
         info: chainInfo(c.chainId),
       })),
     )
+    .filter((c) => c.usd > 0)
     .sort((a, b) => b.usd - a.usd)
 
   return (
-    <Card className="p-5">
-      <div className="mb-3.5 flex items-start justify-between gap-3">
+    <Card className="flex flex-col p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <CardTitle>Balances</CardTitle>
-          <CardDescription className="mt-1">
-            Per-family · gateway-owned addresses · source{' '}
-            <span className="font-mono">db</span>
-          </CardDescription>
+          <div className="text-sm text-[var(--fg-2)]">Total balance</div>
+          <div className="mt-1 font-mono text-3xl font-semibold tracking-[-0.03em] tabular-nums">
+            {loading ? (
+              <Skeleton className="h-10 w-48" />
+            ) : error ? (
+              <span className="text-[var(--fg-3)]">—</span>
+            ) : (
+              fmtUsd(total)
+            )}
+          </div>
+          <div className="mt-1 text-xs text-[var(--fg-2)]">
+            Gateway-owned addresses · source{' '}
+            <span className="font-mono">{snapshot?.source ?? 'db'}</span>
+          </div>
         </div>
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/balances">
+            All balances <ArrowRight className="size-3.5" />
+          </Link>
+        </Button>
       </div>
 
-      {/* Stacked bar */}
+      {error && (
+        <div className="mt-4 text-sm text-destructive">
+          Balances unavailable: <span className="font-mono text-xs">{error}</span>
+        </div>
+      )}
+
       {total > 0 && (
-        <>
-          <div className="flex h-2.5 overflow-hidden rounded-md border border-border">
+        <div className="mt-5">
+          <div className="flex h-2 gap-0.5 overflow-hidden rounded-full">
             {chainShares.map((c) => (
               <div
                 key={c.chainId}
                 title={`${c.info.name} · ${fmtUsd(c.usd)}`}
+                className="min-w-[3px]"
                 style={{
                   background: c.info.color,
                   width: `${(c.usd / total) * 100}%`,
@@ -294,74 +409,95 @@ function BalancesCard({
               />
             ))}
           </div>
-          <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-2">
+          <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
             {chainShares.map((c) => (
-              <div
-                key={c.chainId}
-                className="flex items-center gap-1.5 text-xs"
-              >
-                <span
-                  className="size-2 rounded-sm"
-                  style={{ background: c.info.color }}
-                />
-                <span>{c.info.name}</span>
-                <span className="font-mono text-[var(--fg-2)]">
-                  {fmtUsd(c.usd)}
+              <li key={c.chainId} className="flex items-center gap-1.5 text-xs">
+                <span className="size-2 rounded-full" style={{ background: c.info.color }} />
+                <span className="text-[var(--fg-1)]">{c.info.name}</span>
+                <span className="font-mono text-[var(--fg-2)] tabular-nums">
+                  {((c.usd / total) * 100).toFixed(1)}%
                 </span>
-                <span className="text-[11px] text-[var(--fg-3)]">
-                  ({((c.usd / total) * 100).toFixed(1)}%)
-                </span>
-              </div>
+              </li>
             ))}
-          </div>
-        </>
+          </ul>
+        </div>
       )}
 
-      {/* Family blocks */}
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {families.map((fam) => {
-          const r = byFamily[fam]
-          const inactive = !r || r.usd === 0
-          return (
-            <div
-              key={fam}
-              className="rounded-[var(--radius-md)] border border-border p-3.5"
-              style={{
-                background: inactive ? 'transparent' : 'var(--bg-2)',
-                opacity: inactive ? 0.7 : 1,
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+      <div className="mt-auto pt-5">
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-5">
+          {families.map((fam) => {
+            const r = byFamily[fam]
+            const usd = r?.usd ?? 0
+            const inactive = usd === 0
+            return (
+              <div key={fam} className="bg-card px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
                   <span
-                    className="size-2.5 rounded-sm"
-                    style={{ background: FAMILY_COLOR[fam] }}
+                    className="size-2 rounded-full"
+                    style={{ background: FAMILY_COLOR[fam], opacity: inactive ? 0.4 : 1 }}
                   />
-                  <span className="text-[12.5px] font-semibold uppercase tracking-[0.08em]">
-                    {fam}
-                  </span>
+                  {fam}
                 </div>
-                {inactive && (
-                  <span className="rounded-full border border-border bg-[var(--muted-bg)] px-1.5 py-0.5 text-[10px] text-[var(--muted-fg)]">
-                    {loading ? '…' : 'no balance'}
-                  </span>
-                )}
+                <div
+                  className={cn(
+                    'mt-1 font-mono text-sm font-medium tabular-nums',
+                    inactive && 'text-[var(--fg-3)]',
+                  )}
+                >
+                  {loading ? <Skeleton className="h-4 w-16" /> : fmtUsd(usd)}
+                </div>
+                <div className="text-2xs text-[var(--fg-3)]">
+                  {r?.chains.length ?? 0} {r?.chains.length === 1 ? 'chain' : 'chains'}
+                </div>
               </div>
-              <div className="mt-2.5 font-mono text-[22px] font-semibold tracking-tight">
-                {fmtUsd(r?.usd ?? 0)}
-              </div>
-              <div className="mt-1 flex items-center gap-2 text-xs text-[var(--fg-2)]">
-                <span>
-                  <span className="font-mono">{r?.chains.length ?? 0}</span> chains
-                </span>
-              </div>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
     </Card>
   )
 }
+
+/* ── Health ────────────────────────────────────────────────── */
+
+function HealthCard({
+  health,
+  loading,
+  error,
+}: {
+  health?: Health
+  loading: boolean
+  error: boolean
+}) {
+  const ok = health?.status === 'ok'
+  return (
+    <Card className="p-5">
+      <div className="text-sm text-[var(--fg-2)]">Gateway health</div>
+      <div className="mt-2 flex items-center gap-2.5">
+        {loading ? (
+          <Skeleton className="h-7 w-24" />
+        ) : error ? (
+          <>
+            <StatusDot tone="danger" />
+            <span className="text-xl font-semibold tracking-[-0.015em]">Unreachable</span>
+          </>
+        ) : (
+          <>
+            <StatusDot tone={ok ? 'success' : 'warn'} pulse />
+            <span className="text-xl font-semibold tracking-[-0.015em]">
+              {ok ? 'Operational' : 'Degraded'}
+            </span>
+          </>
+        )}
+      </div>
+      <div className="mt-1 text-xs text-[var(--fg-2)]">
+        Phase <span className="font-mono">{health?.phase ?? '—'}</span> · checked every 30s
+      </div>
+    </Card>
+  )
+}
+
+/* ── Pool ──────────────────────────────────────────────────── */
 
 function PoolCard({
   stats,
@@ -372,30 +508,26 @@ function PoolCard({
 }) {
   // UTXO is intentionally omitted: BTC/LTC mint a fresh BIP84 address per
   // invoice (privacy requirement) and never participate in the pool.
-  const families: Family[] = ['evm', 'tron', 'solana']
   const byFamily = Object.fromEntries((stats ?? []).map((s) => [s.family, s]))
 
   return (
     <Card className="p-5">
-      <div className="mb-3.5 flex items-start justify-between gap-3">
-        <div>
-          <CardTitle>Address pool</CardTitle>
-          <CardDescription className="mt-1">
-            Available / allocated / quarantined
-          </CardDescription>
-        </div>
-        <Button size="sm" variant="outline">
-          <Plus className="size-3" /> Seed
-        </Button>
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-[var(--fg-2)]">Address pool</div>
+        <Link
+          to="/pool"
+          className="text-xs text-[var(--fg-2)] hover:text-foreground"
+        >
+          Manage
+        </Link>
       </div>
-
-      <div className="space-y-3.5">
-        {families.map((fam) => {
+      <div className="mt-3 space-y-3">
+        {POOL_FAMILIES.map((fam) => {
           const s = byFamily[fam]
           const tot = s?.total ?? 0
           const av = s?.available ?? 0
           const pct = tot ? (av / tot) * 100 : 0
-          const tone = av < 3 ? 'danger' : av < 6 ? 'warn' : 'success'
+          const tone = av < LOW_POOL ? 'danger' : av < 6 ? 'warn' : 'success'
           const indicator =
             tone === 'danger'
               ? 'bg-destructive'
@@ -405,44 +537,36 @@ function PoolCard({
 
           return (
             <div key={fam}>
-              <div className="mb-1.5 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="size-2.5 rounded-sm"
-                    style={{ background: FAMILY_COLOR[fam] }}
-                  />
-                  <span className="text-[13px] font-medium">
-                    {fam.toUpperCase()}
-                  </span>
-                  <span
-                    className={
-                      'rounded-full border px-1.5 py-0.5 text-[10px] ' +
-                      (tone === 'danger'
-                        ? 'border-[var(--danger-border)] bg-[var(--danger-bg)] text-destructive'
-                        : tone === 'warn'
-                          ? 'border-[var(--warn-border)] bg-[var(--warn-bg)] text-warn'
-                          : 'border-[var(--success-border)] bg-[var(--success-bg)] text-success')
-                    }
-                  >
-                    {loading ? '…' : `${av} available`}
-                  </span>
-                </div>
-                <span className="font-mono text-xs text-[var(--fg-2)]">
-                  {av}/{tot}
+              <div className="mb-1 flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 font-medium uppercase tracking-[0.06em] text-[var(--fg-1)]">
+                  <span className="size-2 rounded-full" style={{ background: FAMILY_COLOR[fam] }} />
+                  {fam}
+                </span>
+                <span className="font-mono text-[var(--fg-2)] tabular-nums">
+                  {loading ? '…' : (
+                    <>
+                      <span
+                        className={cn(
+                          'font-medium',
+                          tone === 'danger' && 'text-destructive',
+                          tone === 'warn' && 'text-warn',
+                          tone === 'success' && 'text-foreground',
+                        )}
+                      >
+                        {av}
+                      </span>{' '}
+                      free / {tot}
+                    </>
+                  )}
                 </span>
               </div>
               <Progress value={pct} indicatorClassName={indicator} />
-              <div className="mt-1.5 flex items-center gap-3 text-[11.5px] text-[var(--fg-2)]">
+              <div className="mt-1 flex gap-3 text-2xs text-[var(--fg-3)]">
                 <span>
-                  alloc <span className="font-mono">{s?.allocated ?? 0}</span>
+                  allocated <span className="font-mono">{s?.allocated ?? 0}</span>
                 </span>
                 <span>
-                  quar <span className="font-mono">{s?.quarantined ?? 0}</span>
-                </span>
-                <span className="flex-1" />
-                <span>
-                  idx{' '}
-                  <span className="font-mono">{s?.highestIndex ?? 0}</span>
+                  quarantined <span className="font-mono">{s?.quarantined ?? 0}</span>
                 </span>
               </div>
             </div>
@@ -452,6 +576,8 @@ function PoolCard({
     </Card>
   )
 }
+
+/* ── Top addresses ─────────────────────────────────────────── */
 
 function TopAddressesCard({
   snapshot,
@@ -485,189 +611,67 @@ function TopAddressesCard({
   const top = rows.slice(0, 8)
 
   return (
-    <Card className="overflow-hidden p-0">
+    <Card className="overflow-hidden">
       <CardHeader className="border-b">
-        <CardTitle>Top pool addresses</CardTitle>
-        <CardDescription>Sorted by USD balance</CardDescription>
+        <CardTitle>Largest pool addresses</CardTitle>
+        <CardDescription>Top 8 by USD value across all chains</CardDescription>
       </CardHeader>
-      <CardContent className="p-0">
-        {loading ? (
-          <div className="p-8 text-center text-sm text-[var(--fg-2)]">Loading…</div>
-        ) : top.length === 0 ? (
-          <div className="p-8 text-center text-sm text-[var(--fg-2)]">
-            No balances yet.
-          </div>
-        ) : (
-          <table className="w-full border-separate border-spacing-0 text-sm">
-            <thead>
-              <tr className="text-left">
+      {loading ? (
+        <div className="space-y-3 p-5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-4 w-full" />
+          ))}
+        </div>
+      ) : top.length === 0 ? (
+        <EmptyState
+          compact
+          icon={Waypoints}
+          title="No balances yet"
+          description="Funds received on pool addresses show up here once the first invoice is paid."
+        />
+      ) : (
+        <TableWrap>
+          <Table className="min-w-[560px]">
+            <THead>
+              <tr>
                 <Th>Address</Th>
                 <Th>Chain</Th>
                 <Th>Token</Th>
-                <Th className="text-right">Amount</Th>
-                <Th className="text-right">USD</Th>
+                <Th align="right">Amount</Th>
+                <Th align="right">USD</Th>
               </tr>
-            </thead>
-            <tbody>
+            </THead>
+            <TBody>
               {top.map((r, i) => {
                 const info = chainInfo(r.chainId)
                 return (
-                  <tr
-                    key={i}
-                    className="transition-colors hover:bg-[var(--bg-2)]"
-                  >
+                  <Tr key={i}>
                     <Td>
                       <Addr value={r.address} />
                     </Td>
                     <Td>
                       <span className="inline-flex items-center gap-1.5">
                         <span
-                          className="size-[7px] rounded-full"
+                          className="size-2 rounded-full"
                           style={{ background: info.color }}
                         />
                         {info.name}
                       </span>
                     </Td>
-                    <Td className="font-mono text-[12.5px]">{r.token}</Td>
-                    <Td className="text-right font-mono text-[12.5px]">
+                    <Td className="font-mono text-xs">{r.token}</Td>
+                    <Td align="right" className="text-xs">
                       {fmtNum(r.amountDecimal)}
                     </Td>
-                    <Td className="text-right font-mono font-semibold">
+                    <Td align="right" className="font-medium">
                       {fmtUsd(r.usd)}
                     </Td>
-                  </tr>
+                  </Tr>
                 )
               })}
-            </tbody>
-          </table>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function Th({
-  children,
-  className = '',
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
-  return (
-    <th
-      className={
-        'border-b border-border bg-card px-3.5 py-2.5 text-[11.5px] font-medium uppercase tracking-[0.06em] text-[var(--fg-2)] ' +
-        className
-      }
-    >
-      {children}
-    </th>
-  )
-}
-
-function Td({
-  children,
-  className = '',
-}: {
-  children: React.ReactNode
-  className?: string
-}) {
-  return (
-    <td className={'border-b border-border px-3.5 py-3 align-middle ' + className}>
-      {children}
-    </td>
-  )
-}
-
-function ActivityCard() {
-  // Placeholder — gateway doesn't expose a generic event stream endpoint.
-  return (
-    <Card className="flex flex-col p-0">
-      <CardHeader className="border-b">
-        <CardTitle>Recent activity</CardTitle>
-        <CardDescription>Wire this to your event log once one exists.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-1 items-center justify-center p-10 text-center">
-        <div className="space-y-2 text-sm text-[var(--fg-2)]">
-          <div>Activity stream will appear here.</div>
-          <div className="text-xs text-[var(--fg-3)]">
-            Derive from <span className="font-mono">/admin/webhook-deliveries</span>{' '}
-            + webhook outbox in a later phase.
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function BootstrapGapsCard({
-  notReady,
-  webhookGaps,
-  total,
-}: {
-  notReady: number
-  webhookGaps: number
-  total: number
-}) {
-  const parts: string[] = []
-  if (webhookGaps > 0)
-    parts.push(
-      `${webhookGaps} missing Alchemy webhook${webhookGaps === 1 ? '' : 's'}`,
-    )
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warn/40 bg-warn/10 px-4 py-3">
-      <div className="flex items-start gap-3">
-        <Link2 className="mt-0.5 size-4 shrink-0 text-warn" />
-        <div className="min-w-0">
-          <div className="text-sm font-medium text-warn">
-            {notReady} of {total} wired chains not bootstrap-ready
-          </div>
-          <div className="mt-0.5 text-xs text-[var(--fg-2)]">
-            {parts.length > 0 ? `${parts.join(' · ')}. ` : ''}Ingest and payouts
-            stay degraded until these are filled.
-          </div>
-        </div>
-      </div>
-      <Button asChild size="sm">
-        <Link to="/chains">
-          Open chains
-          <ArrowRight className="size-3.5" />
-        </Link>
-      </Button>
-    </div>
-  )
-}
-
-function RuntimeCard() {
-  const items = [
-    { label: 'Runtime', value: 'CF Workers', sub: 'edge · global' },
-    { label: 'DB adapter', value: '—', sub: 'read from gateway config' },
-    { label: 'Price oracle', value: '—', sub: 'chain: gateway-defined' },
-    { label: 'Rate limit', value: 'per-route', sub: 'dashboard + gateway proxy' },
-  ]
-  return (
-    <Card className="p-5">
-      <div className="mb-3.5 flex items-start justify-between gap-3">
-        <div>
-          <CardTitle>Runtime</CardTitle>
-          <CardDescription>Configuration and infrastructure</CardDescription>
-        </div>
-        <Button size="sm" variant="outline">
-          <Terminal className="size-3" /> Open logs
-        </Button>
-      </div>
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {items.map((it) => (
-          <div key={it.label}>
-            <div className="eyebrow">{it.label}</div>
-            <div className="mt-1.5 font-mono text-[15px] font-semibold">
-              {it.value}
-            </div>
-            <div className="mt-0.5 text-xs text-[var(--fg-2)]">{it.sub}</div>
-          </div>
-        ))}
-      </div>
+            </TBody>
+          </Table>
+        </TableWrap>
+      )}
     </Card>
   )
 }
