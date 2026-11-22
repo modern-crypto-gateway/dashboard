@@ -159,7 +159,7 @@ export function ChainTokenPicker({
                 <SelectItem key={c.chainId} value={String(c.chainId)}>
                   <span className="flex items-center gap-2">
                     <span>{c.displayName}</span>
-                    <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                    <span className="font-mono text-2xs text-[var(--fg-3)]">
                       {c.chainId}
                     </span>
                   </span>
@@ -186,17 +186,17 @@ export function ChainTokenPicker({
                     <span className="flex items-center gap-2">
                       <span className="font-mono">{t.symbol}</span>
                       {isNative && (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-[9.5px] uppercase tracking-wider text-[var(--fg-2)]">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-2xs uppercase tracking-wider text-[var(--fg-2)]">
                           <Fuel className="size-2.5" />
                           gas
                         </span>
                       )}
                       {t.isStable && (
-                        <span className="rounded-full border border-[var(--success-border)] bg-[var(--success-bg)] px-1.5 py-0.5 text-[9.5px] uppercase tracking-wider text-success">
+                        <span className="rounded-full border border-[var(--success-border)] bg-[var(--success-bg)] px-1.5 py-0.5 text-2xs uppercase tracking-wider text-success">
                           stable
                         </span>
                       )}
-                      <span className="text-[11px] text-[var(--fg-3)]">
+                      <span className="text-2xs text-[var(--fg-3)]">
                         {t.displayName}
                       </span>
                     </span>
@@ -209,7 +209,7 @@ export function ChainTokenPicker({
       </div>
 
       {selectedChain && selectedToken && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--fg-2)]">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-[var(--fg-2)]">
           <span>
             decimals{' '}
             <span className="font-mono text-[var(--fg-1)]">

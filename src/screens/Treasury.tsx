@@ -346,10 +346,10 @@ export function TreasuryPage() {
                   className="size-2.5 rounded-sm"
                   style={{ background: chainInfo(g.chainId).color }}
                 />
-                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--fg-2)]">
+                <span className="text-2xs font-semibold uppercase tracking-[0.12em] text-[var(--fg-2)]">
                   {g.name}
                 </span>
-                <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                <span className="font-mono text-2xs text-[var(--fg-3)]">
                   {g.chainId} · {g.rows.length}
                 </span>
               </div>
@@ -590,7 +590,7 @@ function DestinationCard({
           <KeyVal label="Float kept">
             <span className="font-mono">
               {fmtAmt(d.keepFloatRaw, dec, d.token)}
-              <span className="ml-1.5 text-[10.5px] text-[var(--fg-3)]">
+              <span className="ml-1.5 text-2xs text-[var(--fg-3)]">
                 always left for merchant payouts
               </span>
             </span>
@@ -660,7 +660,7 @@ function DestinationCard({
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-primary hover:underline"
+          className="inline-flex cursor-pointer items-center gap-1 text-2xs text-primary hover:underline"
         >
           {expanded ? (
             <ChevronDown className="size-3" />
@@ -699,7 +699,7 @@ function DestinationCard({
 function KeyVal({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[140px_1fr] items-start gap-3 text-sm">
-      <span className="pt-0.5 text-[11px] uppercase tracking-[0.08em] text-[var(--fg-3)]">
+      <span className="pt-0.5 text-2xs uppercase tracking-[0.08em] text-[var(--fg-3)]">
         {label}
       </span>
       <div className="min-w-0">{children}</div>
@@ -789,7 +789,7 @@ function EligibilityView({
         <SourcesTable e={e} token={token} />
       ) : (
         <details className="text-xs">
-          <summary className="cursor-pointer select-none text-[11px] text-primary hover:underline">
+          <summary className="cursor-pointer select-none text-2xs text-primary hover:underline">
             Show {e.sources.length} source{e.sources.length === 1 ? '' : 's'}
           </summary>
           <div className="mt-1.5">
@@ -821,13 +821,13 @@ function Stat({
           : 'border-border bg-[var(--bg-2)]',
       )}
     >
-      <div className="text-[10.5px] uppercase tracking-[0.08em] text-[var(--fg-3)]">
+      <div className="text-2xs uppercase tracking-[0.08em] text-[var(--fg-3)]">
         {label}
       </div>
       <div className="mt-0.5 truncate font-mono text-sm" title={value}>
         {value}
       </div>
-      {sub && <div className="text-[11px] text-[var(--fg-2)]">{sub}</div>}
+      {sub && <div className="text-2xs text-[var(--fg-2)]">{sub}</div>}
     </div>
   )
 }
@@ -843,7 +843,7 @@ function SourcesTable({ e, token }: { e: TreasuryEligibility; token: string }) {
   return (
     <div className="overflow-hidden rounded-md border border-border">
       <table className="w-full text-xs">
-        <thead className="bg-[var(--bg-2)] text-[10px] uppercase tracking-wider text-[var(--fg-3)]">
+        <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
           <tr>
             <th className="px-2 py-1.5 text-left">Source</th>
             <th className="px-2 py-1.5 text-right">Spendable</th>
@@ -1302,7 +1302,7 @@ function SkippedReasonsList({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-warn hover:underline"
+        className="inline-flex cursor-pointer items-center gap-1 text-2xs text-warn hover:underline"
       >
         <AlertTriangle className="size-3" />
         {open ? 'Hide' : 'Show'} skipped sources · {reasons.length}
@@ -1315,11 +1315,11 @@ function SkippedReasonsList({
               className="flex flex-wrap items-center gap-2 rounded border border-warn/30 bg-card px-2 py-1 text-xs"
             >
               <Addr value={r.sourceAddress} />
-              <span className="font-mono text-[10.5px] text-[var(--fg-2)]">
+              <span className="font-mono text-2xs text-[var(--fg-2)]">
                 {fmtAmt(r.amountRaw, dec, token)}
               </span>
               <span
-                className="ml-auto max-w-[280px] truncate font-mono text-[10px] text-[var(--fg-3)]"
+                className="ml-auto max-w-[280px] truncate font-mono text-2xs text-[var(--fg-3)]"
                 title={r.reason}
               >
                 {r.reason}
@@ -1377,7 +1377,7 @@ function TransfersSection({
                 <SelectItem key={d.id} value={d.id}>
                   <span className="flex items-center gap-2">
                     <span>{d.label}</span>
-                    <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                    <span className="font-mono text-2xs text-[var(--fg-3)]">
                       {chainName(chains, d.chainId)} · {d.token}
                     </span>
                   </span>
@@ -1410,7 +1410,7 @@ function TransfersSection({
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead className="bg-[var(--bg-2)] text-[10px] uppercase tracking-wider text-[var(--fg-3)]">
+            <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
               <tr>
                 <th className="px-4 py-2 text-left">Created</th>
                 <th className="px-3 py-2 text-left">Mode</th>
@@ -1471,7 +1471,7 @@ function TransferRow({
           {dest ? (
             <div>
               <div className="font-medium">{dest.label}</div>
-              <div className="font-mono text-[10.5px] text-[var(--fg-3)]">
+              <div className="font-mono text-2xs text-[var(--fg-3)]">
                 {chainName(chains, dest.chainId)} · {dest.token}
               </div>
             </div>
@@ -1483,12 +1483,12 @@ function TransferRow({
         </td>
         <td className="px-3 py-2 text-right font-mono whitespace-nowrap">
           <div>{fmtAmt(t.plannedAmountRaw, dec, token)}</div>
-          <div className="text-[10.5px] text-[var(--fg-3)]">
+          <div className="text-2xs text-[var(--fg-3)]">
             {fmtUsd(t.plannedUsd)}
           </div>
           {t.status.confirmedAmountRaw !== '0' &&
             t.status.confirmedAmountRaw !== t.plannedAmountRaw && (
-              <div className="text-[10.5px] text-success">
+              <div className="text-2xs text-success">
                 confirmed {fmtAmt(t.status.confirmedAmountRaw, dec, token)}
               </div>
             )}
@@ -1499,7 +1499,7 @@ function TransferRow({
             <button
               type="button"
               onClick={() => setOpen((v) => !v)}
-              className="inline-flex cursor-pointer items-center gap-0.5 text-[10.5px] text-warn hover:underline"
+              className="inline-flex cursor-pointer items-center gap-0.5 text-2xs text-warn hover:underline"
             >
               {open ? (
                 <ChevronDown className="size-3" />
@@ -1516,11 +1516,11 @@ function TransferRow({
         <td className="px-4 py-2 text-[var(--fg-2)]">
           <div className="flex flex-col gap-0.5">
             <span>
-              <span className="text-[10px] uppercase text-[var(--fg-3)]">tx </span>
+              <span className="text-2xs uppercase text-[var(--fg-3)]">tx </span>
               <Addr value={t.id} />
             </span>
             <span>
-              <span className="text-[10px] uppercase text-[var(--fg-3)]">batch </span>
+              <span className="text-2xs uppercase text-[var(--fg-3)]">batch </span>
               <Addr value={t.batchId} />
             </span>
           </div>
@@ -1541,11 +1541,11 @@ function TransferRow({
                     className="flex flex-wrap items-center gap-2 rounded border border-warn/30 bg-card px-2 py-1"
                   >
                     <Addr value={r.sourceAddress} />
-                    <span className="font-mono text-[10.5px] text-[var(--fg-2)]">
+                    <span className="font-mono text-2xs text-[var(--fg-2)]">
                       {fmtAmt(r.amountRaw, dec, token)}
                     </span>
                     <span
-                      className="ml-auto max-w-[360px] truncate font-mono text-[10px] text-[var(--fg-3)]"
+                      className="ml-auto max-w-[360px] truncate font-mono text-2xs text-[var(--fg-3)]"
                       title={r.reason}
                     >
                       {r.reason}
@@ -1919,7 +1919,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
                         <SelectItem key={c.chainId} value={String(c.chainId)}>
                           <span className="flex items-center gap-2">
                             <span>{c.displayName}</span>
-                            <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                            <span className="font-mono text-2xs text-[var(--fg-3)]">
                               {c.chainId}
                             </span>
                           </span>
@@ -1944,7 +1944,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
                         <SelectItem key={t.symbol} value={t.symbol}>
                           <span className="flex items-center gap-2">
                             <span className="font-mono">{t.symbol}</span>
-                            <span className="text-[10.5px] text-[var(--fg-3)]">
+                            <span className="text-2xs text-[var(--fg-3)]">
                               {t.displayName}
                             </span>
                           </span>
@@ -2048,7 +2048,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
                 <button
                   type="button"
                   onClick={() => setAutoInterval('')}
-                  className="cursor-pointer text-[11px] text-[var(--fg-3)] hover:text-foreground"
+                  className="cursor-pointer text-2xs text-[var(--fg-3)] hover:text-foreground"
                 >
                   Clear
                 </button>

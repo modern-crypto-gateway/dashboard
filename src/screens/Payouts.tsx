@@ -477,7 +477,7 @@ function PayoutList({
   const lookup = useChainTokenLookup()
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden grid-cols-[1fr_120px_160px_170px_100px_90px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
+      <div className="hidden grid-cols-[1fr_120px_160px_170px_100px_90px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-2xs font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
         <div>Payout</div>
         <div>Chain</div>
         <div>Amount</div>
@@ -531,7 +531,7 @@ function PayoutRow({
       >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="truncate font-mono text-[12.5px]">
+            <span className="truncate font-mono text-xs">
               {truncateAddr(po.id, 8, 6)}
             </span>
             <span onClick={(e) => e.stopPropagation()}>
@@ -568,14 +568,14 @@ function PayoutRow({
                 title={`RBF re-broadcast ${po.feeBumpAttempts}×`}
               >
                 <Zap className="size-3" />
-                <span className="font-mono text-[10px]">
+                <span className="font-mono text-2xs">
                   {po.feeBumpAttempts}
                 </span>
               </span>
             )}
           </div>
           {po.sourceAddress && (
-            <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--fg-3)]">
+            <div className="mt-0.5 truncate font-mono text-2xs text-[var(--fg-3)]">
               from {truncateAddr(po.sourceAddress, 6, 4)}
             </div>
           )}
@@ -584,18 +584,18 @@ function PayoutRow({
         <ChainPill chainId={po.chainId} />
 
         <div className="min-w-0">
-          <div className="truncate font-mono text-[12.5px] tabular-nums">
+          <div className="truncate font-mono text-xs tabular-nums">
             {formatted}{' '}
             <span className="text-[var(--fg-3)]">{po.token}</span>
           </div>
           {po.quotedAmountUsd && (
-            <div className="font-mono text-[11px] text-[var(--fg-3)]">
+            <div className="font-mono text-2xs text-[var(--fg-3)]">
               quoted {fmtUsd(po.quotedAmountUsd)}
             </div>
           )}
         </div>
 
-        <div className="min-w-0 font-mono text-[12.5px] text-[var(--fg-2)]">
+        <div className="min-w-0 font-mono text-xs text-[var(--fg-2)]">
           <span className="truncate">{truncateAddr(po.destinationAddress, 6, 4)}</span>
         </div>
 
@@ -616,7 +616,7 @@ function FeeTierBadge({ tier }: { tier: FeeTier }) {
   const variant =
     tier === 'high' ? 'warn' : tier === 'low' ? 'outline' : 'default'
   return (
-    <Badge variant={variant} className="px-1.5 py-0 text-[9.5px] tracking-wider uppercase">
+    <Badge variant={variant} className="px-1.5 py-0 text-2xs tracking-wider uppercase">
       {label}
     </Badge>
   )
@@ -625,7 +625,7 @@ function FeeTierBadge({ tier }: { tier: FeeTier }) {
 function ChainPill({ chainId }: { chainId: number }) {
   const info = chainInfo(chainId)
   return (
-    <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[var(--fg-2)]">
+    <span className="inline-flex items-center gap-1.5 text-xs text-[var(--fg-2)]">
       <span
         className="size-[7px] shrink-0 rounded-full"
         style={{ background: info.color }}
@@ -772,7 +772,7 @@ function PayoutDetailSheet({
                         ? `${formatUnits(po.amountRaw, meta.decimals)} ${po.token}`
                         : `${po.amountRaw} (raw)`}
                     </div>
-                    <div className="font-mono text-[11px] text-[var(--fg-3)]">
+                    <div className="font-mono text-2xs text-[var(--fg-3)]">
                       raw {po.amountRaw}
                     </div>
                   </div>
@@ -784,7 +784,7 @@ function PayoutDetailSheet({
                         {fmtUsd(po.quotedAmountUsd)}
                       </span>
                       {po.quotedRate && (
-                        <span className="text-[11px] text-[var(--fg-2)]">
+                        <span className="text-2xs text-[var(--fg-2)]">
                           quoted at{' '}
                           <span className="font-mono">
                             ${po.quotedRate}/{po.token}
@@ -842,7 +842,7 @@ function PayoutDetailSheet({
                     <div className="space-y-1.5">
                       <Addr value={po.txHash} truncated={false} />
                       {(po.feeBumpAttempts ?? 0) > 0 && (
-                        <div className="text-[10.5px] text-[var(--fg-3)]">
+                        <div className="text-2xs text-[var(--fg-3)]">
                           latest after {po.feeBumpAttempts} RBF bump
                           {po.feeBumpAttempts === 1 ? '' : 's'}
                         </div>
@@ -857,7 +857,7 @@ function PayoutDetailSheet({
                   <KVItem label="Original tx hash" wide>
                     <div className="space-y-1.5">
                       <Addr value={po.originalTxHash} truncated={false} />
-                      <div className="text-[10.5px] text-[var(--fg-3)]">
+                      <div className="text-2xs text-[var(--fg-3)]">
                         Replaced by RBF; the original tx is no longer in the
                         mempool.
                       </div>
@@ -875,7 +875,7 @@ function PayoutDetailSheet({
 
                 {po.topUpTxHash && (
                   <KVItem label="Gas top-up" wide>
-                    <div className="space-y-1.5 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-[11.5px]">
+                    <div className="space-y-1.5 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-2xs">
                       <div className="flex items-center gap-1.5 text-[var(--fg-2)]">
                         <Fuel className="size-3.5 text-[var(--fg-3)]" />
                         <span>
@@ -948,7 +948,7 @@ function PayoutDetailSheet({
                     >
                       <Layers className="size-3.5" />
                       {truncateAddr(po.batchId, 10, 6)}
-                      <span className="text-[10px] uppercase tracking-wider text-[var(--fg-3)] group-hover:text-primary">
+                      <span className="text-2xs uppercase tracking-wider text-[var(--fg-3)] group-hover:text-primary">
                         view batch
                       </span>
                     </button>
@@ -963,13 +963,13 @@ function PayoutDetailSheet({
                         href={po.webhookUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[12.5px] text-primary hover:underline"
+                        className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-xs text-primary hover:underline"
                       >
                         <span className="truncate">{po.webhookUrl}</span>
                         <ExternalLink className="size-3 shrink-0" />
                       </a>
                       <CopyButton value={po.webhookUrl} />
-                      <Badge variant="outline" className="shrink-0 text-[9.5px]">
+                      <Badge variant="outline" className="shrink-0 text-2xs">
                         per-payout override
                       </Badge>
                     </div>
@@ -1282,10 +1282,10 @@ function NativeAmount({
       <span className="font-mono tabular-nums">
         {formatUnits(raw, native.decimals)}
       </span>
-      <span className="font-mono text-[11px] text-[var(--fg-3)]">
+      <span className="font-mono text-2xs text-[var(--fg-3)]">
         {native.symbol}
       </span>
-      <span className="font-mono text-[10px] text-[var(--fg-3)]">
+      <span className="font-mono text-2xs text-[var(--fg-3)]">
         · raw {raw}
       </span>
     </span>
@@ -1324,7 +1324,7 @@ function FeeDrift({
   return (
     <span className={`font-mono text-xs ${color}`}>
       {qHuman} → {aHuman} {native.symbol}
-      <span className="ml-1.5 text-[10.5px]">
+      <span className="ml-1.5 text-2xs">
         ({up ? '+' : ''}
         {pct.toFixed(1)}%)
       </span>
@@ -1522,7 +1522,7 @@ function FeeTierPicker({
 }) {
   if (!ready) {
     return (
-      <div className="rounded-md border border-dashed border-border bg-[var(--bg-2)] px-3 py-2.5 text-[11.5px] text-[var(--fg-3)]">
+      <div className="rounded-md border border-dashed border-border bg-[var(--bg-2)] px-3 py-2.5 text-2xs text-[var(--fg-3)]">
         Fill chain, token, amount, and destination to see fee tiers.
       </div>
     )
@@ -1530,7 +1530,7 @@ function FeeTierPicker({
 
   if (loading && !estimate) {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-[11.5px] text-[var(--fg-2)]">
+      <div className="flex items-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-2xs text-[var(--fg-2)]">
         <Loader2 className="size-3 animate-spin" />
         Estimating fees…
       </div>
@@ -1542,7 +1542,7 @@ function FeeTierPicker({
   // branch now means a genuine input or auth problem.
   if (!estimate) {
     return (
-      <div className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2.5 text-[11.5px] text-warn">
+      <div className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2.5 text-2xs text-warn">
         <div className="flex items-center gap-2 font-medium">
           <AlertTriangle className="size-3.5" />
           {errorMessage ?? 'Could not estimate fees.'}
@@ -1567,7 +1567,7 @@ function FeeTierPicker({
       <div className="rounded-md border border-dashed border-border bg-[var(--bg-2)] px-3 py-2.5">
         <div className="flex items-start gap-2">
           <Info className="mt-0.5 size-3.5 shrink-0 text-[var(--fg-3)]" />
-          <div className="flex-1 text-[11.5px]">
+          <div className="flex-1 text-2xs">
             <div className="font-medium text-[var(--fg-1)]">
               Fee will be calculated at broadcast
             </div>
@@ -1598,16 +1598,16 @@ function FeeTierPicker({
       <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5">
         <div className="eyebrow mb-1">Network fee</div>
         <div className="flex items-baseline gap-2">
-          <span className="font-mono text-[12.5px] tabular-nums">
+          <span className="font-mono text-xs tabular-nums">
             {fmtNative(t.nativeAmountRaw)}
           </span>
           {t.usdAmount && (
-            <span className="text-[11px] text-[var(--fg-3)]">
+            <span className="text-2xs text-[var(--fg-3)]">
               ~{fmtUsd(t.usdAmount)}
             </span>
           )}
         </div>
-        <div className="mt-1 text-[11px] text-[var(--fg-3)]">
+        <div className="mt-1 text-2xs text-[var(--fg-3)]">
           This chain does not support fee tiering.
         </div>
       </div>
@@ -1639,16 +1639,16 @@ function FeeTierPicker({
               }
             >
               <div className="flex items-center justify-between">
-                <span className="text-[10.5px] font-medium uppercase tracking-wider text-[var(--fg-2)]">
+                <span className="text-2xs font-medium uppercase tracking-wider text-[var(--fg-2)]">
                   {t}
                 </span>
                 {q.usdAmount && (
-                  <span className="font-mono text-[11px] text-[var(--fg-2)]">
+                  <span className="font-mono text-2xs text-[var(--fg-2)]">
                     {fmtUsd(q.usdAmount)}
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 truncate font-mono text-[11.5px] tabular-nums">
+              <div className="mt-0.5 truncate font-mono text-2xs tabular-nums">
                 {fmtNative(q.nativeAmountRaw)}
               </div>
             </button>
@@ -2108,7 +2108,7 @@ function CreatePayoutDialog({
             />
           </Field>
           {available.match ? (
-            <div className="-mt-2 flex items-center justify-between gap-2 text-[11.5px] text-[var(--fg-2)]">
+            <div className="-mt-2 flex items-center justify-between gap-2 text-2xs text-[var(--fg-2)]">
               <span>
                 Available{' '}
                 <span className="font-mono tabular-nums">
@@ -2127,16 +2127,16 @@ function CreatePayoutDialog({
               </button>
             </div>
           ) : available.loading ? (
-            <div className="-mt-2 text-[11.5px] text-[var(--fg-3)]">
+            <div className="-mt-2 text-2xs text-[var(--fg-3)]">
               Checking available balance…
             </div>
           ) : chainId && token ? (
-            <div className="-mt-2 text-[11.5px] text-[var(--fg-3)]">
+            <div className="-mt-2 text-2xs text-[var(--fg-3)]">
               No {token} balance on this chain in the gateway pool.
             </div>
           ) : null}
           {amountFormatError && (
-            <div className="-mt-2 text-[11.5px] text-destructive">
+            <div className="-mt-2 text-2xs text-destructive">
               {amountFormatError}
             </div>
           )}
@@ -2157,7 +2157,7 @@ function CreatePayoutDialog({
             />
           )}
           {showRateDrift && (
-            <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[11.5px] text-warn">
+            <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-2xs text-warn">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
               USD pegging snapshots at create time; {token} price can drift
               before broadcast.
@@ -2269,7 +2269,7 @@ function CreatePayoutDialog({
                 />
               </Field>
               {webhookMismatch && (
-                <div className="-mt-1 text-[11.5px] text-destructive">
+                <div className="-mt-1 text-2xs text-destructive">
                   Webhook URL and secret must be provided together.
                 </div>
               )}
@@ -2311,7 +2311,7 @@ function NoSourceBalanceBanner({ token }: { token: string }) {
           <div className="text-sm font-semibold">
             No source address has enough {token}
           </div>
-          <div className="mt-0.5 text-[11.5px] text-destructive/90">
+          <div className="mt-0.5 text-2xs text-destructive/90">
             Fund one of your HD addresses with {token} before planning this
             payout. Any pool address auto-qualifies as a source — see Balances
             for current holdings.
@@ -2334,7 +2334,7 @@ function NoGasSponsorBanner() {
         <AlertTriangle className="mt-0.5 size-4 shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold">No gas sponsor available</div>
-          <div className="mt-0.5 text-[11.5px] text-destructive/90">
+          <div className="mt-0.5 text-2xs text-destructive/90">
             A source has enough token, but no other HD address has enough
             native to cover gas. Fund a pool address with native before the
             executor can auto-sponsor the top-up.
@@ -2360,7 +2360,7 @@ function MaxAmountPanel({
     ? formatUnits(source.tokenBalance, tokenMeta.decimals)
     : source.tokenBalance
   return (
-    <div className="space-y-2.5 rounded-md border border-warn/40 bg-warn/10 px-3 py-3 text-[11.5px]">
+    <div className="space-y-2.5 rounded-md border border-warn/40 bg-warn/10 px-3 py-3 text-2xs">
       <div className="flex items-start gap-2 text-warn">
         <AlertTriangle className="mt-0.5 size-4 shrink-0" />
         <div className="min-w-0 flex-1">
@@ -2412,7 +2412,7 @@ function SourcePanel({
   const sponsorNeeded = topUp !== null && !sponsorMissing
 
   return (
-    <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-3 text-[11.5px]">
+    <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-3 text-2xs">
       <div className="eyebrow mb-1.5">Picked source</div>
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
@@ -2477,10 +2477,10 @@ function SourcePanel({
                 key={alt.address}
                 className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
               >
-                <span className="font-mono text-[10.5px] text-[var(--fg-2)]">
+                <span className="font-mono text-2xs text-[var(--fg-2)]">
                   {truncateAddr(alt.address, 8, 6)}
                 </span>
-                <span className="text-[10.5px] text-[var(--fg-3)]">
+                <span className="text-2xs text-[var(--fg-3)]">
                   <span className="font-mono tabular-nums">
                     {fmtToken(alt.tokenBalance)}
                   </span>{' '}
@@ -2540,7 +2540,7 @@ function SuggestedAmountCard({
             Amount leaves no room for gas
           </div>
           {errorMessage && (
-            <div className="mt-0.5 text-[11.5px] text-[var(--fg-2)]">
+            <div className="mt-0.5 text-2xs text-[var(--fg-2)]">
               {errorMessage}
             </div>
           )}
@@ -2554,11 +2554,11 @@ function SuggestedAmountCard({
             <span className="font-mono text-lg font-semibold tabular-nums text-[var(--fg-1)]">
               {primary.value}
             </span>
-            <span className="text-[11.5px] text-[var(--fg-2)]">
+            <span className="text-2xs text-[var(--fg-2)]">
               {primary.suffix}
             </span>
           </div>
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10.5px] text-[var(--fg-3)]">
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-2xs text-[var(--fg-3)]">
             {suggestion.decimal && mode !== 'amount' && (
               <span>
                 <span className="font-mono tabular-nums">

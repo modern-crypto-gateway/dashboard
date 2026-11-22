@@ -255,7 +255,7 @@ function DefaultMerchantCard({ currentId }: { currentId: string | null }) {
                   <SelectItem key={m.id} value={m.id}>
                     <span className="truncate">{m.name}</span>
                     {m.apiKeyFingerprint && (
-                      <span className="ml-auto text-[11px] text-[var(--fg-3)]">
+                      <span className="ml-auto text-2xs text-[var(--fg-3)]">
                         …{m.apiKeyFingerprint}
                       </span>
                     )}

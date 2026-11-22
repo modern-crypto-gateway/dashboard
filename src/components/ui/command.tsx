@@ -31,7 +31,7 @@ export function CommandDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl overflow-hidden p-0 shadow-lg">
-        <Command className="[&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:text-[var(--fg-2)] [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2">
+        <Command className="[&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.08em] [&_[cmdk-group-heading]]:text-[var(--fg-2)] [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2">
           {children}
         </Command>
       </DialogContent>
@@ -48,7 +48,7 @@ export const CommandInput = React.forwardRef<
     <CommandPrimitive.Input
       ref={ref}
       className={cn(
-        'flex h-11 w-full bg-transparent py-3 text-sm outline-none placeholder:text-[var(--fg-3)] disabled:cursor-not-allowed disabled:opacity-50',
+        'flex h-12 w-full bg-transparent py-3 text-base outline-none placeholder:text-[var(--fg-3)] disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
       {...props}
@@ -96,7 +96,7 @@ export const CommandItem = React.forwardRef<
   <CommandPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none',
+      'relative flex cursor-pointer select-none items-center gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none',
       'data-[selected=true]:bg-[var(--bg-hover)] data-[selected=true]:text-foreground',
       'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50',
       '[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-[var(--fg-2)]',
@@ -124,7 +124,7 @@ export const CommandShortcut = ({
   ...props
 }: React.HTMLAttributes<HTMLSpanElement>) => (
   <span
-    className={cn('ml-auto text-[11px] tracking-widest text-[var(--fg-3)]', className)}
+    className={cn('ml-auto text-2xs tracking-widest text-[var(--fg-3)]', className)}
     {...props}
   />
 )

@@ -279,7 +279,7 @@ function RotateTotpDialogContent({ onDone }: { onDone: () => void }) {
             <div className="flex-1 space-y-2.5">
               <div>
                 <div className="eyebrow mb-1.5">Scan with your app</div>
-                <div className="text-[12.5px] text-[var(--fg-2)]">
+                <div className="text-xs text-[var(--fg-2)]">
                   Add the dashboard as a new entry. Keep the old one until you
                   finish this dialog.
                 </div>
@@ -434,7 +434,7 @@ function RegenerateRecoveryDialog({ onDone }: { onDone: () => void }) {
         <div className="space-y-4">
           <div className="rounded-md border border-border bg-card p-4">
             <div className="mb-2.5 flex items-center justify-between">
-              <div className="text-[13px] font-semibold">New recovery codes</div>
+              <div className="text-sm font-semibold">New recovery codes</div>
               <Button
                 variant="outline"
                 size="sm"
@@ -455,7 +455,7 @@ function RegenerateRecoveryDialog({ onDone }: { onDone: () => void }) {
               {codes.map((c, i) => (
                 <div
                   key={i}
-                  className="rounded-md border border-border bg-secondary px-2.5 py-2 font-mono text-[13px] tracking-wider"
+                  className="rounded-md border border-border bg-secondary px-2.5 py-2 font-mono text-sm tracking-wider"
                 >
                   {revealed ? c : '•••• ••••'}
                 </div>
@@ -578,7 +578,7 @@ function SessionRowView({ row }: { row: SessionRow }) {
           {row.current && <Badge variant="accent">this device</Badge>}
           <span className="text-sm font-medium">{label}</span>
         </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11.5px] text-[var(--fg-2)]">
+        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-2xs text-[var(--fg-2)]">
           {row.ip && <span className="font-mono">{row.ip}</span>}
           <span>idle {humanSecs(row.idleSeconds)}</span>
           <span>·</span>

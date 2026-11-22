@@ -19,7 +19,7 @@ export function Stepper({
           <div key={i} className="flex items-center gap-1.5">
             <span
               className={cn(
-                'inline-grid size-[22px] place-items-center rounded-full border font-mono text-[11px] font-semibold',
+                'inline-grid size-[22px] place-items-center rounded-full border font-mono text-2xs font-semibold',
                 done && 'border-primary bg-primary text-primary-foreground',
                 active &&
                   'border-primary bg-[var(--accent-bg)] text-primary',

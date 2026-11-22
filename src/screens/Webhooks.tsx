@@ -247,7 +247,7 @@ function StatusTabs({
           <Icon className="size-3.5" />
           {label}
           {counts[key] != null && (
-            <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+            <span className="font-mono text-2xs text-[var(--fg-3)]">
               {counts[key]}
             </span>
           )}
@@ -266,7 +266,7 @@ function DeliveryList({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden grid-cols-[1.7fr_1.3fr_1.3fr_70px_110px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
+      <div className="hidden grid-cols-[1.7fr_1.3fr_1.3fr_70px_110px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-2xs font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
         <div>Event &amp; resource</div>
         <div>Target</div>
         <div>Last response</div>
@@ -310,7 +310,7 @@ function DeliveryRow({
           <div className="flex items-center gap-2">
             <Badge
               variant={ev.tone === 'default' ? 'outline' : ev.tone}
-              className="shrink-0 text-[10.5px]"
+              className="shrink-0 text-2xs"
             >
               {ev.label}
             </Badge>
@@ -323,7 +323,7 @@ function DeliveryRow({
               </span>
             )}
           </div>
-          <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-[var(--fg-3)]">
+          <div className="mt-0.5 flex items-center gap-1.5 font-mono text-2xs text-[var(--fg-3)]">
             <span className="truncate">{d.eventType}</span>
             {d.resourceId && (
               <>
@@ -338,7 +338,7 @@ function DeliveryRow({
 
         <div className="min-w-0">
           {targetHost ? (
-            <span className="truncate font-mono text-[12.5px] text-[var(--fg-2)]">
+            <span className="truncate font-mono text-xs text-[var(--fg-2)]">
               {targetHost}
             </span>
           ) : (
@@ -350,7 +350,7 @@ function DeliveryRow({
           {d.lastStatusCode != null ? (
             <span
               className={cn(
-                'font-mono text-[12.5px] font-semibold',
+                'font-mono text-xs font-semibold',
                 statusCodeTone(d.lastStatusCode),
               )}
             >
@@ -365,7 +365,7 @@ function DeliveryRow({
           )}
         </div>
 
-        <div className="font-mono text-[12.5px]">{d.attempts}</div>
+        <div className="font-mono text-xs">{d.attempts}</div>
 
         <div className="text-xs text-[var(--fg-3)]">{formatAt(d, now)}</div>
       </div>
@@ -450,7 +450,7 @@ function DeliveryDetailSheet({
                               </span>
                             )}
                           </span>
-                          <span className="font-mono text-[11px] text-[var(--fg-3)]">
+                          <span className="font-mono text-2xs text-[var(--fg-3)]">
                             {delivery.eventType}
                           </span>
                         </>
@@ -490,7 +490,7 @@ function DeliveryDetailSheet({
                         href={delivery.targetUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[12.5px] text-primary hover:underline"
+                        className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-xs text-primary hover:underline"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <span className="truncate">{delivery.targetUrl}</span>
@@ -514,7 +514,7 @@ function DeliveryDetailSheet({
                         )
                       }
                     >
-                      <span className="truncate font-mono text-[12.5px]">
+                      <span className="truncate font-mono text-xs">
                         {delivery.resourceId}
                       </span>
                       <CopyButton value={delivery.resourceId} />
@@ -522,7 +522,7 @@ function DeliveryDetailSheet({
                   )}
                   {delivery.idempotencyKey && (
                     <DetailLine label="Idempotency" icon={<Hash className="size-3.5" />}>
-                      <span className="truncate font-mono text-[12.5px]">
+                      <span className="truncate font-mono text-xs">
                         {delivery.idempotencyKey}
                       </span>
                       <CopyButton value={delivery.idempotencyKey} />
@@ -533,12 +533,12 @@ function DeliveryDetailSheet({
 
               <KV>
                 <KVItem label="Delivery id" wide>
-                  <span className="break-all font-mono text-[12.5px]">
+                  <span className="break-all font-mono text-xs">
                     {delivery.id}
                   </span>
                 </KVItem>
                 <KVItem label="Merchant" wide>
-                  <span className="font-mono text-[12.5px]">
+                  <span className="font-mono text-xs">
                     {delivery.merchantId}
                   </span>
                 </KVItem>
@@ -648,7 +648,7 @@ function DetailLine({
 }) {
   return (
     <div className="flex items-center gap-2 text-sm">
-      <span className="flex w-24 shrink-0 items-center gap-1.5 text-[10.5px] uppercase tracking-[0.12em] text-[var(--fg-3)]">
+      <span className="flex w-24 shrink-0 items-center gap-1.5 text-2xs uppercase tracking-[0.12em] text-[var(--fg-3)]">
         {icon}
         {label}
       </span>
@@ -669,7 +669,7 @@ function PayloadBlock({
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <span className="eyebrow">Payload</span>
-          <span className="font-mono text-[11px] text-[var(--fg-2)]">
+          <span className="font-mono text-2xs text-[var(--fg-2)]">
             {payload.event}
           </span>
         </div>
@@ -677,7 +677,7 @@ function PayloadBlock({
           <button
             type="button"
             onClick={() => setCollapsed((v) => !v)}
-            className="cursor-pointer rounded px-1.5 py-0.5 text-[11px] text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
+            className="cursor-pointer rounded px-1.5 py-0.5 text-2xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
           >
             {collapsed ? 'Expand' : 'Collapse'}
           </button>
@@ -685,7 +685,7 @@ function PayloadBlock({
         </div>
       </div>
       {!collapsed && (
-        <pre className="max-h-[420px] overflow-auto px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-[var(--fg-1)]">
+        <pre className="max-h-[420px] overflow-auto px-3 py-2.5 font-mono text-2xs leading-relaxed text-[var(--fg-1)]">
           {json}
         </pre>
       )}

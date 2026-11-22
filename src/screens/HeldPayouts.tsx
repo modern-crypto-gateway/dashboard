@@ -294,7 +294,7 @@ function HeldList({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden grid-cols-[minmax(0,1.6fr)_160px_150px_120px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
+      <div className="hidden grid-cols-[minmax(0,1.6fr)_160px_150px_120px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-2xs font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
         <div>Leg / route</div>
         <div>Amount</div>
         <div>Held for</div>
@@ -354,7 +354,7 @@ function HeldRow({
                 <Fuel className="size-3" />
               </span>
             )}
-            <span className="font-mono text-[12px] text-[var(--fg-2)]">
+            <span className="font-mono text-xs text-[var(--fg-2)]">
               {truncateAddr(leg.id, 8, 6)}
             </span>
             <CopyButton value={leg.id} />
@@ -366,7 +366,7 @@ function HeldRow({
           </div>
           {leg.lastError && (
             <div
-              className="truncate font-mono text-[11px] text-[var(--fg-3)]"
+              className="truncate font-mono text-2xs text-[var(--fg-3)]"
               title={leg.lastError}
             >
               {leg.lastError}
@@ -376,10 +376,10 @@ function HeldRow({
 
         {/* Amount + chain */}
         <div className="min-w-0">
-          <div className="truncate font-mono text-[13px] tabular-nums">
+          <div className="truncate font-mono text-sm tabular-nums">
             {amount} <span className="text-[var(--fg-3)]">{leg.token}</span>
           </div>
-          <div className="mt-0.5 inline-flex items-center gap-1.5 text-[12px] text-[var(--fg-2)]">
+          <div className="mt-0.5 inline-flex items-center gap-1.5 text-xs text-[var(--fg-2)]">
             <span
               className="size-[7px] shrink-0 rounded-full"
               style={{ background: info.color }}
@@ -392,7 +392,7 @@ function HeldRow({
         <div className="min-w-0">
           <Badge variant={tone}>{fmtAge(leg.heldForMs)}</Badge>
           {leg.broadcastAttemptedAt && (
-            <div className="mt-1 text-[11px] text-[var(--fg-3)]">
+            <div className="mt-1 text-2xs text-[var(--fg-3)]">
               tried {fmtRel(unixOf(leg.broadcastAttemptedAt))}
             </div>
           )}
@@ -424,7 +424,7 @@ function ExplorerAddr({
         href={url}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex items-center gap-1 font-mono text-[12.5px] text-primary hover:underline"
+        className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
         title="Open in block explorer"
       >
         {truncateAddr(value)}
@@ -572,7 +572,7 @@ function RecoverDialog({
                       href={srcUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 font-mono text-[12px] text-primary hover:underline"
+                      className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
                     >
                       {truncateAddr(leg.sourceAddress, 8, 6)}
                       <ExternalLink className="size-3" />
@@ -586,7 +586,7 @@ function RecoverDialog({
                   <Addr value={leg.destinationAddress} />
                 </div>
                 {srcUrl && (
-                  <p className="border-t border-border pt-2 text-[11px] text-[var(--fg-2)]">
+                  <p className="border-t border-border pt-2 text-2xs text-[var(--fg-2)]">
                     Open the source address, find the successful{' '}
                     <span className="font-medium text-foreground">OUT</span>{' '}
                     transfer of {amount} {leg.token}, and copy its tx hash.

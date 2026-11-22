@@ -177,7 +177,7 @@ function QuotaRow({
 function ChainPill({ chainId }: { chainId: number }) {
   const info = chainInfo(chainId)
   return (
-    <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--fg-2)]">
+    <span className="inline-flex items-center gap-1.5 text-xs text-[var(--fg-2)]">
       <span
         className="size-[7px] shrink-0 rounded-full"
         style={{ background: info.color }}
@@ -336,11 +336,11 @@ function BatchForm({ merchantId }: { merchantId: string }) {
           placeholder={
             'chainId,token,amount,destinationAddress\n42161,USDC,1.5,0x1111111111111111111111111111111111111111\n1,ETH,0.01,0x3333333333333333333333333333333333333333'
           }
-          className="font-mono text-[12px]"
+          className="font-mono text-xs"
         />
       </Field>
 
-      <div className="flex flex-wrap items-center gap-3 text-[11.5px]">
+      <div className="flex flex-wrap items-center gap-3 text-2xs">
         <span>
           <span className="font-mono tabular-nums">{rows.length}</span> parsed
         </span>
@@ -361,7 +361,7 @@ function BatchForm({ merchantId }: { merchantId: string }) {
       </div>
 
       {exceedsQuota && rl && (
-        <div className="flex items-start gap-2 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5 text-[11.5px] text-destructive">
+        <div className="flex items-start gap-2 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5 text-2xs text-destructive">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
           <div>
             <div className="font-semibold">Batch exceeds merchant quota.</div>
@@ -378,16 +378,16 @@ function BatchForm({ merchantId }: { merchantId: string }) {
       )}
 
       {errors.length > 0 && (
-        <div className="max-h-52 overflow-auto rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[11.5px]">
+        <div className="max-h-52 overflow-auto rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-2xs">
           <ul className="space-y-1">
             {errors.slice(0, 30).map((e) => (
               <li key={e.lineNo} className="flex items-start gap-2">
-                <span className="mt-0.5 font-mono text-[10.5px] text-destructive">
+                <span className="mt-0.5 font-mono text-2xs text-destructive">
                   L{e.lineNo}
                 </span>
                 <span className="text-destructive">{e.message}</span>
                 <span className="flex-1" />
-                <span className="truncate font-mono text-[10.5px] text-[var(--fg-3)]">
+                <span className="truncate font-mono text-2xs text-[var(--fg-3)]">
                   {e.raw}
                 </span>
               </li>
@@ -429,8 +429,8 @@ function BatchPreview({ rows }: { rows: BatchCsvRow[] }) {
     <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2">
       <div className="eyebrow mb-1">Preview</div>
       <div className="overflow-x-auto">
-        <table className="w-full text-[11.5px]">
-          <thead className="text-[10px] uppercase tracking-wider text-[var(--fg-3)]">
+        <table className="w-full text-2xs">
+          <thead className="text-2xs uppercase tracking-wider text-[var(--fg-3)]">
             <tr>
               <th className="py-1 pr-3 text-left">L</th>
               <th className="py-1 pr-3 text-left">Chain</th>
@@ -442,7 +442,7 @@ function BatchPreview({ rows }: { rows: BatchCsvRow[] }) {
           <tbody>
             {preview.map((r) => (
               <tr key={r.lineNo} className="border-t border-border">
-                <td className="py-1 pr-3 font-mono text-[10.5px] text-[var(--fg-3)]">
+                <td className="py-1 pr-3 font-mono text-2xs text-[var(--fg-3)]">
                   {r.lineNo}
                 </td>
                 <td className="py-1 pr-3">
@@ -452,7 +452,7 @@ function BatchPreview({ rows }: { rows: BatchCsvRow[] }) {
                 <td className="py-1 pr-3 font-mono tabular-nums">
                   {r.amount}
                 </td>
-                <td className="py-1 font-mono text-[11px] text-[var(--fg-2)]">
+                <td className="py-1 font-mono text-2xs text-[var(--fg-2)]">
                   {truncateAddr(r.destinationAddress, 8, 6)}
                 </td>
               </tr>
@@ -461,7 +461,7 @@ function BatchPreview({ rows }: { rows: BatchCsvRow[] }) {
         </table>
       </div>
       {rows.length > preview.length && (
-        <div className="mt-1 text-[11px] text-[var(--fg-3)]">
+        <div className="mt-1 text-2xs text-[var(--fg-3)]">
           + {rows.length - preview.length} more
         </div>
       )}
@@ -483,9 +483,9 @@ function BatchResultView({
   const { summary, results, batchId } = result
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-[12px]">
+      <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-xs">
         <Layers className="size-3.5 text-primary" />
-        <span className="font-mono text-[11px] text-[var(--fg-2)]">
+        <span className="font-mono text-2xs text-[var(--fg-2)]">
           {truncateAddr(batchId, 10, 6)}
         </span>
         <CopyButton value={batchId} />
@@ -497,8 +497,8 @@ function BatchResultView({
       </div>
 
       <div className="overflow-auto rounded-md border border-border">
-        <table className="w-full text-[11.5px]">
-          <thead className="bg-[var(--bg-2)] text-[10px] uppercase tracking-wider text-[var(--fg-3)]">
+        <table className="w-full text-2xs">
+          <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
             <tr>
               <th className="py-1.5 pl-3 pr-2 text-left">#</th>
               <th className="py-1.5 pr-2 text-left">Status</th>
@@ -509,7 +509,7 @@ function BatchResultView({
           <tbody>
             {results.map((row) => (
               <tr key={row.index} className="border-t border-border align-top">
-                <td className="py-1.5 pl-3 pr-2 font-mono text-[10.5px] text-[var(--fg-3)]">
+                <td className="py-1.5 pl-3 pr-2 font-mono text-2xs text-[var(--fg-3)]">
                   {row.index}
                 </td>
                 <td className="py-1.5 pr-2">
@@ -522,7 +522,7 @@ function BatchResultView({
                 <td className="py-1.5 pr-2">
                   {row.status === 'planned' ? (
                     <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-[10.5px]">
+                      <span className="font-mono text-2xs">
                         {truncateAddr(row.payout.id, 8, 6)}
                       </span>
                       <CopyButton value={row.payout.id} />
@@ -540,7 +540,7 @@ function BatchResultView({
                   ) : (
                     <div className="space-y-0.5">
                       {row.error.code && (
-                        <div className="font-mono text-[10px] uppercase tracking-wider text-destructive">
+                        <div className="font-mono text-2xs uppercase tracking-wider text-destructive">
                           {row.error.code}
                         </div>
                       )}

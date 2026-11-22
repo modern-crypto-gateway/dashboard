@@ -74,7 +74,7 @@ export function ActivityPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success-border)] bg-[var(--success-bg)] px-2 py-0.5 text-[11.5px] text-success">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success-border)] bg-[var(--success-bg)] px-2 py-0.5 text-2xs text-success">
             <StatusDot tone="success" pulse /> live
           </span>
           <Button
@@ -125,7 +125,7 @@ export function ActivityPage() {
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-[11.5px] text-[var(--fg-2)]">
+                      <span className="font-mono text-2xs text-[var(--fg-2)]">
                         {e.eventType}
                       </span>
                       <Badge
@@ -153,13 +153,13 @@ export function ActivityPage() {
                       <Addr value={e.merchantId} />
                     </div>
                     {e.lastError && (
-                      <div className="mt-1 font-mono text-[11.5px] text-destructive">
+                      <div className="mt-1 font-mono text-2xs text-destructive">
                         {e.lastError.slice(0, 120)}
                         {e.lastError.length > 120 && '…'}
                       </div>
                     )}
                   </div>
-                  <span className="shrink-0 font-mono text-[11px] text-[var(--fg-3)]">
+                  <span className="shrink-0 font-mono text-2xs text-[var(--fg-3)]">
                     {fmtLocalTime(e.updatedAt)}
                   </span>
                 </li>

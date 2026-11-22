@@ -56,7 +56,7 @@ export const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        'bg-popover text-popover-foreground z-50 min-w-[8rem] overflow-hidden rounded-md border border-border p-1 shadow-md',
+        'bg-popover text-popover-foreground z-50 min-w-[8rem] overflow-hidden rounded-lg border border-border p-1 shadow-md',
         'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         className,
       )}
@@ -140,7 +140,7 @@ export const DropdownMenuLabel = React.forwardRef<
   <DropdownMenuPrimitive.Label
     ref={ref}
     className={cn(
-      'px-2 py-1.5 text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[var(--fg-2)]',
+      'px-2 pt-2 pb-1 text-2xs font-medium tracking-[0.08em] uppercase text-[var(--fg-2)]',
       inset && 'pl-8',
       className,
     )}

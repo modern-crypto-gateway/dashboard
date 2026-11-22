@@ -322,7 +322,7 @@ function ScheduleCard({
             {schedule.maxFeeUsd ? (
               <span className="font-mono">
                 ≤ ${schedule.maxFeeUsd}
-                <span className="ml-1.5 text-[10.5px] text-[var(--fg-3)]">
+                <span className="ml-1.5 text-2xs text-[var(--fg-3)]">
                   defers above this
                 </span>
               </span>
@@ -376,7 +376,7 @@ function ScheduleCard({
 function KeyVal({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[140px_1fr] items-start gap-3 text-sm">
-      <span className="pt-0.5 text-[11px] uppercase tracking-[0.08em] text-[var(--fg-3)]">
+      <span className="pt-0.5 text-2xs uppercase tracking-[0.08em] text-[var(--fg-3)]">
         {label}
       </span>
       <div className="min-w-0">{children}</div>
@@ -479,7 +479,7 @@ function SkippedReasonsList({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 text-[11px] text-warn hover:underline cursor-pointer"
+        className="inline-flex items-center gap-1 text-2xs text-warn hover:underline cursor-pointer"
       >
         <AlertTriangle className="size-3" />
         {open ? 'Hide' : 'Show'} skipped breakdown · {reasons.length} entr
@@ -489,7 +489,7 @@ function SkippedReasonsList({
         <div className="mt-1.5 space-y-2 rounded-md border border-warn/40 bg-warn/10 p-2.5">
           {groups.map(([code, rows]) => (
             <details key={code} className="text-xs">
-              <summary className="cursor-pointer select-none font-mono text-[11px] font-semibold text-warn">
+              <summary className="cursor-pointer select-none font-mono text-2xs font-semibold text-warn">
                 {code} · {rows.length}
               </summary>
               <ul className="mt-1.5 space-y-1">
@@ -499,13 +499,13 @@ function SkippedReasonsList({
                     className="flex flex-wrap items-center gap-2 rounded border border-warn/30 bg-card px-2 py-1"
                   >
                     <Addr value={r.sourceAddress} />
-                    <span className="font-mono text-[10.5px] text-[var(--fg-2)]">
+                    <span className="font-mono text-2xs text-[var(--fg-2)]">
                       {tokenDecimals != null
                         ? `${formatUnits(r.amountRaw, tokenDecimals)} ${token}`
                         : r.amountRaw}
                     </span>
                     <span
-                      className="ml-auto max-w-[260px] truncate font-mono text-[10px] text-[var(--fg-3)]"
+                      className="ml-auto max-w-[260px] truncate font-mono text-2xs text-[var(--fg-3)]"
                       title={r.reason}
                     >
                       {r.reason.includes(':')
@@ -539,7 +539,7 @@ function LastRunLegs({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-[11px] text-primary hover:underline cursor-pointer"
+        className="text-2xs text-primary hover:underline cursor-pointer"
       >
         {open ? 'Hide' : 'Show'} {status.legs.length} leg
         {status.legs.length === 1 ? '' : 's'}
@@ -547,7 +547,7 @@ function LastRunLegs({
       {open && (
         <div className="mt-1.5 overflow-hidden rounded-md border border-border">
           <table className="w-full text-xs">
-            <thead className="bg-[var(--bg-2)] text-[10px] uppercase tracking-wider text-[var(--fg-3)]">
+            <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
               <tr>
                 <th className="px-2 py-1.5 text-left">Source</th>
                 <th className="px-2 py-1.5 text-left">Amount</th>
@@ -917,7 +917,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
                     <SelectItem key={c.chainId} value={String(c.chainId)}>
                       <span className="flex items-center gap-2">
                         <span>{c.displayName}</span>
-                        <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                        <span className="font-mono text-2xs text-[var(--fg-3)]">
                           {c.chainId}
                         </span>
                       </span>
@@ -942,7 +942,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
                     <SelectItem key={t.symbol} value={t.symbol}>
                       <span className="flex items-center gap-2">
                         <span className="font-mono">{t.symbol}</span>
-                        <span className="text-[10.5px] text-[var(--fg-3)]">
+                        <span className="text-2xs text-[var(--fg-3)]">
                           {t.displayName}
                         </span>
                       </span>
@@ -965,7 +965,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
                 <button
                   type="button"
                   onClick={() => setTarget('')}
-                  className="text-[11px] text-[var(--fg-3)] hover:text-foreground cursor-pointer"
+                  className="text-2xs text-[var(--fg-3)] hover:text-foreground cursor-pointer"
                 >
                   {usingPicker ? 'Custom address' : 'Use picker'}
                 </button>
@@ -995,11 +995,11 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
                     return (
                       <SelectItem key={row.address} value={row.address}>
                         <span className="flex items-center gap-2">
-                          <span className="font-mono text-[11.5px]">
+                          <span className="font-mono text-2xs">
                             {row.address.slice(0, 10)}…{row.address.slice(-6)}
                           </span>
                           {balLabel && (
-                            <span className="font-mono text-[10.5px] text-success">
+                            <span className="font-mono text-2xs text-success">
                               {balLabel}
                             </span>
                           )}
@@ -1063,7 +1063,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
                 <button
                   type="button"
                   onClick={() => setMinRaw(suggestion.raw)}
-                  className="text-[11px] text-primary hover:underline cursor-pointer"
+                  className="text-2xs text-primary hover:underline cursor-pointer"
                   title={`Suggested: ${suggestion.label}`}
                 >
                   Use suggested ({suggestion.label})
@@ -1099,7 +1099,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
                 <button
                   type="button"
                   onClick={() => setMaxFeeUsd('')}
-                  className="text-[11px] text-[var(--fg-3)] hover:text-foreground cursor-pointer"
+                  className="text-2xs text-[var(--fg-3)] hover:text-foreground cursor-pointer"
                 >
                   Clear
                 </button>
@@ -1166,7 +1166,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
         </form>
 
         {!isEdit && (
-          <p className="text-[11px] text-[var(--fg-3)]">
+          <p className="text-2xs text-[var(--fg-3)]">
             Use the manual flow on{' '}
             <a href="/pool" className="inline-flex items-center gap-0.5 text-primary hover:underline">
               Address pool <ExternalLink className="size-3" />

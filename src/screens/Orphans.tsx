@@ -107,7 +107,7 @@ export function OrphansPage() {
                   <tr key={o.id} className="transition-colors hover:bg-[var(--bg-2)]">
                     <Td>
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-[12.5px]">
+                        <span className="font-mono text-xs">
                           {truncateAddr(o.txHash, 8, 6)}
                         </span>
                         <CopyButton value={o.txHash} />
@@ -116,19 +116,19 @@ export function OrphansPage() {
                     <Td>
                       <ChainPill chainId={o.chainId} />
                     </Td>
-                    <Td className="font-mono text-[12.5px]">{o.token}</Td>
+                    <Td className="font-mono text-xs">{o.token}</Td>
                     <Td>
-                      <div className="flex flex-col gap-0.5 text-[12.5px]">
+                      <div className="flex flex-col gap-0.5 text-xs">
                         <Addr value={o.fromAddress} />
                         <span className="text-[var(--fg-3)]">↓</span>
                         <Addr value={o.toAddress} />
                       </div>
                     </Td>
-                    <Td className="font-mono text-[12.5px]">{o.amountRaw}</Td>
-                    <Td className="font-mono text-[12.5px]">
+                    <Td className="font-mono text-xs">{o.amountRaw}</Td>
+                    <Td className="font-mono text-xs">
                       {o.amountUsd ? fmtUsd(o.amountUsd) : '—'}
                     </Td>
-                    <Td className="font-mono text-[12.5px]">{o.confirmations}</Td>
+                    <Td className="font-mono text-xs">{o.confirmations}</Td>
                     <Td className="font-mono text-xs text-[var(--fg-2)]">
                       {formatAgo(o.detectedAt, now)}
                     </Td>
@@ -176,7 +176,7 @@ export function OrphansPage() {
 
 function Th({ children }: { children?: React.ReactNode }) {
   return (
-    <th className="border-b border-border bg-card px-3.5 py-2.5 text-left text-[11.5px] font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
+    <th className="border-b border-border bg-card px-3.5 py-2.5 text-left text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
       {children}
     </th>
   )
@@ -198,7 +198,7 @@ function Td({
 function ChainPill({ chainId }: { chainId: number }) {
   const info = chainInfo(chainId)
   return (
-    <span className="inline-flex items-center gap-1.5 text-[12.5px]">
+    <span className="inline-flex items-center gap-1.5 text-xs">
       <span
         className="size-[7px] rounded-full"
         style={{ background: info.color }}

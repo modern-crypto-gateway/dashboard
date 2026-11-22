@@ -121,7 +121,7 @@ export function AuditAddressPage() {
                       <SelectItem key={c.chainId} value={String(c.chainId)}>
                         <span className="flex items-center gap-2">
                           <span>{c.displayName}</span>
-                          <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                          <span className="font-mono text-2xs text-[var(--fg-3)]">
                             {c.chainId}
                           </span>
                         </span>

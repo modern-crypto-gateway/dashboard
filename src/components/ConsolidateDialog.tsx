@@ -264,7 +264,7 @@ export function ConsolidateDialog({
                       <SelectItem key={c.chainId} value={String(c.chainId)}>
                         <span className="flex items-center gap-2">
                           <span>{c.displayName}</span>
-                          <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                          <span className="font-mono text-2xs text-[var(--fg-3)]">
                             {c.chainId}
                           </span>
                         </span>
@@ -291,7 +291,7 @@ export function ConsolidateDialog({
                       <SelectItem key={t.symbol} value={t.symbol}>
                         <span className="flex items-center gap-2">
                           <span className="font-mono">{t.symbol}</span>
-                          <span className="text-[10.5px] text-[var(--fg-3)]">
+                          <span className="text-2xs text-[var(--fg-3)]">
                             {t.displayName}
                           </span>
                         </span>
@@ -313,7 +313,7 @@ export function ConsolidateDialog({
                   <button
                     type="button"
                     onClick={() => setTarget('')}
-                    className="text-[11px] text-[var(--fg-3)] hover:text-foreground cursor-pointer"
+                    className="text-2xs text-[var(--fg-3)] hover:text-foreground cursor-pointer"
                   >
                     {target && !targetCandidates.some((r) => r.address === target)
                       ? 'Use picker'
@@ -347,11 +347,11 @@ export function ConsolidateDialog({
                       return (
                         <SelectItem key={row.address} value={row.address}>
                           <span className="flex items-center gap-2">
-                            <span className="font-mono text-[11.5px]">
+                            <span className="font-mono text-2xs">
                               {row.address.slice(0, 10)}…{row.address.slice(-6)}
                             </span>
                             {balLabel && (
-                              <span className="font-mono text-[10.5px] text-success">
+                              <span className="font-mono text-2xs text-success">
                                 {balLabel}
                               </span>
                             )}
@@ -380,7 +380,7 @@ export function ConsolidateDialog({
             <details className="rounded-md border border-border bg-[var(--bg-2)] open:pb-3">
               <summary className="flex cursor-pointer select-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-[var(--fg-2)]">
                 <span>Advanced — per-call overrides</span>
-                <span className="text-[10.5px] text-[var(--fg-3)]">
+                <span className="text-2xs text-[var(--fg-3)]">
                   optional
                 </span>
               </summary>
@@ -522,7 +522,7 @@ function ConsolidationStatus({
               <AlertTriangle className="size-3" /> {summary.failed} failed
             </Badge>
           ) : null}
-          <span className="text-[11px] text-[var(--fg-3)]">
+          <span className="text-2xs text-[var(--fg-3)]">
             <span className="font-mono">{summary.confirmed}</span> confirmed ·{' '}
             <span className="font-mono">{summary.failed}</span> failed ·{' '}
             <span className="font-mono">{summary.canceled}</span> canceled ·{' '}
@@ -546,7 +546,7 @@ function ConsolidationStatus({
 
       <div className="overflow-hidden rounded-md border border-border">
         <table className="w-full text-xs">
-          <thead className="bg-[var(--bg-2)] text-[10.5px] uppercase tracking-wider text-[var(--fg-3)]">
+          <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
             <tr>
               <th className="px-3 py-2 text-left">Source</th>
               <th className="px-3 py-2 text-left">Amount</th>
@@ -572,7 +572,7 @@ function ConsolidationStatus({
                 <td className="px-3 py-2 align-top">
                   <LegStatusBadge status={leg.status} />
                   {leg.lastError && (
-                    <div className="mt-0.5 max-w-[260px] truncate font-mono text-[10px] text-destructive">
+                    <div className="mt-0.5 max-w-[260px] truncate font-mono text-2xs text-destructive">
                       {leg.lastError}
                     </div>
                   )}
@@ -606,7 +606,7 @@ function ConsolidationStatus({
                 <span className="font-mono text-[var(--fg-2)]">
                   {fmt(s.amountRaw)}
                 </span>
-                <span className="font-mono text-[10px] text-[var(--fg-3)]">
+                <span className="font-mono text-2xs text-[var(--fg-3)]">
                   {s.reason}
                 </span>
               </li>

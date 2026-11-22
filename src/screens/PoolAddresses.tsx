@@ -308,7 +308,7 @@ function useListQuery({
 
 function CaveatBanner() {
   return (
-    <div className="flex flex-wrap items-start gap-2.5 rounded-md border border-[var(--accent-border)] bg-[var(--accent-bg)] px-3.5 py-2.5 text-[12.5px] text-[var(--fg-1)]">
+    <div className="flex flex-wrap items-start gap-2.5 rounded-md border border-[var(--accent-border)] bg-[var(--accent-bg)] px-3.5 py-2.5 text-xs text-[var(--fg-1)]">
       <Info className="size-4 shrink-0 text-primary" />
       <div className="space-y-1">
         <p>
@@ -362,14 +362,14 @@ function FamilyTabs({
                   className="size-2.5 rounded-sm"
                   style={{ background: FAMILY_COLOR[f] }}
                 />
-                <span className="font-semibold uppercase tracking-[0.08em] text-[12.5px]">
+                <span className="font-semibold uppercase tracking-[0.08em] text-xs">
                   {f}
                 </span>
               </div>
               {loading && !s ? (
                 <Skeleton className="h-3.5 w-10" />
               ) : (
-                <span className="font-mono text-[11px] text-[var(--fg-3)]">
+                <span className="font-mono text-2xs text-[var(--fg-3)]">
                   total {s?.total ?? 0}
                 </span>
               )}
@@ -398,7 +398,7 @@ function FamilyMetric({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-md border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-[10.5px]',
+        'inline-flex items-center gap-1 rounded-md border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-2xs',
         tone === 'success' && 'text-success',
         tone === 'warn' && 'text-warn',
       )}
@@ -426,7 +426,7 @@ function AddressTable({
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-border bg-[var(--bg-2)] text-[10.5px] uppercase tracking-wider text-[var(--fg-3)]">
+          <tr className="border-b border-border bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
             <th className="px-4 py-2.5 text-left font-medium">Address</th>
             <th className="px-4 py-2.5 text-left font-medium">Index</th>
             <th className="px-4 py-2.5 text-left font-medium">State</th>
@@ -486,7 +486,7 @@ function AddressRow({
         ) : (
           <span
             className={cn(
-              'font-mono text-[12.5px] tabular-nums',
+              'font-mono text-xs tabular-nums',
               usd > 0 ? 'text-foreground' : 'text-[var(--fg-3)]',
             )}
           >
@@ -531,7 +531,7 @@ function StateCell({
         {row.disabledAt != null && (
           <Badge
             variant={onLoan ? 'warn' : 'default'}
-            className="text-[10px] uppercase"
+            className="text-2xs uppercase"
             title={
               onLoan
                 ? 'Operator-disabled but currently serving an invoice. Will auto-park on release.'
@@ -543,7 +543,7 @@ function StateCell({
         )}
       </div>
       {row.disabledAt != null && (
-        <span className="text-[10.5px] text-[var(--fg-3)]">
+        <span className="text-2xs text-[var(--fg-3)]">
           disabled {fmtLocal(row.disabledAt)}
         </span>
       )}

@@ -4,25 +4,25 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 aria-invalid:border-destructive select-none cursor-pointer",
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-[background-color,border-color,color,box-shadow] duration-150 disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-invalid:ring-destructive/20 aria-invalid:border-destructive select-none cursor-pointer active:translate-y-px",
   {
     variants: {
       variant: {
         default:
-          'bg-primary text-primary-foreground shadow-xs hover:bg-[var(--accent-hover)]',
+          'bg-primary text-primary-foreground hover:bg-[var(--accent-hover)]',
         destructive:
-          'bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90',
+          'bg-destructive text-destructive-foreground hover:bg-destructive/90',
         outline:
-          'border border-border bg-card text-foreground shadow-xs hover:bg-[var(--bg-hover)] hover:border-[var(--border-strong)]',
+          'border border-[var(--border-strong)] bg-card text-foreground hover:bg-[var(--bg-hover)]',
         secondary:
-          'bg-secondary text-secondary-foreground shadow-xs hover:bg-[var(--bg-hover)]',
-        ghost: 'hover:bg-[var(--bg-hover)] hover:text-foreground',
+          'bg-[var(--muted-bg)] text-foreground hover:bg-[var(--bg-active)]',
+        ghost: 'text-[var(--fg-1)] hover:bg-[var(--bg-hover)] hover:text-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        default: 'h-9 px-4 py-2',
-        sm: 'h-8 rounded-md px-3 text-xs',
-        lg: 'h-10 rounded-md px-6',
+        default: 'h-9 px-3.5',
+        sm: 'h-8 rounded-md px-2.5',
+        lg: 'h-10 rounded-md px-5 text-base',
         icon: 'size-9',
         'icon-sm': 'size-8',
       },

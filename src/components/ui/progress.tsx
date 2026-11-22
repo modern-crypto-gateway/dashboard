@@ -14,7 +14,7 @@ export const Progress = React.forwardRef<
   <ProgressPrimitive.Root
     ref={ref}
     className={cn(
-      'bg-[var(--bg-2)] border border-border relative h-1.5 w-full overflow-hidden rounded-full',
+      'bg-[var(--bg-active)] relative h-1.5 w-full overflow-hidden rounded-full',
       className,
     )}
     {...props}

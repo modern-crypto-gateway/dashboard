@@ -121,7 +121,7 @@ export function ChainsPage() {
             >
               <Rocket className="size-3.5" />
               Bootstrap webhooks
-              <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 py-0.5 font-mono text-[10px]">
+              <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 py-0.5 font-mono text-2xs">
                 {bootstrapableChains.length}
               </span>
             </Button>
@@ -266,7 +266,7 @@ function ChainMatrix({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden grid-cols-[1.7fr_90px_1fr_190px] gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
+      <div className="hidden grid-cols-[1.7fr_90px_1fr_190px] gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-2xs font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
         <div>Chain</div>
         <div>Family</div>
         <div>Status</div>
@@ -306,13 +306,13 @@ function ChainRow({
             <span className="truncate text-sm font-medium">
               {chain.displayName}
             </span>
-            <span className="rounded bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-[10.5px] text-[var(--fg-2)]">
+            <span className="rounded bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-2xs text-[var(--fg-2)]">
               {chain.chainId}
             </span>
             <ReadyBadge chain={chain} />
             <DetectionBadge detection={chain.detection} />
           </div>
-          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--fg-3)]">
+          <div className="mt-0.5 flex items-center gap-2 text-2xs text-[var(--fg-3)]">
             <span className="font-mono">{chain.slug}</span>
             <span>·</span>
             <span>
@@ -380,7 +380,7 @@ function DetectionBadge({
   if (detection === 'alchemy') {
     return (
       <span
-        className="inline-flex items-center gap-1 rounded border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-[var(--fg-2)]"
+        className="inline-flex items-center gap-1 rounded border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-2xs uppercase tracking-wider text-[var(--fg-2)]"
         title="Transactions received via Alchemy webhook"
       >
         <Radio className="size-3" /> webhook
@@ -389,7 +389,7 @@ function DetectionBadge({
   }
   return (
     <span
-      className="inline-flex items-center gap-1 rounded border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-[var(--fg-2)]"
+      className="inline-flex items-center gap-1 rounded border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-2xs uppercase tracking-wider text-[var(--fg-2)]"
       title="Transactions detected via RPC polling (no webhook)"
     >
       <RefreshCw className="size-3" /> polling
@@ -400,20 +400,20 @@ function DetectionBadge({
 function ReadyBadge({ chain }: { chain: ChainInventoryEntry }) {
   if (!chain.wired) {
     return (
-      <span className="rounded border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-[var(--fg-3)]">
+      <span className="rounded border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-2xs uppercase tracking-wider text-[var(--fg-3)]">
         not deployed
       </span>
     )
   }
   if (chain.bootstrapReady) {
     return (
-      <span className="inline-flex items-center gap-1 rounded border border-[var(--success-border)] bg-[var(--success-bg)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-success">
+      <span className="inline-flex items-center gap-1 rounded border border-[var(--success-border)] bg-[var(--success-bg)] px-1.5 py-0.5 text-2xs uppercase tracking-wider text-success">
         <CheckCircle2 className="size-3" /> ready
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warn">
+    <span className="inline-flex items-center gap-1 rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-warn">
       <AlertTriangle className="size-3" /> incomplete
     </span>
   )
@@ -541,11 +541,11 @@ function BootstrapPickerDialog({
                       <span className="truncate font-medium">
                         {c.displayName}
                       </span>
-                      <span className="rounded bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-[10.5px] text-[var(--fg-2)]">
+                      <span className="rounded bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-2xs text-[var(--fg-2)]">
                         {c.chainId}
                       </span>
                     </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--fg-3)]">
+                    <div className="mt-0.5 flex items-center gap-2 text-2xs text-[var(--fg-3)]">
                       <span className="font-mono">{c.slug}</span>
                       {!c.alchemyConfigured && (
                         <>
@@ -623,7 +623,7 @@ function SigningKeysDialog({
               </Badge>
               <span className="font-mono text-xs">chain {r.chainId}</span>
               {r.webhookId && (
-                <span className="font-mono text-[11px] text-[var(--fg-2)]">
+                <span className="font-mono text-2xs text-[var(--fg-2)]">
                   {r.webhookId}
                 </span>
               )}

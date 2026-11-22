@@ -235,7 +235,7 @@ function MerchantList({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden grid-cols-[1fr_100px_140px_120px_56px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
+      <div className="hidden grid-cols-[1fr_100px_140px_120px_56px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-2xs font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
         <div>Merchant</div>
         <div>Status</div>
         <div>Key</div>
@@ -278,7 +278,7 @@ function MerchantRow({ m, onOpen }: { m: Merchant; onOpen: () => void }) {
               Object.keys(m.confirmationThresholds).length > 0 && (
                 <Badge
                   variant="outline"
-                  className="shrink-0 gap-1 text-[10px]"
+                  className="shrink-0 gap-1 text-2xs"
                   title="Per-chain confirmation overrides set"
                 >
                   <Layers className="size-3" />
@@ -289,7 +289,7 @@ function MerchantRow({ m, onOpen }: { m: Merchant; onOpen: () => void }) {
               Object.keys(m.confirmationTiers).length > 0 && (
                 <Badge
                   variant="accent"
-                  className="shrink-0 gap-1 text-[10px]"
+                  className="shrink-0 gap-1 text-2xs"
                   title="Per-(chain, token) amount-tier rules set"
                 >
                   <Layers className="size-3" />
@@ -297,7 +297,7 @@ function MerchantRow({ m, onOpen }: { m: Merchant; onOpen: () => void }) {
                 </Badge>
               )}
           </div>
-          <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--fg-3)]">
+          <div className="mt-0.5 truncate font-mono text-2xs text-[var(--fg-3)]">
             {m.id}
           </div>
         </div>
@@ -532,7 +532,7 @@ function MerchantSheet({
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <Badge variant="outline">{merchant.source}</Badge>
-                <span className="font-mono text-[11px] text-[var(--fg-3)]">
+                <span className="font-mono text-2xs text-[var(--fg-3)]">
                   {merchant.id}
                 </span>
                 <CopyButton value={merchant.id} />
@@ -899,7 +899,7 @@ function ApiKeysSection({ m }: { m: Merchant }) {
                     <span className="truncate text-sm font-medium">
                       {k.label ?? 'Unnamed key'}
                     </span>
-                    <span className="font-mono text-[11px] text-[var(--fg-3)]">
+                    <span className="font-mono text-2xs text-[var(--fg-3)]">
                       sk_…{k.fingerprint}
                     </span>
                     {k.revokedAt && <Badge variant="danger">Revoked</Badge>}
@@ -915,7 +915,7 @@ function ApiKeysSection({ m }: { m: Merchant }) {
                       ))
                     )}
                   </div>
-                  <div className="mt-1.5 text-[11px] text-[var(--fg-3)]">
+                  <div className="mt-1.5 text-2xs text-[var(--fg-3)]">
                     Created {fmtLocal(k.createdAt)}
                     {k.revokedAt && ` · revoked ${fmtLocal(k.revokedAt)}`}
                   </div>
@@ -1074,7 +1074,7 @@ function CreateApiKeyDialog({
                 <span className="min-w-0">
                   <span className="block text-sm font-medium">
                     {SCOPE_INFO[s].label}{' '}
-                    <span className="font-mono text-[11px] font-normal text-[var(--fg-3)]">{s}</span>
+                    <span className="font-mono text-2xs font-normal text-[var(--fg-3)]">{s}</span>
                   </span>
                   <span className="block text-xs text-[var(--fg-2)]">{SCOPE_INFO[s].hint}</span>
                 </span>
@@ -1641,7 +1641,7 @@ function ConfirmationThresholdsEditor({
           <button
             type="button"
             onClick={onClear}
-            className="text-[11px] text-[var(--fg-2)] hover:text-destructive"
+            className="text-2xs text-[var(--fg-2)] hover:text-destructive"
           >
             Clear all
           </button>
@@ -1689,10 +1689,10 @@ function ConfirmationThresholdsEditor({
                       <SelectItem key={c.chainId} value={String(c.chainId)}>
                         <span className="flex items-center gap-2">
                           <span>{c.displayName}</span>
-                          <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                          <span className="font-mono text-2xs text-[var(--fg-3)]">
                             {c.chainId}
                           </span>
-                          <span className="text-[10.5px] text-[var(--fg-3)]">
+                          <span className="text-2xs text-[var(--fg-3)]">
                             default {c.confirmationsRequired}
                           </span>
                         </span>
@@ -1701,7 +1701,7 @@ function ConfirmationThresholdsEditor({
                   </SelectContent>
                 </Select>
                 {info && def != null && (
-                  <div className="flex items-center gap-2 px-1 text-[10.5px] text-[var(--fg-3)]">
+                  <div className="flex items-center gap-2 px-1 text-2xs text-[var(--fg-3)]">
                     <span className="font-mono">{info.short}</span>
                     <span>·</span>
                     <span>
@@ -1804,7 +1804,7 @@ function ConfirmationTiersEditor({
           <button
             type="button"
             onClick={onClear}
-            className="text-[11px] text-[var(--fg-2)] hover:text-destructive"
+            className="text-2xs text-[var(--fg-2)] hover:text-destructive"
           >
             Clear all
           </button>
@@ -1842,7 +1842,7 @@ function ConfirmationTiersEditor({
                       <SelectItem key={c.chainId} value={String(c.chainId)}>
                         <span className="flex items-center gap-2">
                           <span>{c.displayName}</span>
-                          <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                          <span className="font-mono text-2xs text-[var(--fg-3)]">
                             {c.chainId}
                           </span>
                         </span>
@@ -1871,7 +1871,7 @@ function ConfirmationTiersEditor({
                       <SelectItem key={t.symbol} value={t.symbol}>
                         <span className="flex items-center gap-2">
                           <span className="font-mono">{t.symbol}</span>
-                          <span className="text-[10.5px] text-[var(--fg-3)]">
+                          <span className="text-2xs text-[var(--fg-3)]">
                             {t.displayName}
                           </span>
                         </span>
@@ -1890,7 +1890,7 @@ function ConfirmationTiersEditor({
               </div>
 
               {info && group.chainId && (
-                <div className="px-1 text-[10.5px] text-[var(--fg-3)]">
+                <div className="px-1 text-2xs text-[var(--fg-3)]">
                   Key{' '}
                   <span className="font-mono text-[var(--fg-1)]">
                     {group.chainId}:{group.token || '<token>'}
@@ -1998,7 +1998,7 @@ function ConfirmationTiersEditor({
                           </button>
                         </div>
                       </div>
-                      <div className="px-1 text-[10.5px] italic text-[var(--fg-3)]">
+                      <div className="px-1 text-2xs italic text-[var(--fg-3)]">
                         {describeTierRule(rule, group.token)}
                       </div>
                     </div>
@@ -2008,7 +2008,7 @@ function ConfirmationTiersEditor({
                   type="button"
                   onClick={() => onAddRule(group.id)}
                   disabled={group.rules.length >= 20}
-                  className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-1 text-[11px] text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-1 text-2xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Plus className="size-3" />
                   Add rule {group.rules.length >= 20 ? '(max 20)' : ''}

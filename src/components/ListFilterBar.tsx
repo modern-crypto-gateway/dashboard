@@ -126,7 +126,7 @@ function chipsFor(
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--fg-2)]">
+    <div className="text-2xs font-semibold uppercase tracking-[0.07em] text-[var(--fg-2)]">
       {children}
     </div>
   )
@@ -291,7 +291,7 @@ function ChainField({
             <SelectItem key={c.chainId} value={String(c.chainId)}>
               <span className="flex items-center gap-2">
                 <span>{c.name}</span>
-                <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                <span className="font-mono text-2xs text-[var(--fg-3)]">
                   {c.chainId}
                 </span>
               </span>
@@ -532,7 +532,7 @@ export function ListFilterBar({
           <SlidersHorizontal className="size-3.5" />
           Filters
           {advancedCount > 0 && (
-            <Badge variant="accent" className="h-4 min-w-4 px-1 text-[10px]">
+            <Badge variant="accent" className="h-4 min-w-4 px-1 text-2xs">
               {advancedCount}
             </Badge>
           )}
@@ -560,13 +560,13 @@ export function ListFilterBar({
       {/* applied-filter chips */}
       {chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] font-medium text-[var(--fg-3)]">
+          <span className="text-2xs font-medium text-[var(--fg-3)]">
             Applied
           </span>
           {chips.map((c) => (
             <span
               key={c.id}
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-card py-0.5 pr-1 pl-2.5 text-[11px] text-[var(--fg-1)] shadow-xs"
+              className="inline-flex items-center gap-1 rounded-full border border-border bg-card py-0.5 pr-1 pl-2.5 text-2xs text-[var(--fg-1)] shadow-xs"
             >
               <span className="max-w-[300px] truncate">{c.label}</span>
               <button
@@ -582,7 +582,7 @@ export function ListFilterBar({
           <button
             type="button"
             onClick={clearAll}
-            className="ml-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-[var(--fg-2)] hover:text-foreground"
+            className="ml-0.5 inline-flex items-center gap-1 text-2xs font-medium text-[var(--fg-2)] hover:text-foreground"
           >
             <RotateCcw className="size-3" /> Clear all
           </button>
@@ -617,7 +617,7 @@ export function ListFilterBar({
                     {Icon && (
                       <Icon className="size-3.5 text-[var(--fg-3)]" />
                     )}
-                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--fg-2)]">
+                    <h3 className="text-2xs font-semibold uppercase tracking-[0.1em] text-[var(--fg-2)]">
                       {sec.title}
                     </h3>
                     <div className="h-px flex-1 bg-border" />

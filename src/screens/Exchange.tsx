@@ -466,7 +466,7 @@ function PolicyCard({ policy }: { policy: ExchangePolicy }) {
         <KeyVal label="Re-quote">
           <span className="font-mono">
             after {policy.requoteMinutes} min · max {policy.maxRequotes}
-            <span className="ml-1.5 text-[10.5px] text-[var(--fg-3)]">
+            <span className="ml-1.5 text-2xs text-[var(--fg-3)]">
               then market sell
             </span>
           </span>
@@ -492,14 +492,14 @@ function PolicyCard({ policy }: { policy: ExchangePolicy }) {
             <span className="font-mono">
               {policy.withdraw.asset} · min {usd2(policy.withdraw.minUsd)} ·
               daily {usd2(policy.withdraw.dailyCapUsd)}
-              <span className="ml-1.5 text-[10.5px] text-[var(--fg-3)]">
+              <span className="ml-1.5 text-2xs text-[var(--fg-3)]">
                 key {policy.withdraw.key ?? '—'}
               </span>
             </span>
           ) : (
             <span className="text-[var(--fg-3)]">
               disabled
-              <span className="ml-1.5 font-mono text-[10.5px]">
+              <span className="ml-1.5 font-mono text-2xs">
                 ({policy.withdraw.asset} · min {usd2(policy.withdraw.minUsd)} ·
                 daily {usd2(policy.withdraw.dailyCapUsd)})
               </span>
@@ -509,7 +509,7 @@ function PolicyCard({ policy }: { policy: ExchangePolicy }) {
         <KeyVal label="userref">
           <span className="font-mono">{policy.userref}</span>
         </KeyVal>
-        <div className="text-[11px] text-[var(--fg-3)]">
+        <div className="text-2xs text-[var(--fg-3)]">
           Read-only — {POLICY_HINT}.
         </div>
       </CardContent>
@@ -590,7 +590,7 @@ function LastRunCard({
                 {run.errors.map((e, i) => (
                   <li
                     key={i}
-                    className="flex items-start gap-2 font-mono text-[11px] text-destructive"
+                    className="flex items-start gap-2 font-mono text-2xs text-destructive"
                   >
                     <AlertTriangle className="mt-0.5 size-3 shrink-0" />
                     <span className="break-all">{e}</span>
@@ -616,7 +616,7 @@ function SkippedList({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-warn hover:underline"
+        className="inline-flex cursor-pointer items-center gap-1 text-2xs text-warn hover:underline"
       >
         <AlertTriangle className="size-3" />
         {open ? 'Hide' : 'Show'} skipped · {skipped.length}
@@ -630,7 +630,7 @@ function SkippedList({
             >
               <span className="font-mono">{s.asset}</span>
               <span
-                className="ml-auto max-w-[360px] truncate font-mono text-[10px] text-[var(--fg-3)]"
+                className="ml-auto max-w-[360px] truncate font-mono text-2xs text-[var(--fg-3)]"
                 title={s.reason}
               >
                 {s.reason}
@@ -652,7 +652,7 @@ function KeyVal({
 }) {
   return (
     <div className="grid grid-cols-[120px_1fr] items-start gap-3 text-sm">
-      <span className="pt-0.5 text-[11px] uppercase tracking-[0.08em] text-[var(--fg-3)]">
+      <span className="pt-0.5 text-2xs uppercase tracking-[0.08em] text-[var(--fg-3)]">
         {label}
       </span>
       <div className="min-w-0">{children}</div>
@@ -680,13 +680,13 @@ function Stat({
           : 'border-border bg-[var(--bg-2)]',
       )}
     >
-      <div className="text-[10.5px] uppercase tracking-[0.08em] text-[var(--fg-3)]">
+      <div className="text-2xs uppercase tracking-[0.08em] text-[var(--fg-3)]">
         {label}
       </div>
       <div className="mt-0.5 truncate font-mono text-sm" title={value}>
         {value}
       </div>
-      {sub && <div className="text-[11px] text-[var(--fg-2)]">{sub}</div>}
+      {sub && <div className="text-2xs text-[var(--fg-2)]">{sub}</div>}
     </div>
   )
 }
@@ -779,7 +779,7 @@ function BalancesCard({ rows }: { rows: ExchangeStatus['balances'] }) {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead className="bg-[var(--bg-2)] text-[10px] uppercase tracking-wider text-[var(--fg-3)]">
+            <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
               <tr>
                 <th className="px-4 py-2 text-left">Asset</th>
                 <th className="px-3 py-2 text-right">Available</th>
@@ -796,7 +796,7 @@ function BalancesCard({ rows }: { rows: ExchangeStatus['balances'] }) {
                     <div>{r.available}</div>
                     {isPositive(r.holdTrade) && (
                       <div
-                        className="text-[10.5px] text-warn"
+                        className="text-2xs text-warn"
                         title={`balance ${r.balance}`}
                       >
                         held {r.holdTrade}
@@ -846,7 +846,7 @@ function OpenOrdersCard({ orders }: { orders: ExchangeOpenOrder[] }) {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead className="bg-[var(--bg-2)] text-[10px] uppercase tracking-wider text-[var(--fg-3)]">
+            <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
               <tr>
                 <th className="px-4 py-2 text-left">Pair</th>
                 <th className="px-3 py-2 text-left">Status</th>
@@ -1038,7 +1038,7 @@ function ActionsJournal({
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead className="bg-[var(--bg-2)] text-[10px] uppercase tracking-wider text-[var(--fg-3)]">
+            <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
               <tr>
                 <th className="px-4 py-2 text-left">Time</th>
                 <th className="px-3 py-2 text-left">Kind</th>
@@ -1075,7 +1075,7 @@ function ActionRow({ a }: { a: ExchangeAction }) {
           <div>{fmtLocal(a.createdAt, { seconds: true })}</div>
           {a.updatedAt !== a.createdAt && (
             <div
-              className="text-[10.5px] text-[var(--fg-3)]"
+              className="text-2xs text-[var(--fg-3)]"
               title="last update"
             >
               upd {fmtLocal(a.updatedAt, { seconds: true })}
@@ -1088,13 +1088,13 @@ function ActionRow({ a }: { a: ExchangeAction }) {
         <td className="px-3 py-2 font-mono whitespace-nowrap">
           <div className="font-medium">{a.asset}</div>
           {a.pair && (
-            <div className="text-[10.5px] text-[var(--fg-3)]">{a.pair}</div>
+            <div className="text-2xs text-[var(--fg-3)]">{a.pair}</div>
           )}
         </td>
         <td className="px-3 py-2 text-right font-mono whitespace-nowrap">
           <div>{a.volume}</div>
           {a.executedVolume != null && a.executedVolume !== a.volume && (
-            <div className="text-[10.5px] text-[var(--fg-3)]">
+            <div className="text-2xs text-[var(--fg-3)]">
               exec {a.executedVolume}
             </div>
           )}
@@ -1157,7 +1157,7 @@ function ActionRow({ a }: { a: ExchangeAction }) {
               ) : (
                 <ChevronRight className="size-3 shrink-0" />
               )}
-              <span className="truncate font-mono text-[11px]">
+              <span className="truncate font-mono text-2xs">
                 {a.error ?? 'details'}
               </span>
             </button>
@@ -1187,7 +1187,7 @@ function ActionRow({ a }: { a: ExchangeAction }) {
               {a.fee != null && <span className="font-mono">fee {a.fee}</span>}
             </div>
             {a.error && (
-              <div className="mt-1.5 flex items-start gap-2 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-2.5 py-2 font-mono text-[11px] text-destructive">
+              <div className="mt-1.5 flex items-start gap-2 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-2.5 py-2 font-mono text-2xs text-destructive">
                 <AlertTriangle className="mt-0.5 size-3 shrink-0" />
                 <span className="break-all whitespace-pre-wrap">{a.error}</span>
               </div>

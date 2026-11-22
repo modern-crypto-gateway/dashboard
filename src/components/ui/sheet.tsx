@@ -15,7 +15,7 @@ const SheetOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px]',
+      'fixed inset-0 z-50 bg-[oklch(0.15_0.01_265/0.35)] backdrop-blur-[1px]',
       'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
       className,
     )}
@@ -38,7 +38,7 @@ export const SheetContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed top-0 z-50 flex h-dvh w-full max-w-[560px] flex-col border-border bg-card shadow-xl',
+        'fixed top-0 z-50 flex h-dvh w-full max-w-[560px] flex-col border-border bg-card shadow-lg',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         side === 'right' &&
           'right-0 border-l data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right',
@@ -50,7 +50,7 @@ export const SheetContent = React.forwardRef<
     >
       {children}
       <DialogPrimitive.Close
-        className="absolute top-3 right-3 inline-flex size-8 items-center justify-center rounded-sm text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground cursor-pointer"
+        className="absolute top-4 right-4 inline-flex size-7 items-center justify-center rounded-md text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground cursor-pointer"
         aria-label="Close"
       >
         <X className="size-4" />
@@ -102,7 +102,7 @@ export const SheetTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn('text-lg font-semibold tracking-tight', className)}
+    className={cn('text-lg font-semibold tracking-[-0.01em] pr-8', className)}
     {...props}
   />
 ))

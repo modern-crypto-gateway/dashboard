@@ -200,7 +200,7 @@ function BootstrapCard() {
                 >
                   {r.status}
                 </Badge>
-                <span className="font-mono text-[12.5px]">chain {r.chainId}</span>
+                <span className="font-mono text-xs">chain {r.chainId}</span>
                 {r.webhookId && (
                   <span className="font-mono text-xs text-[var(--fg-2)]">
                     {r.webhookId}
@@ -291,21 +291,21 @@ function ChainCheckboxList({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="truncate font-medium">{c.displayName}</span>
-                  <span className="rounded bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-[10.5px] text-[var(--fg-2)]">
+                  <span className="rounded bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-2xs text-[var(--fg-2)]">
                     {c.chainId}
                   </span>
                   {already ? (
-                    <span className="inline-flex items-center gap-1 rounded border border-[var(--success-border)] bg-[var(--success-bg)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-success">
+                    <span className="inline-flex items-center gap-1 rounded border border-[var(--success-border)] bg-[var(--success-bg)] px-1.5 py-0.5 text-2xs uppercase tracking-wider text-success">
                       <CheckCircle2 className="size-3" /> registered
                     </span>
                   ) : (
-                    <span className="rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-warn">
+                    <span className="rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-warn">
                       gap
                     </span>
                   )}
                   {!c.alchemyConfigured && (
                     <span
-                      className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-warn"
+                      className="inline-flex items-center gap-1 text-2xs uppercase tracking-wider text-warn"
                       title="ALCHEMY_CHAINS env does not list this chainId"
                     >
                       <AlertTriangle className="size-3" />
@@ -313,7 +313,7 @@ function ChainCheckboxList({
                     </span>
                   )}
                 </div>
-                <div className="mt-0.5 font-mono text-[11px] text-[var(--fg-3)]">
+                <div className="mt-0.5 font-mono text-2xs text-[var(--fg-3)]">
                   {c.slug}
                 </div>
               </div>
@@ -413,7 +413,7 @@ function SigningKeyCard() {
                     <SelectItem key={c.chainId} value={String(c.chainId)}>
                       <span className="flex items-center gap-2">
                         <span>{c.displayName}</span>
-                        <span className="font-mono text-[10.5px] text-[var(--fg-3)]">
+                        <span className="font-mono text-2xs text-[var(--fg-3)]">
                           {c.chainId}
                         </span>
                       </span>

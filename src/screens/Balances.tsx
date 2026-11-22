@@ -91,7 +91,7 @@ export function BalancesPage() {
           <Card className="flex flex-wrap items-center gap-4 p-5">
             <div>
               <div className="eyebrow">Grand total</div>
-              <div className="mt-1 font-mono text-[34px] font-semibold leading-none tracking-tight">
+              <div className="mt-1 font-mono text-3xl font-semibold leading-none tracking-tight">
                 {fmtUsd(total)}
               </div>
               <div className="mt-1 text-xs text-[var(--fg-2)]">
@@ -226,7 +226,7 @@ function FamilyCard({
             className="size-3 rounded-sm"
             style={{ background: FAMILY_COLOR[family.family as Family] }}
           />
-          <div className="font-semibold tracking-tight uppercase tracking-[0.08em] text-[13px]">
+          <div className="font-semibold tracking-tight uppercase tracking-[0.08em] text-sm">
             {family.family}
           </div>
         </div>
@@ -266,7 +266,7 @@ function FamilyCard({
                     style={{ background: info.color }}
                   />
                   <span className="font-medium">{info.name}</span>
-                  <span className="ml-auto flex items-center gap-3 font-mono text-[12.5px]">
+                  <span className="ml-auto flex items-center gap-3 font-mono text-xs">
                     {c.tokens
                       .slice(0, 3)
                       .map((t) => (

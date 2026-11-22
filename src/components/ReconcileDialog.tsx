@@ -303,7 +303,7 @@ function ReconcileResult({
         <Badge variant={result.dryRun ? 'outline' : 'success'}>
           {result.dryRun ? 'preview' : `applied · ${result.adjusted} written`}
         </Badge>
-        <span className="text-[11px] text-[var(--fg-3)]">
+        <span className="text-2xs text-[var(--fg-3)]">
           <span className="font-mono">{result.checked}</span> probed ·{' '}
           <span className="font-mono">{nonZero.length}</span> drifting
           {result.errors.length > 0 && (
@@ -315,7 +315,7 @@ function ReconcileResult({
           )}
         </span>
         {!result.dryRun && (
-          <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-success">
+          <span className="ml-auto inline-flex items-center gap-1 text-2xs text-success">
             <CheckCircle2 className="size-3" /> ledger snapped to chain
           </span>
         )}
@@ -329,7 +329,7 @@ function ReconcileResult({
       ) : (
         <div className="max-h-[320px] min-w-0 overflow-auto rounded-md border border-border">
           <table className="w-full min-w-[560px] text-xs">
-            <thead className="sticky top-0 bg-[var(--bg-2)] text-[10.5px] uppercase tracking-wider text-[var(--fg-3)]">
+            <thead className="sticky top-0 bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Address</th>
                 <th className="px-3 py-2 text-left font-medium">Token</th>
@@ -351,7 +351,7 @@ function ReconcileResult({
                     <td className="px-3 py-2">
                       <div className="flex flex-col gap-1">
                         <Addr value={d.address} />
-                        <span className="inline-flex items-center gap-1.5 text-[10.5px] text-[var(--fg-3)]">
+                        <span className="inline-flex items-center gap-1.5 text-2xs text-[var(--fg-3)]">
                           <span
                             className="size-[6px] rounded-full"
                             style={{ background: info.color }}
@@ -401,7 +401,7 @@ function ReconcileResult({
                 className="flex flex-wrap items-center gap-2"
               >
                 <Addr value={er.address} />
-                <span className="text-[10px] text-[var(--fg-3)]">
+                <span className="text-2xs text-[var(--fg-3)]">
                   {chainInfo(er.chainId).name}
                 </span>
                 <span className="font-mono text-[var(--fg-2)]">{er.error}</span>
@@ -412,7 +412,7 @@ function ReconcileResult({
       )}
 
       {result.dryRun && nonZero.length > 0 && (
-        <p className="text-[11px] text-[var(--fg-2)]">
+        <p className="text-2xs text-[var(--fg-2)]">
           Review the deltas above. Applying writes one adjustment row per
           nonzero delta and can&rsquo;t be auto-undone — scope to a chain or
           address first if you only trust some of these.

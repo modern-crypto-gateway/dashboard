@@ -6,7 +6,7 @@ const truncate = (s: string, a = 6, b = 4) =>
 export function Addr({ value, truncated = true }: { value: string; truncated?: boolean }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="font-mono text-[12.5px]">{truncated ? truncate(value) : value}</span>
+      <span className="font-mono text-xs">{truncated ? truncate(value) : value}</span>
       <CopyButton value={value} />
     </span>
   )

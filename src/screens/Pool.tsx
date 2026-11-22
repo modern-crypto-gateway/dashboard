@@ -200,7 +200,7 @@ function PoolFamilyCard({ s }: { s: PoolStatsRow }) {
             className="size-2.5 rounded-sm"
             style={{ background: FAMILY_COLOR[s.family] }}
           />
-          <span className="font-semibold uppercase tracking-[0.08em] text-[13px]">
+          <span className="font-semibold uppercase tracking-[0.08em] text-sm">
             {s.family}
           </span>
         </div>
@@ -212,7 +212,7 @@ function PoolFamilyCard({ s }: { s: PoolStatsRow }) {
           {s.available} avail
         </Badge>
       </div>
-      <div className="mt-4 font-mono text-[28px] font-semibold leading-none tracking-tight">
+      <div className="mt-4 font-mono text-2xl font-semibold leading-none tracking-tight">
         {s.available}
         <span className="ml-1 text-base text-[var(--fg-2)]">/ {s.total}</span>
       </div>
@@ -231,7 +231,7 @@ function PoolFamilyCard({ s }: { s: PoolStatsRow }) {
 function MetricCell({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md border border-border bg-[var(--bg-2)] px-2 py-1.5">
-      <div className="text-[10.5px] uppercase tracking-[0.12em] text-[var(--fg-2)]">
+      <div className="text-2xs uppercase tracking-[0.12em] text-[var(--fg-2)]">
         {label}
       </div>
       <div className="mt-0.5 font-mono font-semibold">{value}</div>
@@ -258,10 +258,10 @@ function MoneroPoolCard({ stats }: { stats: MoneroPoolStatsRow }) {
             className="size-2.5 shrink-0 rounded-sm"
             style={{ background: FAMILY_COLOR.monero }}
           />
-          <span className="truncate font-semibold uppercase tracking-[0.08em] text-[13px]">
+          <span className="truncate font-semibold uppercase tracking-[0.08em] text-sm">
             {info.short || 'monero'}
           </span>
-          <Badge variant="outline" className="text-[9.5px]" title="Monero uses subaddress derivation, not an HD pool">
+          <Badge variant="outline" className="text-2xs" title="Monero uses subaddress derivation, not an HD pool">
             subaddress
           </Badge>
         </div>
@@ -273,7 +273,7 @@ function MoneroPoolCard({ stats }: { stats: MoneroPoolStatsRow }) {
           {available} avail
         </Badge>
       </div>
-      <div className="mt-4 font-mono text-[28px] font-semibold leading-none tracking-tight">
+      <div className="mt-4 font-mono text-2xl font-semibold leading-none tracking-tight">
         {available}
         <span className="ml-1 text-base text-[var(--fg-2)]">/ {total}</span>
       </div>
@@ -656,7 +656,7 @@ function FamilyAuditCard({
             className="size-2.5 rounded-sm"
             style={{ background: FAMILY_COLOR[report.family] }}
           />
-          <span className="font-semibold uppercase tracking-[0.08em] text-[12.5px]">
+          <span className="font-semibold uppercase tracking-[0.08em] text-xs">
             {report.family}
           </span>
         </div>
@@ -694,7 +694,7 @@ function AuditCell({
 }) {
   return (
     <div className="rounded border border-border bg-card px-2 py-1.5">
-      <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--fg-2)]">
+      <div className="text-2xs uppercase tracking-[0.12em] text-[var(--fg-2)]">
         {label}
       </div>
       <div
@@ -721,7 +721,7 @@ function MismatchList({ data }: { data: PoolAuditResponse }) {
       <div className="overflow-x-auto rounded-md border border-border">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border bg-[var(--bg-2)] text-[10.5px] uppercase tracking-wider text-[var(--fg-3)]">
+            <tr className="border-b border-border bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
               <th className="px-3 py-2 text-left font-medium">Family</th>
               <th className="px-3 py-2 text-left font-medium">Index</th>
               <th className="px-3 py-2 text-left font-medium">Stored</th>

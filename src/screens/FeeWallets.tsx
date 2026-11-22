@@ -153,7 +153,7 @@ function FamilyCard({
             className="size-2.5 rounded-sm"
             style={{ background: FAMILY_COLOR[entry.family] }}
           />
-          <span className="font-semibold uppercase tracking-[0.08em] text-[13px]">
+          <span className="font-semibold uppercase tracking-[0.08em] text-sm">
             {entry.family}
           </span>
           <CapabilityBadge capability={entry.capability} />
@@ -778,7 +778,7 @@ function ResourceBar({
           style={{ width: `${pct}%` }}
         />
       </div>
-      <div className="mt-1 text-[10.5px] uppercase tracking-wider text-[var(--fg-3)]">
+      <div className="mt-1 text-2xs uppercase tracking-wider text-[var(--fg-3)]">
         {pct.toFixed(0)}% available
       </div>
     </div>

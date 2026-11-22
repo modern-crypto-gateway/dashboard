@@ -94,7 +94,7 @@ export function MetadataEditor({ value, onChange }: Props) {
                 type="button"
                 onClick={() => (opt.k === 'raw' ? switchToRaw() : switchToRows())}
                 className={
-                  'rounded px-2.5 py-0.5 text-[11px] font-medium transition-colors ' +
+                  'rounded px-2.5 py-0.5 text-2xs font-medium transition-colors ' +
                   (active
                     ? 'bg-[var(--bg-2)] text-[var(--fg-1)]'
                     : 'text-[var(--fg-2)] hover:text-[var(--fg-1)]')
@@ -120,7 +120,7 @@ export function MetadataEditor({ value, onChange }: Props) {
       {mode === 'rows' ? (
         <div className="space-y-1.5 p-2">
           {rows.length === 0 ? (
-            <div className="px-1 py-3 text-center text-[11.5px] text-[var(--fg-3)]">
+            <div className="px-1 py-3 text-center text-2xs text-[var(--fg-3)]">
               No fields. Click <span className="font-medium">+ Field</span> to
               add key/value pairs, or switch to Raw JSON.
             </div>
@@ -179,7 +179,7 @@ export function MetadataEditor({ value, onChange }: Props) {
             className="font-mono text-xs"
           />
           {rawError && (
-            <div className="mt-1 text-[11px] text-destructive">{rawError}</div>
+            <div className="mt-1 text-2xs text-destructive">{rawError}</div>
           )}
         </div>
       )}
