@@ -126,7 +126,7 @@ function chipsFor(
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-2xs font-semibold uppercase tracking-[0.07em] text-[var(--fg-2)]">
+    <div className="text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
       {children}
     </div>
   )
@@ -148,11 +148,11 @@ function ChipToggle({
       type="button"
       onClick={onClick}
       className={cn(
-        'cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+        'inline-flex h-7 cursor-pointer items-center rounded-md border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         mono && 'font-mono',
         on
           ? 'border-[var(--accent-border)] bg-[var(--accent-bg)] text-primary'
-          : 'border-border text-[var(--fg-2)] hover:border-[var(--fg-3)] hover:bg-[var(--bg-hover)]',
+          : 'border-input bg-card text-[var(--fg-2)] hover:border-[var(--fg-3)] hover:bg-[var(--bg-hover)] hover:text-foreground',
       )}
     >
       {children}
@@ -243,16 +243,16 @@ function TriField({
   return (
     <div className="space-y-1.5">
       <FieldLabel>{field.label}</FieldLabel>
-      <div className="inline-flex w-full rounded-md border border-border bg-[var(--bg-2)] p-0.5">
+      <div className="inline-flex h-9 w-full rounded-md border border-input bg-[var(--bg-2)] p-0.5">
         {opts.map((o) => (
           <button
             key={o.v || 'any'}
             type="button"
             onClick={() => onChange(o.v)}
             className={cn(
-              'flex-1 cursor-pointer rounded-sm px-2 py-1.5 text-xs font-medium transition-colors',
+              'flex-1 cursor-pointer rounded-sm px-2 text-sm font-medium transition-colors',
               value === o.v
-                ? 'bg-card text-foreground shadow-xs'
+                ? 'bg-card text-foreground ring-1 ring-border'
                 : 'text-[var(--fg-2)] hover:text-foreground',
             )}
           >
@@ -282,7 +282,7 @@ function ChainField({
         value={value === '' ? CHAIN_ANY : value}
         onValueChange={(v) => onChange(v === CHAIN_ANY ? '' : v)}
       >
-        <SelectTrigger className="h-9">
+        <SelectTrigger className="h-9 text-sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -320,13 +320,13 @@ function DateRangeField({
           type="datetime-local"
           value={msToLocalInput(values[field.keyFrom] ?? '')}
           onChange={(e) => setValue(field.keyFrom, localInputToMs(e.target.value))}
-          className="h-9 text-xs"
+          className="h-9 text-sm"
         />
         <Input
           type="datetime-local"
           value={msToLocalInput(values[field.keyTo] ?? '')}
           onChange={(e) => setValue(field.keyTo, localInputToMs(e.target.value))}
-          className="h-9 text-xs"
+          className="h-9 text-sm"
         />
       </div>
     </div>
@@ -345,7 +345,7 @@ function NumberRangeField({
   const cell = (key: string, placeholder: string) => (
     <div className="relative">
       {field.prefix && (
-        <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-xs text-[var(--fg-3)]">
+        <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-[var(--fg-3)]">
           {field.prefix}
         </span>
       )}
@@ -354,7 +354,7 @@ function NumberRangeField({
         placeholder={placeholder}
         value={values[key] ?? ''}
         onChange={(e) => setValue(key, e.target.value)}
-        className={cn('h-9 font-mono text-xs', field.prefix && 'pl-6')}
+        className={cn('h-9 font-mono text-sm tabular-nums', field.prefix && 'pl-6')}
       />
     </div>
   )
@@ -391,7 +391,7 @@ function FieldRenderer({
             value={values[field.key] ?? ''}
             placeholder={field.placeholder}
             onChange={(e) => setValue(field.key, e.target.value)}
-            className="h-9 font-mono text-xs"
+            className="h-9 font-mono text-sm"
           />
         </div>
       )
@@ -404,7 +404,7 @@ function FieldRenderer({
             value={values[field.key] ?? ''}
             placeholder={field.placeholder}
             onChange={(e) => setValue(field.key, e.target.value)}
-            className="h-9 font-mono text-xs"
+            className="h-9 font-mono text-sm"
           />
         </div>
       )
@@ -532,7 +532,7 @@ export function ListFilterBar({
           <SlidersHorizontal className="size-3.5" />
           Filters
           {advancedCount > 0 && (
-            <Badge variant="accent" className="h-4 min-w-4 px-1 text-2xs">
+            <Badge variant="accent" className="h-4 min-w-4 px-1 tabular-nums">
               {advancedCount}
             </Badge>
           )}
@@ -547,7 +547,7 @@ export function ListFilterBar({
           onChangeDir={(v) => onChange({ ...values, [sort.dirKey]: v })}
         />
 
-        <div className="ml-auto flex items-center gap-2 text-xs text-[var(--fg-3)]">
+        <div className="ml-auto flex items-center gap-2 text-xs text-[var(--fg-2)]">
           {loading && <Loader2 className="size-3.5 animate-spin" />}
           {resultCount != null && (
             <span className="whitespace-nowrap tabular-nums">
@@ -560,19 +560,19 @@ export function ListFilterBar({
       {/* applied-filter chips */}
       {chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-2xs font-medium text-[var(--fg-3)]">
+          <span className="mr-0.5 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-3)]">
             Applied
           </span>
           {chips.map((c) => (
             <span
               key={c.id}
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-card py-0.5 pr-1 pl-2.5 text-2xs text-[var(--fg-1)] shadow-xs"
+              className="inline-flex h-6 max-w-full items-center gap-1 rounded-sm border border-border bg-[var(--muted-bg)] pr-0.5 pl-2 text-xs text-[var(--fg-1)]"
             >
               <span className="max-w-[300px] truncate">{c.label}</span>
               <button
                 type="button"
                 onClick={() => clearKeys(c.clearKeys)}
-                className="rounded-full p-0.5 text-[var(--fg-3)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
+                className="grid size-5 cursor-pointer place-items-center rounded-sm text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
                 aria-label={`Remove ${c.label}`}
               >
                 <X className="size-3" />
@@ -582,7 +582,7 @@ export function ListFilterBar({
           <button
             type="button"
             onClick={clearAll}
-            className="ml-0.5 inline-flex items-center gap-1 text-2xs font-medium text-[var(--fg-2)] hover:text-foreground"
+            className="ml-1 inline-flex h-6 cursor-pointer items-center gap-1 rounded-sm px-1.5 text-xs font-medium text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
           >
             <RotateCcw className="size-3" /> Clear all
           </button>
@@ -601,7 +601,7 @@ export function ListFilterBar({
                 <div className="text-base font-semibold tracking-tight">
                   Filters
                 </div>
-                <div className="text-xs text-[var(--fg-3)]">
+                <div className="text-xs text-[var(--fg-2)]">
                   Changes apply when you hit Apply.
                 </div>
               </div>
@@ -617,16 +617,16 @@ export function ListFilterBar({
                     {Icon && (
                       <Icon className="size-3.5 text-[var(--fg-3)]" />
                     )}
-                    <h3 className="text-2xs font-semibold uppercase tracking-[0.1em] text-[var(--fg-2)]">
+                    <h3 className="text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
                       {sec.title}
                     </h3>
                     <div className="h-px flex-1 bg-border" />
                   </div>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+                  <div className="grid grid-cols-1 gap-x-3 gap-y-4 sm:grid-cols-2">
                     {sec.fields.map((f) => (
                       <div
                         key={fieldKeys(f).join('|')}
-                        className={isWideField(f) ? 'col-span-2' : ''}
+                        className={isWideField(f) ? 'sm:col-span-2' : ''}
                       >
                         <FieldRenderer
                           field={f}
@@ -696,13 +696,13 @@ function SortControl({
   return (
     <div
       className={cn(
-        'flex h-9 items-center rounded-md border bg-card',
-        dirty ? 'border-[var(--accent-border)]' : 'border-border',
+        'flex h-8 items-center rounded-md border bg-card',
+        dirty ? 'border-[var(--accent-border)]' : 'border-input',
       )}
     >
       <Select value={sortBy} onValueChange={onChangeBy}>
-        <SelectTrigger className="h-full gap-1.5 border-0 bg-transparent px-2.5 text-xs shadow-none focus-visible:ring-0">
-          <span className="text-[var(--fg-3)]">Sort</span>
+        <SelectTrigger className="h-full gap-1.5 border-0 bg-transparent px-2.5 text-sm shadow-none hover:border-0 focus-visible:ring-0">
+          <span className="text-[var(--fg-2)]">Sort</span>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -718,7 +718,7 @@ function SortControl({
         type="button"
         onClick={() => onChangeDir(sortDir === 'asc' ? 'desc' : 'asc')}
         title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
-        className="flex h-full cursor-pointer items-center px-2 text-[var(--fg-2)] transition-colors hover:text-foreground"
+        className="flex h-full cursor-pointer items-center rounded-r-md px-2 text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
       >
         {sortDir === 'asc' ? (
           <ArrowUpWideNarrow className="size-3.5" />

@@ -12,7 +12,6 @@ import {
 } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
-import { chainInfo } from '@/lib/chains'
 import { truncateAddr } from '@/lib/format'
 import { useActiveMerchant, useMerchants } from '@/lib/merchants'
 import { useMerchantRateLimit } from '@/lib/rateLimit'
@@ -21,8 +20,22 @@ import type { PayoutBatchResponse } from '@/lib/types'
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
 import { MerchantSwitcher } from '@/components/MerchantSwitcher'
+import { ChainPill } from '@/components/ChainPill'
+import { PageHeader } from '@/components/PageHeader'
+import { Callout, EmptyState } from '@/components/States'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Table,
+  TableWrap,
+  TBody,
+  Td,
+  Th,
+  THead,
+  Tr,
+} from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 
 /* ── helpers (module-private) ──────────────────────────── */
@@ -146,8 +159,8 @@ function QuotaRow({
 }) {
   if (remaining === null) {
     return (
-      <span className="inline-flex items-center gap-1 text-[var(--fg-3)]">
-        <Gauge className="size-3" />
+      <span className="inline-flex items-center gap-1 text-[var(--fg-2)]">
+        <Gauge className="size-3.5" />
         quota unknown
       </span>
     )
@@ -159,9 +172,9 @@ function QuotaRow({
         'inline-flex items-center gap-1 ' +
         (warn ? 'text-warn' : 'text-[var(--fg-2)]')
       }
-      title="Remaining this minute for the merchant's API key."
+      title="Remaining this minute for the store's API key."
     >
-      <Gauge className="size-3" />
+      <Gauge className="size-3.5" />
       <span className="font-mono tabular-nums">{remaining}</span>
       {limit !== null && (
         <span className="text-[var(--fg-3)]">
@@ -170,19 +183,6 @@ function QuotaRow({
         </span>
       )}
       <span className="text-[var(--fg-3)]">quota</span>
-    </span>
-  )
-}
-
-function ChainPill({ chainId }: { chainId: number }) {
-  const info = chainInfo(chainId)
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-[var(--fg-2)]">
-      <span
-        className="size-[7px] shrink-0 rounded-full"
-        style={{ background: info.color }}
-      />
-      <span className="truncate">{info.name}</span>
     </span>
   )
 }
@@ -206,26 +206,22 @@ export function PayoutsBatchPage() {
 
   return (
     <div className="fade-in space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <Button asChild variant="ghost" size="sm" className="-ml-2">
-              <Link to="/payouts">
-                <ArrowLeft className="size-3.5" /> Payouts
-              </Link>
-            </Button>
-          </div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Batch payout
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-[var(--fg-2)]">
-            Plan up to {BATCH_MAX} payouts in one request. Paste CSV with
-            columns <span className="font-mono">chainId,token,amount,destinationAddress</span>.
-            Per-row errors don&rsquo;t abort the batch — HTTP 200 with mixed
-            outcomes is normal; you&rsquo;ll see each row&rsquo;s result below.
-          </p>
-        </div>
-        <MerchantSwitcher />
+      <div className="space-y-2">
+        <BackToPayouts />
+        <PageHeader
+          eyebrow="Payments"
+          title="Batch payout"
+          description={
+            <>
+              Plan up to {BATCH_MAX} payouts in one request. Paste CSV with
+              columns{' '}
+              <span className="font-mono break-all">chainId,token,amount,destinationAddress</span>.
+              Per-row errors don&rsquo;t abort the batch — HTTP 200 with mixed
+              outcomes is normal; you&rsquo;ll see each row&rsquo;s result below.
+            </>
+          }
+          actions={<MerchantSwitcher />}
+        />
       </div>
 
       {!canSubmit && active ? (
@@ -318,153 +314,157 @@ function BatchForm({ merchantId }: { merchantId: string }) {
   }
 
   return (
-    <form
-      className="space-y-4"
-      onSubmit={(e) => {
-        e.preventDefault()
-        submit.mutate()
-      }}
-    >
-      <Field
-        label="CSV"
-        hint="One payout per line. Blank lines and lines starting with '#' are ignored. A header row is optional."
+    <Card>
+      <form
+        className="space-y-4 p-5"
+        onSubmit={(e) => {
+          e.preventDefault()
+          submit.mutate()
+        }}
       >
-        <Textarea
-          value={csv}
-          onChange={(e) => setCsv(e.target.value)}
-          rows={14}
-          placeholder={
-            'chainId,token,amount,destinationAddress\n42161,USDC,1.5,0x1111111111111111111111111111111111111111\n1,ETH,0.01,0x3333333333333333333333333333333333333333'
-          }
-          className="font-mono text-xs"
-        />
-      </Field>
+        <Field
+          label="CSV"
+          hint="One payout per line. Blank lines and lines starting with '#' are ignored. A header row is optional."
+        >
+          <Textarea
+            value={csv}
+            onChange={(e) => setCsv(e.target.value)}
+            rows={14}
+            placeholder={
+              'chainId,token,amount,destinationAddress\n42161,USDC,1.5,0x1111111111111111111111111111111111111111\n1,ETH,0.01,0x3333333333333333333333333333333333333333'
+            }
+            className="font-mono text-xs"
+          />
+        </Field>
 
-      <div className="flex flex-wrap items-center gap-3 text-2xs">
-        <span>
-          <span className="font-mono tabular-nums">{rows.length}</span> parsed
-        </span>
-        {errors.length > 0 && (
-          <span className="text-destructive">
-            <span className="font-mono tabular-nums">{errors.length}</span>{' '}
-            parse error{errors.length === 1 ? '' : 's'}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+          <span className="text-[var(--fg-2)]">
+            <span className="font-mono tabular-nums text-foreground">{rows.length}</span> parsed
           </span>
-        )}
-        {oversize && (
-          <span className="inline-flex items-center gap-1 text-destructive">
-            <AlertTriangle className="size-3" />
-            Exceeds {BATCH_MAX}-row limit — split the file.
-          </span>
-        )}
-        <span className="flex-1" />
-        <QuotaRow remaining={rl?.remaining ?? null} limit={rl?.limit ?? null} />
-      </div>
+          {errors.length > 0 && (
+            <span className="text-destructive">
+              <span className="font-mono tabular-nums">{errors.length}</span>{' '}
+              parse error{errors.length === 1 ? '' : 's'}
+            </span>
+          )}
+          {oversize && (
+            <span className="inline-flex items-center gap-1 text-destructive">
+              <AlertTriangle className="size-3.5" />
+              Exceeds {BATCH_MAX}-row limit — split the file.
+            </span>
+          )}
+          <span className="flex-1" />
+          <QuotaRow remaining={rl?.remaining ?? null} limit={rl?.limit ?? null} />
+        </div>
 
-      {exceedsQuota && rl && (
-        <div className="flex items-start gap-2 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5 text-2xs text-destructive">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-          <div>
-            <div className="font-semibold">Batch exceeds merchant quota.</div>
-            <div className="mt-0.5 text-destructive/90">
-              The merchant has{' '}
+        {exceedsQuota && rl && (
+          <Callout
+            tone="danger"
+            title="Batch exceeds store quota."
+            className="rounded-md px-3 py-2.5"
+          >
+            <span className="text-xs">
+              The store has{' '}
               <span className="font-mono tabular-nums">{rl.remaining}</span>{' '}
               request{rl.remaining === 1 ? '' : 's'} left this minute; this
               batch needs{' '}
               <span className="font-mono tabular-nums">{rows.length}</span>.
               Split the file or wait for the per-minute window to reset.
-            </div>
+            </span>
+          </Callout>
+        )}
+
+        {errors.length > 0 && (
+          <div className="max-h-52 overflow-auto rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-xs">
+            <ul className="space-y-1">
+              {errors.slice(0, 30).map((e) => (
+                <li key={e.lineNo} className="flex min-w-0 items-start gap-2">
+                  <span className="shrink-0 font-mono tabular-nums text-destructive">
+                    L{e.lineNo}
+                  </span>
+                  <span className="shrink-0 text-destructive">{e.message}</span>
+                  <span className="flex-1" />
+                  <span className="min-w-0 truncate font-mono text-[var(--fg-2)]">
+                    {e.raw}
+                  </span>
+                </li>
+              ))}
+              {errors.length > 30 && (
+                <li className="text-destructive">
+                  …and {errors.length - 30} more
+                </li>
+              )}
+            </ul>
           </div>
-        </div>
-      )}
+        )}
 
-      {errors.length > 0 && (
-        <div className="max-h-52 overflow-auto rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-2xs">
-          <ul className="space-y-1">
-            {errors.slice(0, 30).map((e) => (
-              <li key={e.lineNo} className="flex items-start gap-2">
-                <span className="mt-0.5 font-mono text-2xs text-destructive">
-                  L{e.lineNo}
-                </span>
-                <span className="text-destructive">{e.message}</span>
-                <span className="flex-1" />
-                <span className="truncate font-mono text-2xs text-[var(--fg-3)]">
-                  {e.raw}
-                </span>
-              </li>
-            ))}
-            {errors.length > 30 && (
-              <li className="text-destructive/80">
-                …and {errors.length - 30} more
-              </li>
+        {rows.length > 0 && errors.length === 0 && !oversize && (
+          <BatchPreview rows={rows} />
+        )}
+
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
+          <Button asChild type="button" variant="outline">
+            <Link to="/payouts">Cancel</Link>
+          </Button>
+          <Button type="submit" disabled={submitDisabled}>
+            {submit.isPending ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" /> Submitting…
+              </>
+            ) : (
+              `Plan ${rows.length} payout${rows.length === 1 ? '' : 's'}`
             )}
-          </ul>
+          </Button>
         </div>
-      )}
-
-      {rows.length > 0 && errors.length === 0 && !oversize && (
-        <BatchPreview rows={rows} />
-      )}
-
-      <div className="flex items-center justify-end gap-2 pt-2">
-        <Button asChild type="button" variant="outline">
-          <Link to="/payouts">Cancel</Link>
-        </Button>
-        <Button type="submit" disabled={submitDisabled}>
-          {submit.isPending ? (
-            <>
-              <Loader2 className="size-3.5 animate-spin" /> Submitting…
-            </>
-          ) : (
-            `Plan ${rows.length} payout${rows.length === 1 ? '' : 's'}`
-          )}
-        </Button>
-      </div>
-    </form>
+      </form>
+    </Card>
   )
 }
 
 function BatchPreview({ rows }: { rows: BatchCsvRow[] }) {
   const preview = rows.slice(0, 10)
   return (
-    <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2">
-      <div className="eyebrow mb-1">Preview</div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-2xs">
-          <thead className="text-2xs uppercase tracking-wider text-[var(--fg-3)]">
-            <tr>
-              <th className="py-1 pr-3 text-left">L</th>
-              <th className="py-1 pr-3 text-left">Chain</th>
-              <th className="py-1 pr-3 text-left">Token</th>
-              <th className="py-1 pr-3 text-left">Amount</th>
-              <th className="py-1 text-left">Destination</th>
-            </tr>
-          </thead>
-          <tbody>
-            {preview.map((r) => (
-              <tr key={r.lineNo} className="border-t border-border">
-                <td className="py-1 pr-3 font-mono text-2xs text-[var(--fg-3)]">
-                  {r.lineNo}
-                </td>
-                <td className="py-1 pr-3">
-                  <ChainPill chainId={r.chainId} />
-                </td>
-                <td className="py-1 pr-3 font-mono">{r.token}</td>
-                <td className="py-1 pr-3 font-mono tabular-nums">
-                  {r.amount}
-                </td>
-                <td className="py-1 font-mono text-2xs text-[var(--fg-2)]">
-                  {truncateAddr(r.destinationAddress, 8, 6)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="overflow-hidden rounded-md border border-border">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
+        <div className="eyebrow">Preview</div>
+        {rows.length > preview.length && (
+          <div className="text-xs text-[var(--fg-2)]">
+            + {rows.length - preview.length} more
+          </div>
+        )}
       </div>
-      {rows.length > preview.length && (
-        <div className="mt-1 text-2xs text-[var(--fg-3)]">
-          + {rows.length - preview.length} more
-        </div>
-      )}
+      <TableWrap>
+        <Table className="min-w-[520px]">
+          <THead>
+            <tr>
+              <Th align="right" className="w-12">L</Th>
+              <Th>Chain</Th>
+              <Th>Token</Th>
+              <Th align="right">Amount</Th>
+              <Th>Destination</Th>
+            </tr>
+          </THead>
+          <TBody>
+            {preview.map((r) => (
+              <Tr key={r.lineNo}>
+                <Td align="right" className="py-2 text-xs text-[var(--fg-3)]">
+                  {r.lineNo}
+                </Td>
+                <Td className="py-2">
+                  <ChainPill chainId={r.chainId} />
+                </Td>
+                <Td className="py-2 font-mono text-xs">{r.token}</Td>
+                <Td align="right" className="py-2 text-xs">
+                  {r.amount}
+                </Td>
+                <Td className="py-2 font-mono text-xs text-[var(--fg-2)]">
+                  {truncateAddr(r.destinationAddress, 8, 6)}
+                </Td>
+              </Tr>
+            ))}
+          </TBody>
+        </Table>
+      </TableWrap>
     </div>
   )
 }
@@ -482,81 +482,83 @@ function BatchResultView({
 }) {
   const { summary, results, batchId } = result
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-xs">
-        <Layers className="size-3.5 text-primary" />
-        <span className="font-mono text-2xs text-[var(--fg-2)]">
-          {truncateAddr(batchId, 10, 6)}
-        </span>
-        <CopyButton value={batchId} />
-        <span className="flex-1" />
-        <Badge variant="success">{summary.planned} planned</Badge>
-        {summary.failed > 0 && (
-          <Badge variant="danger">{summary.failed} failed</Badge>
-        )}
-      </div>
+    <div className="space-y-4">
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-5 py-3 text-sm">
+          <Layers className="size-4 text-[var(--fg-2)]" />
+          <span className="font-mono text-xs text-[var(--fg-1)]">
+            {truncateAddr(batchId, 10, 6)}
+          </span>
+          <CopyButton value={batchId} />
+          <span className="flex-1" />
+          <Badge variant="success">{summary.planned} planned</Badge>
+          {summary.failed > 0 && (
+            <Badge variant="danger">{summary.failed} failed</Badge>
+          )}
+        </div>
 
-      <div className="overflow-auto rounded-md border border-border">
-        <table className="w-full text-2xs">
-          <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
-            <tr>
-              <th className="py-1.5 pl-3 pr-2 text-left">#</th>
-              <th className="py-1.5 pr-2 text-left">Status</th>
-              <th className="py-1.5 pr-2 text-left">Payout</th>
-              <th className="py-1.5 pr-3 text-left">Detail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((row) => (
-              <tr key={row.index} className="border-t border-border align-top">
-                <td className="py-1.5 pl-3 pr-2 font-mono text-2xs text-[var(--fg-3)]">
-                  {row.index}
-                </td>
-                <td className="py-1.5 pr-2">
-                  {row.status === 'planned' ? (
-                    <Badge variant="success">planned</Badge>
-                  ) : (
-                    <Badge variant="danger">failed</Badge>
-                  )}
-                </td>
-                <td className="py-1.5 pr-2">
-                  {row.status === 'planned' ? (
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-2xs">
-                        {truncateAddr(row.payout.id, 8, 6)}
-                      </span>
-                      <CopyButton value={row.payout.id} />
-                    </div>
-                  ) : (
-                    <span className="text-[var(--fg-3)]">—</span>
-                  )}
-                </td>
-                <td className="py-1.5 pr-3">
-                  {row.status === 'planned' ? (
-                    <span className="text-[var(--fg-2)]">
-                      <ChainPill chainId={row.payout.chainId} />{' '}
-                      <span className="font-mono">{row.payout.token}</span>
-                    </span>
-                  ) : (
-                    <div className="space-y-0.5">
-                      {row.error.code && (
-                        <div className="font-mono text-2xs uppercase tracking-wider text-destructive">
-                          {row.error.code}
-                        </div>
-                      )}
-                      <div className="break-all text-destructive">
-                        {row.error.message}
-                      </div>
-                    </div>
-                  )}
-                </td>
+        <TableWrap>
+          <Table className="min-w-[560px]">
+            <THead>
+              <tr>
+                <Th align="right" className="w-12">#</Th>
+                <Th>Status</Th>
+                <Th>Payout</Th>
+                <Th>Detail</Th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </THead>
+            <TBody>
+              {results.map((row) => (
+                <Tr key={row.index} className="align-top">
+                  <Td align="right" className="text-xs text-[var(--fg-3)]">
+                    {row.index}
+                  </Td>
+                  <Td>
+                    {row.status === 'planned' ? (
+                      <Badge variant="success">planned</Badge>
+                    ) : (
+                      <Badge variant="danger">failed</Badge>
+                    )}
+                  </Td>
+                  <Td>
+                    {row.status === 'planned' ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-xs">
+                          {truncateAddr(row.payout.id, 8, 6)}
+                        </span>
+                        <CopyButton value={row.payout.id} />
+                      </div>
+                    ) : (
+                      <span className="text-[var(--fg-3)]">—</span>
+                    )}
+                  </Td>
+                  <Td>
+                    {row.status === 'planned' ? (
+                      <span className="inline-flex items-center gap-2 text-xs text-[var(--fg-2)]">
+                        <ChainPill chainId={row.payout.chainId} />
+                        <span className="font-mono">{row.payout.token}</span>
+                      </span>
+                    ) : (
+                      <div className="space-y-0.5">
+                        {row.error.code && (
+                          <div className="font-mono text-2xs uppercase tracking-[0.06em] text-destructive">
+                            {row.error.code}
+                          </div>
+                        )}
+                        <div className="break-all text-xs text-destructive">
+                          {row.error.message}
+                        </div>
+                      </div>
+                    )}
+                  </Td>
+                </Tr>
+              ))}
+            </TBody>
+          </Table>
+        </TableWrap>
+      </Card>
 
-      <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <Button type="button" variant="outline" onClick={onReset}>
           Submit another
         </Button>
@@ -575,15 +577,31 @@ function BatchResultView({
 
 /* ── misc states ───────────────────────────────────────── */
 
+function BackToPayouts() {
+  return (
+    <Button asChild variant="ghost" size="sm" className="-ml-2.5">
+      <Link to="/payouts">
+        <ArrowLeft className="size-3.5" /> Payouts
+      </Link>
+    </Button>
+  )
+}
+
 function Loading() {
   return (
     <div className="fade-in space-y-5">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Batch payout</h1>
+      <div className="space-y-2">
+        <BackToPayouts />
+        <PageHeader eyebrow="Payments" title="Batch payout" />
       </div>
-      <div className="rounded-md border border-dashed border-border bg-card p-10 text-center text-sm text-[var(--fg-2)]">
-        Loading…
-      </div>
+      <Card className="space-y-4 p-5">
+        <Skeleton className="h-3.5 w-16" />
+        <Skeleton className="h-64 w-full" />
+        <div className="flex justify-end gap-2">
+          <Skeleton className="h-9 w-20" />
+          <Skeleton className="h-9 w-32" />
+        </div>
+      </Card>
     </div>
   )
 }
@@ -591,37 +609,39 @@ function Loading() {
 function NoMerchants() {
   return (
     <div className="fade-in space-y-5">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Batch payout</h1>
+      <div className="space-y-2">
+        <BackToPayouts />
+        <PageHeader eyebrow="Payments" title="Batch payout" />
       </div>
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-14 text-center">
-        <div className="text-sm font-medium">Add a merchant first</div>
-        <p className="text-xs text-[var(--fg-2)]">
-          Batch payouts are scoped to a merchant&rsquo;s API key.
-        </p>
-        <Button size="sm" asChild>
-          <Link to="/merchants">Go to Merchants</Link>
-        </Button>
-      </div>
+      <EmptyState
+        framed
+        icon={Layers}
+        title="Add a store first"
+        description="Batch payouts are scoped to a store’s API key."
+        action={
+          <Button size="sm" asChild>
+            <Link to="/stores">Go to Stores</Link>
+          </Button>
+        }
+      />
     </div>
   )
 }
 
 function NoApiKeyCard() {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-14 text-center">
-      <div className="flex size-11 items-center justify-center rounded-full bg-[var(--bg-2)]">
-        <KeyRound className="size-5 text-[var(--fg-2)]" />
-      </div>
-      <div className="text-sm font-medium">No API key for this merchant</div>
-      <p className="max-w-sm text-xs text-[var(--fg-2)]">
-        Rotate or import the key from Merchants to plan payouts.
-      </p>
-      <Button size="sm" asChild>
-        <Link to="/merchants">
-          <KeyRound className="size-3.5" /> Set up API key
-        </Link>
-      </Button>
-    </div>
+    <EmptyState
+      framed
+      icon={KeyRound}
+      title="No API key for this store"
+      description="Rotate or import the key from Stores to plan payouts."
+      action={
+        <Button size="sm" asChild>
+          <Link to="/stores">
+            <KeyRound className="size-3.5" /> Set up API key
+          </Link>
+        </Button>
+      }
+    />
   )
 }

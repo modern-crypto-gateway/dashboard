@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  AlertTriangle,
   ArrowRight,
   CalendarClock,
   ExternalLink,
@@ -18,7 +17,7 @@ import {
 } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
-import { chainInfo, explorerAddressUrl } from '@/lib/chains'
+import { explorerAddressUrl } from '@/lib/chains'
 import { fmtRel, formatUnits, truncateAddr } from '@/lib/format'
 import { useHeldQueue } from '@/lib/held'
 import type {
@@ -28,8 +27,15 @@ import type {
 } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
+import { ChainPill } from '@/components/ChainPill'
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
+import { PageHeader } from '@/components/PageHeader'
+import {
+  Callout,
+  EmptyState,
+  ErrorState,
+} from '@/components/States'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -150,71 +156,75 @@ export function HeldPayoutsPage() {
 
   return (
     <div className="fade-in space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow">Operations</div>
-          <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <LifeBuoy className="size-5 text-primary" />
+      <PageHeader
+        eyebrow="Payments"
+        title={
+          <>
+            <LifeBuoy className="size-5 text-[var(--fg-2)]" />
             Held payouts
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-[var(--fg-2)]">
+          </>
+        }
+        description={
+          <>
             Legs whose broadcast errored ambiguously (a transport hiccup) and
             are stuck mid-flight — most often an auto-consolidation sweep that
             actually landed on-chain but couldn&rsquo;t be confirmed. Paste the
             successful OUT hash from the explorer to drive the leg back to{' '}
             <span className="font-mono">submitted</span>; the confirm cron takes
             it from there.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={chainId || 'all'}
-            onValueChange={(v) => {
-              setChainId(v === 'all' ? '' : v)
-              setToken('')
-            }}
-          >
-            <SelectTrigger className="h-9 w-[150px]">
-              <SelectValue placeholder="All chains" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All chains</SelectItem>
-              {chainOptions.map((c) => (
-                <SelectItem key={c.chainId} value={String(c.chainId)}>
-                  {c.displayName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={token || 'all'}
-            onValueChange={(v) => setToken(v === 'all' ? '' : v)}
-          >
-            <SelectTrigger className="h-9 w-[130px]">
-              <SelectValue placeholder="All tokens" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All tokens</SelectItem>
-              {tokenOptions.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {t}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => held.refetch()}
-            disabled={held.isFetching}
-          >
-            <RefreshCw
-              className={'size-3.5' + (held.isFetching ? ' animate-spin' : '')}
-            />
-            Refresh
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <Select
+              value={chainId || 'all'}
+              onValueChange={(v) => {
+                setChainId(v === 'all' ? '' : v)
+                setToken('')
+              }}
+            >
+              <SelectTrigger className="h-8 w-[150px] text-sm">
+                <SelectValue placeholder="All chains" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All chains</SelectItem>
+                {chainOptions.map((c) => (
+                  <SelectItem key={c.chainId} value={String(c.chainId)}>
+                    {c.displayName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={token || 'all'}
+              onValueChange={(v) => setToken(v === 'all' ? '' : v)}
+            >
+              <SelectTrigger className="h-8 w-[130px] text-sm">
+                <SelectValue placeholder="All tokens" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All tokens</SelectItem>
+                {tokenOptions.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => held.refetch()}
+              disabled={held.isFetching}
+            >
+              <RefreshCw
+                className={'size-3.5' + (held.isFetching ? ' animate-spin' : '')}
+              />
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
       {held.isLoading ? (
         <ListSkeleton />
@@ -265,19 +275,19 @@ export function HeldPayoutsPage() {
 
 function SummaryStrip({ count, oldestMs }: { count: number; oldestMs: number }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--warn-border)] bg-[var(--warn-bg)] px-4 py-2.5 text-sm">
-      <AlertTriangle className="size-4 shrink-0 text-warn" />
+    <Callout tone="warn">
       <span className="text-foreground">
-        <span className="font-mono font-semibold">{count}</span> leg
+        <span className="font-mono font-semibold tabular-nums">{count}</span> leg
         {count === 1 ? '' : 's'} awaiting operator recovery
       </span>
       {oldestMs > 0 && (
         <span className="text-[var(--fg-2)]">
+          {' '}
           · oldest stuck for{' '}
-          <span className="font-mono text-warn">{fmtAge(oldestMs)}</span>
+          <span className="font-mono tabular-nums text-warn">{fmtAge(oldestMs)}</span>
         </span>
       )}
-    </div>
+    </Callout>
   )
 }
 
@@ -294,9 +304,9 @@ function HeldList({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden grid-cols-[minmax(0,1.6fr)_160px_150px_120px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-2xs font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
+      <div className="hidden h-9 grid-cols-[minmax(0,1.6fr)_160px_150px_120px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-4 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)] sm:grid">
         <div>Leg / route</div>
-        <div>Amount</div>
+        <div className="text-right">Amount</div>
         <div>Held for</div>
         <div className="text-right">Action</div>
       </div>
@@ -325,21 +335,20 @@ function HeldRow({
 }) {
   const amount =
     decimals != null ? formatUnits(leg.amountRaw, decimals) : leg.amountRaw
-  const info = chainInfo(leg.chainId)
   const tone = ageTone(leg.heldForMs)
 
   return (
     <li className="border-b border-border last:border-0">
-      <div className="grid grid-cols-1 items-center gap-3 px-5 py-3.5 sm:grid-cols-[minmax(0,1.6fr)_160px_150px_120px] sm:gap-4">
+      <div className="grid grid-cols-1 items-center gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1.6fr)_160px_150px_120px] sm:gap-4">
         {/* Leg + route */}
         <div className="min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             {leg.kind === 'consolidation_sweep' ? (
-              <Badge variant="accent" className="uppercase tracking-wider">
+              <Badge variant="accent" className="uppercase tracking-[0.06em]">
                 <Layers className="size-3" /> consolidation
               </Badge>
             ) : (
-              <Badge variant="outline" className="uppercase tracking-wider">
+              <Badge variant="outline" className="uppercase tracking-[0.06em]">
                 standard
               </Badge>
             )}
@@ -366,7 +375,7 @@ function HeldRow({
           </div>
           {leg.lastError && (
             <div
-              className="truncate font-mono text-2xs text-[var(--fg-3)]"
+              className="truncate font-mono text-2xs text-[var(--fg-2)]"
               title={leg.lastError}
             >
               {leg.lastError}
@@ -375,16 +384,12 @@ function HeldRow({
         </div>
 
         {/* Amount + chain */}
-        <div className="min-w-0">
+        <div className="min-w-0 sm:text-right">
           <div className="truncate font-mono text-sm tabular-nums">
             {amount} <span className="text-[var(--fg-3)]">{leg.token}</span>
           </div>
-          <div className="mt-0.5 inline-flex items-center gap-1.5 text-xs text-[var(--fg-2)]">
-            <span
-              className="size-[7px] shrink-0 rounded-full"
-              style={{ background: info.color }}
-            />
-            <span className="truncate">{info.name}</span>
+          <div className="mt-0.5 flex sm:justify-end">
+            <ChainPill chainId={leg.chainId} />
           </div>
         </div>
 
@@ -392,7 +397,7 @@ function HeldRow({
         <div className="min-w-0">
           <Badge variant={tone}>{fmtAge(leg.heldForMs)}</Badge>
           {leg.broadcastAttemptedAt && (
-            <div className="mt-1 text-2xs text-[var(--fg-3)]">
+            <div className="mt-1 text-xs text-[var(--fg-2)]">
               tried {fmtRel(unixOf(leg.broadcastAttemptedAt))}
             </div>
           )}
@@ -559,13 +564,13 @@ function RecoverDialog({
               }}
             >
               <div className="space-y-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-xs">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="eyebrow">amount</span>
                   <span className="font-mono tabular-nums">
                     {amount} {leg.token}
                   </span>
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="eyebrow">from</span>
                   {srcUrl ? (
                     <a
@@ -581,12 +586,12 @@ function RecoverDialog({
                     <Addr value={leg.sourceAddress} />
                   )}
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="eyebrow">to</span>
                   <Addr value={leg.destinationAddress} />
                 </div>
                 {srcUrl && (
-                  <p className="border-t border-border pt-2 text-2xs text-[var(--fg-2)]">
+                  <p className="border-t border-border pt-2 text-xs text-[var(--fg-2)]">
                     Open the source address, find the successful{' '}
                     <span className="font-medium text-foreground">OUT</span>{' '}
                     transfer of {amount} {leg.token}, and copy its tx hash.
@@ -613,14 +618,11 @@ function RecoverDialog({
               </Field>
 
               {errorMsg && (
-                <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
-                  <div className="flex items-start gap-2 text-xs text-destructive">
-                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                    <span className="whitespace-pre-wrap break-words">
-                      {errorMsg}
-                    </span>
-                  </div>
-                </div>
+                <Callout tone="danger" className="rounded-md px-3 py-2.5 text-xs">
+                  <span className="whitespace-pre-wrap break-words">
+                    {errorMsg}
+                  </span>
+                </Callout>
               )}
 
               <DialogFooter>
@@ -657,18 +659,19 @@ function RecoverDialog({
 function ListSkeleton() {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="hidden h-9 border-b border-border bg-[var(--bg-2)] sm:block" />
       {Array.from({ length: 3 }).map((_, i) => (
         <div
           key={i}
-          className="grid grid-cols-[minmax(0,1.6fr)_160px_150px_120px] items-center gap-4 border-b border-border px-5 py-4 last:border-0"
+          className="grid grid-cols-1 items-center gap-3 border-b border-border px-4 py-3.5 last:border-0 sm:grid-cols-[minmax(0,1.6fr)_160px_150px_120px] sm:gap-4"
         >
           <div className="space-y-2">
             <Skeleton className="h-4 w-48" />
-            <Skeleton className="h-3 w-64" />
+            <Skeleton className="h-3 w-64 max-w-full" />
           </div>
-          <Skeleton className="h-4 w-24" />
-          <Skeleton className="h-5 w-16 rounded-full" />
-          <div className="flex justify-end">
+          <Skeleton className="h-4 w-24 sm:ml-auto" />
+          <Skeleton className="h-5 w-16" />
+          <div className="flex sm:justify-end">
             <Skeleton className="h-8 w-24" />
           </div>
         </div>
@@ -679,42 +682,43 @@ function ListSkeleton() {
 
 function ClearState() {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-16 text-center">
-      <div className="flex size-12 items-center justify-center rounded-full bg-[var(--success-bg)]">
-        <ShieldCheck className="size-6 text-success" />
-      </div>
-      <div>
-        <div className="text-sm font-medium">Recovery queue is clear</div>
-        <p className="mt-1 max-w-sm text-xs text-[var(--fg-2)]">
+    <EmptyState
+      framed
+      icon={ShieldCheck}
+      title="Recovery queue is clear"
+      description={
+        <>
           No legs are stuck. Ambiguous broadcasts the auto-reconciler can
           re-drive on its own never land here — only ones that need an
           operator&rsquo;s eyes do.
-        </p>
-      </div>
-      <Button asChild variant="outline" size="sm">
-        <Link to="/consolidation-schedules">
-          <CalendarClock className="size-3.5" /> Auto-consolidation
-        </Link>
-      </Button>
-    </div>
+        </>
+      }
+      action={
+        <Button asChild variant="outline" size="sm">
+          <Link to="/consolidation-schedules">
+            <CalendarClock className="size-3.5" /> Auto-consolidation
+          </Link>
+        </Button>
+      }
+    />
   )
 }
 
 function NoMatch({ onClear }: { onClear: () => void }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-[var(--fg-2)]">
-      <span>No held legs match the current filters.</span>
-      <Button variant="outline" size="sm" onClick={onClear}>
-        <X className="size-3.5" /> Clear filters
-      </Button>
-    </div>
+    <EmptyState
+      framed
+      compact
+      title="No held legs match these filters"
+      action={
+        <Button variant="outline" size="sm" onClick={onClear}>
+          <X className="size-3.5" /> Clear filters
+        </Button>
+      }
+    />
   )
 }
 
 function ErrorCard({ message }: { message: string }) {
-  return (
-    <div className="rounded-lg border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-destructive">
-      {message}
-    </div>
-  )
+  return <ErrorState title="Could not load held payouts" message={message} />
 }

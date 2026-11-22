@@ -9,7 +9,6 @@ import {
 import { toast } from 'sonner'
 import {
   Activity,
-  AlertTriangle,
   ArrowUpDown,
   Ban,
   CalendarRange,
@@ -69,6 +68,14 @@ import {
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
 import { MerchantSwitcher } from '@/components/MerchantSwitcher'
+import { ChainPill } from '@/components/ChainPill'
+import { PageHeader } from '@/components/PageHeader'
+import {
+  Callout,
+  EmptyState as SharedEmptyState,
+  ErrorState,
+  KeyValue,
+} from '@/components/States'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -358,38 +365,35 @@ export function PayoutsPage() {
 
   return (
     <div className="fade-in space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow">Money</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Payouts</h1>
-          <p className="mt-1 text-sm text-[var(--fg-2)]">
-            Plan payouts and watch them land. The gateway signs and broadcasts
-            on its own schedule.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <MerchantSwitcher />
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!canList}
-            asChild={canList}
-          >
-            {canList ? (
-              <Link to="/payouts/batch">
-                <Layers className="size-3.5" /> Batch create
-              </Link>
-            ) : (
-              <span>
-                <Layers className="size-3.5" /> Batch create
-              </span>
-            )}
-          </Button>
-          <Button size="sm" disabled={!canList} onClick={() => setCreateOpen(true)}>
-            <Plus className="size-3.5" /> Plan payout
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Payments"
+        title="Payouts"
+        description="Plan payouts and watch them land. The gateway signs and broadcasts on its own schedule."
+        actions={
+          <>
+            <MerchantSwitcher />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!canList}
+              asChild={canList}
+            >
+              {canList ? (
+                <Link to="/payouts/batch">
+                  <Layers className="size-3.5" /> Batch create
+                </Link>
+              ) : (
+                <span>
+                  <Layers className="size-3.5" /> Batch create
+                </span>
+              )}
+            </Button>
+            <Button size="sm" disabled={!canList} onClick={() => setCreateOpen(true)}>
+              <Plus className="size-3.5" /> Plan payout
+            </Button>
+          </>
+        }
+      />
 
       {!canList && active ? (
         <NoApiKeyCard merchant={active} />
@@ -477,7 +481,7 @@ function PayoutList({
   const lookup = useChainTokenLookup()
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden grid-cols-[1fr_120px_160px_170px_100px_90px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-2xs font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
+      <div className="hidden h-9 grid-cols-[1fr_120px_160px_170px_100px_90px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-4 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)] sm:grid">
         <div>Payout</div>
         <div>Chain</div>
         <div>Amount</div>
@@ -527,7 +531,7 @@ function PayoutRow({
             onOpen()
           }
         }}
-        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1fr_120px_160px_170px_100px_90px] sm:gap-4"
+        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[1fr_120px_160px_170px_100px_90px] sm:gap-4"
       >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -603,7 +607,7 @@ function PayoutRow({
           <StatusBadge status={po.status} />
         </div>
 
-        <div className="text-xs text-[var(--fg-3)]">
+        <div className="text-xs text-[var(--fg-2)]">
           {fmtRel(unixOf(po.updatedAt))}
         </div>
       </div>
@@ -616,22 +620,9 @@ function FeeTierBadge({ tier }: { tier: FeeTier }) {
   const variant =
     tier === 'high' ? 'warn' : tier === 'low' ? 'outline' : 'default'
   return (
-    <Badge variant={variant} className="px-1.5 py-0 text-2xs tracking-wider uppercase">
+    <Badge variant={variant} className="uppercase tracking-[0.06em]">
       {label}
     </Badge>
-  )
-}
-
-function ChainPill({ chainId }: { chainId: number }) {
-  const info = chainInfo(chainId)
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-[var(--fg-2)]">
-      <span
-        className="size-[7px] shrink-0 rounded-full"
-        style={{ background: info.color }}
-      />
-      <span className="truncate">{info.name}</span>
-    </span>
   )
 }
 
@@ -695,14 +686,14 @@ function PayoutDetailSheet({
             {po && <StatusBadge status={po.status} />}
             {po?.feeTier && <FeeTierBadge tier={po.feeTier} />}
             {po?.kind === 'gas_top_up' && (
-              <Badge variant="outline" className="uppercase tracking-wider">
+              <Badge variant="outline" className="uppercase tracking-[0.06em]">
                 <Fuel className="size-3" /> gas top-up
               </Badge>
             )}
             {po?.kind === 'gas_burn' && (
               <Badge
                 variant="warn"
-                className="uppercase tracking-wider"
+                className="uppercase tracking-[0.06em]"
                 title="Synthetic debit row — records the native fee a failed-but-broadcast tx burned on chain."
               >
                 <Fuel className="size-3" /> gas burn
@@ -711,7 +702,7 @@ function PayoutDetailSheet({
             {po?.kind === 'consolidation_sweep' && (
               <Badge
                 variant="accent"
-                className="uppercase tracking-wider"
+                className="uppercase tracking-[0.06em]"
                 title="Internal pool-defragmentation sweep planned via /admin/pool/consolidate."
               >
                 <Layers className="size-3" /> consolidation
@@ -753,9 +744,10 @@ function PayoutDetailSheet({
           {detail.isLoading ? (
             <DetailSkeleton />
           ) : !po ? (
-            <div className="py-8 text-center text-sm text-destructive">
-              {detail.error instanceof Error ? detail.error.message : 'Not found'}
-            </div>
+            <ErrorState
+              title="Could not load payout"
+              message={detail.error instanceof Error ? detail.error.message : 'Not found'}
+            />
           ) : (
             <div className="space-y-5">
               <KV>
@@ -948,7 +940,7 @@ function PayoutDetailSheet({
                     >
                       <Layers className="size-3.5" />
                       {truncateAddr(po.batchId, 10, 6)}
-                      <span className="text-2xs uppercase tracking-wider text-[var(--fg-3)] group-hover:text-primary">
+                      <span className="text-2xs uppercase tracking-[0.06em] text-[var(--fg-3)] group-hover:text-primary">
                         view batch
                       </span>
                     </button>
@@ -969,7 +961,7 @@ function PayoutDetailSheet({
                         <ExternalLink className="size-3 shrink-0" />
                       </a>
                       <CopyButton value={po.webhookUrl} />
-                      <Badge variant="outline" className="shrink-0 text-2xs">
+                      <Badge variant="outline" className="shrink-0">
                         per-payout override
                       </Badge>
                     </div>
@@ -978,12 +970,11 @@ function PayoutDetailSheet({
               </KV>
 
               {po.lastError && (
-                <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
-                  <div className="eyebrow mb-1 text-destructive">last error</div>
-                  <div className="whitespace-pre-wrap break-all font-mono text-xs text-destructive">
+                <Callout tone="danger" title="Last error">
+                  <span className="whitespace-pre-wrap break-all font-mono text-xs">
                     {po.lastError}
-                  </div>
-                </div>
+                  </span>
+                </Callout>
               )}
             </div>
           )}
@@ -1109,18 +1100,18 @@ function BumpFeeDialog({
             bump.mutate()
           }}
         >
-          <div className="flex rounded-md border border-border bg-[var(--bg-2)] p-0.5 text-xs">
+          <div className="flex h-9 rounded-md border border-input bg-[var(--bg-2)] p-0.5 text-sm">
             <button
               type="button"
               onClick={() => setMode('tier')}
-              className={`flex-1 cursor-pointer rounded px-2.5 py-1.5 ${mode === 'tier' ? 'bg-card font-medium shadow-xs' : 'text-[var(--fg-2)]'}`}
+              className={`flex-1 cursor-pointer rounded-sm px-2.5 transition-colors ${mode === 'tier' ? 'bg-card font-medium text-foreground ring-1 ring-border' : 'text-[var(--fg-2)] hover:text-foreground'}`}
             >
               Re-quote tier
             </button>
             <button
               type="button"
               onClick={() => setMode('manual')}
-              className={`flex-1 cursor-pointer rounded px-2.5 py-1.5 ${mode === 'manual' ? 'bg-card font-medium shadow-xs' : 'text-[var(--fg-2)]'}`}
+              className={`flex-1 cursor-pointer rounded-sm px-2.5 transition-colors ${mode === 'manual' ? 'bg-card font-medium text-foreground ring-1 ring-border' : 'text-[var(--fg-2)] hover:text-foreground'}`}
             >
               Explicit sat/vB
             </button>
@@ -1157,7 +1148,7 @@ function BumpFeeDialog({
             </Field>
           )}
 
-          <label className="flex items-start gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-xs">
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-sm">
             <input
               type="checkbox"
               checked={dryRun}
@@ -1219,7 +1210,7 @@ function BumpResult({
   const priorBtc = formatUnits(bump.priorFeeSats, 8)
   const newBtc = formatUnits(bump.newFeeSats, 8)
   return (
-    <div className="space-y-2 rounded-md border border-border bg-secondary px-3 py-2.5 text-xs">
+    <div className="space-y-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-xs">
       <div className="flex items-center gap-2">
         <Badge variant={bump.dryRun ? 'outline' : 'success'}>
           {bump.dryRun ? 'preview' : `attempt #${bump.attemptNumber}`}
@@ -1229,7 +1220,7 @@ function BumpResult({
           {bump.vsize} vB
         </span>
       </div>
-      <div className="grid grid-cols-[110px_1fr] items-baseline gap-x-2 gap-y-1 font-mono">
+      <div className="grid grid-cols-[110px_1fr] items-baseline gap-x-2 gap-y-1 font-mono tabular-nums">
         <span className="text-[var(--fg-3)]">prior fee</span>
         <span>
           {priorBtc} {symbol}{' '}
@@ -1334,7 +1325,7 @@ function FeeDrift({
 
 function KV({ children }: { children: React.ReactNode }) {
   return (
-    <dl className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
+    <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
       {children}
     </dl>
   )
@@ -1350,10 +1341,9 @@ function KVItem({
   wide?: boolean
 }) {
   return (
-    <div className={wide ? 'sm:col-span-2' : ''}>
-      <dt className="eyebrow mb-1">{label}</dt>
-      <dd>{children}</dd>
-    </div>
+    <KeyValue label={label} className={wide ? 'sm:col-span-2' : undefined}>
+      {children}
+    </KeyValue>
   )
 }
 
@@ -1362,10 +1352,11 @@ function KVItem({
 function ListSkeleton() {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="hidden h-9 border-b border-border bg-[var(--bg-2)] sm:block" />
       {Array.from({ length: 4 }).map((_, i) => (
         <div
           key={i}
-          className="grid grid-cols-[1fr_120px_160px_170px_100px_90px] items-center gap-4 border-b border-border px-5 py-3 last:border-0"
+          className="grid grid-cols-1 items-center gap-2 border-b border-border px-4 py-3.5 last:border-0 sm:grid-cols-[1fr_120px_160px_170px_100px_90px] sm:gap-4"
         >
           <Skeleton className="h-3 w-40" />
           <Skeleton className="h-3 w-20" />
@@ -1384,7 +1375,7 @@ function ListSkeleton() {
 
 function DetailSkeleton() {
   return (
-    <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+    <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
       {Array.from({ length: 8 }).map((_, i) => (
         <div key={i} className="space-y-1.5">
           <Skeleton className="h-2.5 w-16" />
@@ -1398,10 +1389,7 @@ function DetailSkeleton() {
 function PageSkeleton() {
   return (
     <div className="fade-in space-y-5">
-      <div>
-        <div className="eyebrow">Money</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Payouts</h1>
-      </div>
+      <PageHeader eyebrow="Payments" title="Payouts" />
       <ListSkeleton />
     </div>
   )
@@ -1409,87 +1397,78 @@ function PageSkeleton() {
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-14 text-center">
-      <div className="flex size-11 items-center justify-center rounded-full bg-[var(--bg-2)]">
-        <ArrowUpDown className="size-5 text-[var(--fg-2)]" />
-      </div>
-      <div>
-        <div className="text-sm font-medium">No payouts yet</div>
-        <p className="mt-1 text-xs text-[var(--fg-2)]">
-          Plan your first payout to move funds to a destination address.
-        </p>
-      </div>
-      <Button size="sm" onClick={onCreate}>
-        <Plus className="size-3.5" /> Plan payout
-      </Button>
-    </div>
+    <SharedEmptyState
+      framed
+      icon={ArrowUpDown}
+      title="No payouts yet"
+      description="Plan your first payout to move funds to a destination address."
+      action={
+        <Button size="sm" onClick={onCreate}>
+          <Plus className="size-3.5" /> Plan payout
+        </Button>
+      }
+    />
   )
 }
 
 function NoMatch({ onClear }: { onClear: () => void }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-[var(--fg-2)]">
-      <span>No payouts match the current filters.</span>
-      <Button variant="outline" size="sm" onClick={onClear}>
-        <X className="size-3.5" /> Clear filters
-      </Button>
-    </div>
+    <SharedEmptyState
+      framed
+      compact
+      title="No payouts match these filters"
+      action={
+        <Button variant="outline" size="sm" onClick={onClear}>
+          <X className="size-3.5" /> Clear filters
+        </Button>
+      }
+    />
   )
 }
 
 function ErrorCard({ message }: { message: string }) {
-  return (
-    <div className="rounded-lg border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-destructive">
-      {message}
-    </div>
-  )
+  return <ErrorState title="Could not load payouts" message={message} />
 }
 
 function NoApiKeyCard({ merchant }: { merchant: Merchant }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-14 text-center">
-      <div className="flex size-11 items-center justify-center rounded-full bg-[var(--bg-2)]">
-        <KeyRound className="size-5 text-[var(--fg-2)]" />
-      </div>
-      <div>
-        <div className="text-sm font-medium">
-          No API key for <span className="font-mono text-xs">{merchant.name}</span>
-        </div>
-        <p className="mt-1 max-w-sm text-xs text-[var(--fg-2)]">
-          The gateway sees this merchant, but no sealed API key is held here.
-          Rotate or import the key from Merchants to list payouts.
-        </p>
-      </div>
-      <Button size="sm" asChild>
-        <Link to="/merchants">
-          <KeyRound className="size-3.5" /> Set up API key
-        </Link>
-      </Button>
-    </div>
+    <SharedEmptyState
+      framed
+      icon={KeyRound}
+      title={
+        <>
+          No API key for <span className="font-mono">{merchant.name}</span>
+        </>
+      }
+      description="The gateway sees this store, but no sealed API key is held here. Rotate or import the key from Stores to list payouts."
+      action={
+        <Button size="sm" asChild>
+          <Link to="/stores">
+            <KeyRound className="size-3.5" /> Set up API key
+          </Link>
+        </Button>
+      }
+    />
   )
 }
 
 function NoMerchants() {
   return (
-    <div className="fade-in space-y-6">
-      <div>
-        <div className="eyebrow">Money</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Payouts</h1>
-      </div>
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-14 text-center">
-        <div className="flex size-11 items-center justify-center rounded-full bg-[var(--bg-2)]">
-          <ArrowUpDown className="size-5 text-[var(--fg-2)]" />
-        </div>
-        <div className="text-sm font-medium">Add a merchant first</div>
-        <p className="text-xs text-[var(--fg-2)]">
-          Payouts are scoped to a merchant's API key.
-        </p>
-        <Button size="sm" asChild>
-          <Link to="/merchants">
-            <ChevronDown className="size-3.5 -rotate-90" /> Go to Merchants
-          </Link>
-        </Button>
-      </div>
+    <div className="fade-in space-y-5">
+      <PageHeader eyebrow="Payments" title="Payouts" />
+      <SharedEmptyState
+        framed
+        icon={ArrowUpDown}
+        title="Add a store first"
+        description="Payouts are scoped to a store's API key. Create or import one in Stores."
+        action={
+          <Button size="sm" asChild>
+            <Link to="/stores">
+              Go to Stores <ChevronDown className="size-3.5 -rotate-90" />
+            </Link>
+          </Button>
+        }
+      />
     </div>
   )
 }
@@ -1522,7 +1501,7 @@ function FeeTierPicker({
 }) {
   if (!ready) {
     return (
-      <div className="rounded-md border border-dashed border-border bg-[var(--bg-2)] px-3 py-2.5 text-2xs text-[var(--fg-3)]">
+      <div className="rounded-md border border-dashed border-[var(--border-strong)] bg-[var(--bg-2)] px-3 py-2.5 text-xs text-[var(--fg-2)]">
         Fill chain, token, amount, and destination to see fee tiers.
       </div>
     )
@@ -1530,8 +1509,8 @@ function FeeTierPicker({
 
   if (loading && !estimate) {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-2xs text-[var(--fg-2)]">
-        <Loader2 className="size-3 animate-spin" />
+      <div className="flex items-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-xs text-[var(--fg-2)]">
+        <Loader2 className="size-3.5 animate-spin" />
         Estimating fees…
       </div>
     )
@@ -1542,15 +1521,13 @@ function FeeTierPicker({
   // branch now means a genuine input or auth problem.
   if (!estimate) {
     return (
-      <div className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2.5 text-2xs text-warn">
-        <div className="flex items-center gap-2 font-medium">
-          <AlertTriangle className="size-3.5" />
-          {errorMessage ?? 'Could not estimate fees.'}
-        </div>
-        <div className="mt-1 text-[var(--fg-2)]">
-          Submitting without an estimate; the gateway will try its default tier.
-        </div>
-      </div>
+      <Callout
+        tone="warn"
+        title={errorMessage ?? 'Could not estimate fees.'}
+        className="rounded-md px-3 py-2.5 text-xs"
+      >
+        Submitting without an estimate; the gateway will try its default tier.
+      </Callout>
     )
   }
 
@@ -1564,10 +1541,10 @@ function FeeTierPicker({
   // estimate at broadcast time, so submit is allowed; the tier picker is not.
   if (warnings.includes('fee_quote_unavailable')) {
     return (
-      <div className="rounded-md border border-dashed border-border bg-[var(--bg-2)] px-3 py-2.5">
-        <div className="flex items-start gap-2">
-          <Info className="mt-0.5 size-3.5 shrink-0 text-[var(--fg-3)]" />
-          <div className="flex-1 text-2xs">
+      <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5">
+        <div className="flex flex-wrap items-start gap-2">
+          <Info className="mt-0.5 size-3.5 shrink-0 text-[var(--fg-2)]" />
+          <div className="min-w-0 flex-1 text-xs">
             <div className="font-medium text-[var(--fg-1)]">
               Fee will be calculated at broadcast
             </div>
@@ -1584,7 +1561,7 @@ function FeeTierPicker({
             onClick={onRefresh}
             disabled={loading}
           >
-            <RefreshCw className={loading ? 'size-3 animate-spin' : 'size-3'} />
+            <RefreshCw className={loading ? 'size-3.5 animate-spin' : 'size-3.5'} />
             Retry
           </Button>
         </div>
@@ -1597,17 +1574,17 @@ function FeeTierPicker({
     return (
       <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5">
         <div className="eyebrow mb-1">Network fee</div>
-        <div className="flex items-baseline gap-2">
-          <span className="font-mono text-xs tabular-nums">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <span className="font-mono text-sm tabular-nums">
             {fmtNative(t.nativeAmountRaw)}
           </span>
           {t.usdAmount && (
-            <span className="text-2xs text-[var(--fg-3)]">
+            <span className="font-mono text-xs tabular-nums text-[var(--fg-2)]">
               ~{fmtUsd(t.usdAmount)}
             </span>
           )}
         </div>
-        <div className="mt-1 text-2xs text-[var(--fg-3)]">
+        <div className="mt-1 text-xs text-[var(--fg-2)]">
           This chain does not support fee tiering.
         </div>
       </div>
@@ -1632,23 +1609,23 @@ function FeeTierPicker({
               type="button"
               onClick={() => onSelect(t)}
               className={
-                'rounded-md border px-2.5 py-2 text-left transition-colors ' +
+                'min-w-0 cursor-pointer rounded-md border px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ' +
                 (active
                   ? 'border-primary bg-[var(--accent-bg)] ring-1 ring-primary'
-                  : 'border-border bg-[var(--bg-2)] hover:border-[var(--fg-3)]')
+                  : 'border-input bg-card hover:border-[var(--fg-3)] hover:bg-[var(--bg-hover)]')
               }
             >
-              <div className="flex items-center justify-between">
-                <span className="text-2xs font-medium uppercase tracking-wider text-[var(--fg-2)]">
+              <div className="flex flex-wrap items-center justify-between gap-x-2">
+                <span className="text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
                   {t}
                 </span>
                 {q.usdAmount && (
-                  <span className="font-mono text-2xs text-[var(--fg-2)]">
+                  <span className="font-mono text-2xs tabular-nums text-[var(--fg-2)]">
                     {fmtUsd(q.usdAmount)}
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 truncate font-mono text-2xs tabular-nums">
+              <div className="mt-0.5 truncate font-mono text-xs tabular-nums">
                 {fmtNative(q.nativeAmountRaw)}
               </div>
             </button>
@@ -2067,7 +2044,7 @@ function CreatePayoutDialog({
           />
 
           <Field label="Amount mode">
-            <div className="inline-flex rounded-md border border-border bg-[var(--bg-2)] p-0.5">
+            <div className="inline-flex h-8 rounded-md border border-input bg-[var(--bg-2)] p-0.5">
               {(
                 [
                   { k: 'amount', label: 'Token amount' },
@@ -2085,10 +2062,10 @@ function CreatePayoutDialog({
                       setAmount('')
                     }}
                     className={
-                      'rounded px-3 py-1 text-xs font-medium transition-colors ' +
+                      'cursor-pointer rounded-sm px-3 text-xs font-medium transition-colors ' +
                       (active
-                        ? 'bg-card text-[var(--fg-1)] shadow-sm'
-                        : 'text-[var(--fg-2)] hover:text-[var(--fg-1)]')
+                        ? 'bg-card text-foreground ring-1 ring-border'
+                        : 'text-[var(--fg-2)] hover:text-foreground')
                     }
                   >
                     {opt.label}
@@ -2108,7 +2085,7 @@ function CreatePayoutDialog({
             />
           </Field>
           {available.match ? (
-            <div className="-mt-2 flex items-center justify-between gap-2 text-2xs text-[var(--fg-2)]">
+            <div className="-mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--fg-2)]">
               <span>
                 Available{' '}
                 <span className="font-mono tabular-nums">
@@ -2121,22 +2098,22 @@ function CreatePayoutDialog({
               <button
                 type="button"
                 onClick={useMax}
-                className="font-medium text-primary hover:underline"
+                className="cursor-pointer font-medium text-primary hover:underline"
               >
                 Use max
               </button>
             </div>
           ) : available.loading ? (
-            <div className="-mt-2 text-2xs text-[var(--fg-3)]">
+            <div className="-mt-2 text-xs text-[var(--fg-3)]">
               Checking available balance…
             </div>
           ) : chainId && token ? (
-            <div className="-mt-2 text-2xs text-[var(--fg-3)]">
+            <div className="-mt-2 text-xs text-[var(--fg-2)]">
               No {token} balance on this chain in the gateway pool.
             </div>
           ) : null}
           {amountFormatError && (
-            <div className="-mt-2 text-2xs text-destructive">
+            <div className="-mt-2 text-xs text-destructive">
               {amountFormatError}
             </div>
           )}
@@ -2157,11 +2134,10 @@ function CreatePayoutDialog({
             />
           )}
           {showRateDrift && (
-            <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-2xs text-warn">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            <Callout tone="warn" className="rounded-md px-3 py-2 text-xs">
               USD pegging snapshots at create time; {token} price can drift
               before broadcast.
-            </div>
+            </Callout>
           )}
 
           <Field label="Destination address">
@@ -2192,23 +2168,25 @@ function CreatePayoutDialog({
             <div className="space-y-2">
               <NoSourceBalanceBanner token={token || 'this token'} />
               {consolidateRequired && (
-                <div className="flex flex-wrap items-center gap-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs">
-                  <span className="text-warn">
-                    Aggregate balance is sufficient but split across pool
-                    addresses — consolidate first to unblock this payout.
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="ml-auto"
-                    onClick={() => setConsolidateOpen(true)}
-                    disabled={!chainId || !token}
-                  >
-                    <Layers className="size-3.5" />
-                    Consolidate first
-                  </Button>
-                </div>
+                <Callout
+                  tone="warn"
+                  className="rounded-md px-3 py-2.5 text-xs"
+                  action={
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setConsolidateOpen(true)}
+                      disabled={!chainId || !token}
+                    >
+                      <Layers className="size-3.5" />
+                      Consolidate first
+                    </Button>
+                  }
+                >
+                  Aggregate balance is sufficient but split across pool
+                  addresses — consolidate first to unblock this payout.
+                </Callout>
               )}
             </div>
           )}
@@ -2239,18 +2217,18 @@ function CreatePayoutDialog({
           )}
 
           <details className="rounded-md border border-border bg-[var(--bg-2)] open:pb-3">
-            <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-[var(--fg-2)]">
+            <summary className="cursor-pointer select-none rounded-md px-3 py-2 text-sm font-medium text-[var(--fg-2)] hover:text-foreground">
               Advanced — per-payout webhook override
             </summary>
             <div className="space-y-3 px-3 pt-1">
               <Field
                 label="Webhook URL"
-                hint="Events for this payout dispatch here instead of the merchant default. Requires a secret."
+                hint="Events for this payout dispatch here instead of the store default. Requires a secret."
               >
                 <Input
                   value={webhookUrl}
                   onChange={(e) => setWebhookUrl(e.target.value)}
-                  placeholder="https://merchant.example.com/hooks/payout"
+                  placeholder="https://store.example.com/hooks/payout"
                   type="url"
                   className="font-mono"
                 />
@@ -2269,7 +2247,7 @@ function CreatePayoutDialog({
                 />
               </Field>
               {webhookMismatch && (
-                <div className="-mt-1 text-2xs text-destructive">
+                <div className="-mt-1 text-xs text-destructive">
                   Webhook URL and secret must be provided together.
                 </div>
               )}
@@ -2304,44 +2282,40 @@ function CreatePayoutDialog({
 
 function NoSourceBalanceBanner({ token }: { token: string }) {
   return (
-    <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
-      <div className="flex items-start gap-2 text-destructive">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">
-            No source address has enough {token}
-          </div>
-          <div className="mt-0.5 text-2xs text-destructive/90">
-            Fund one of your HD addresses with {token} before planning this
-            payout. Any pool address auto-qualifies as a source — see Balances
-            for current holdings.
-          </div>
-        </div>
+    <Callout
+      tone="danger"
+      title={<>No source address has enough {token}</>}
+      className="rounded-md px-3 py-2.5"
+      action={
         <Button size="sm" variant="outline" asChild>
           <Link to="/balances">
             <Fuel className="size-3.5" /> Open balances
           </Link>
         </Button>
-      </div>
-    </div>
+      }
+    >
+      <span className="text-xs">
+        Fund one of your HD addresses with {token} before planning this
+        payout. Any pool address auto-qualifies as a source — see Balances
+        for current holdings.
+      </span>
+    </Callout>
   )
 }
 
 function NoGasSponsorBanner() {
   return (
-    <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
-      <div className="flex items-start gap-2 text-destructive">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">No gas sponsor available</div>
-          <div className="mt-0.5 text-2xs text-destructive/90">
-            A source has enough token, but no other HD address has enough
-            native to cover gas. Fund a pool address with native before the
-            executor can auto-sponsor the top-up.
-          </div>
-        </div>
-      </div>
-    </div>
+    <Callout
+      tone="danger"
+      title="No gas sponsor available"
+      className="rounded-md px-3 py-2.5"
+    >
+      <span className="text-xs">
+        A source has enough token, but no other HD address has enough
+        native to cover gas. Fund a pool address with native before the
+        executor can auto-sponsor the top-up.
+      </span>
+    </Callout>
   )
 }
 
@@ -2360,33 +2334,33 @@ function MaxAmountPanel({
     ? formatUnits(source.tokenBalance, tokenMeta.decimals)
     : source.tokenBalance
   return (
-    <div className="space-y-2.5 rounded-md border border-warn/40 bg-warn/10 px-3 py-3 text-2xs">
-      <div className="flex items-start gap-2 text-warn">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">Amount exceeds net spendable</div>
-          <div className="mt-0.5 text-[var(--fg-2)]">
-            Sending this much would leave the source unable to cover gas.
-            Either lower the amount or proceed and let the backend reject with
-            a suggested value. Source holds{' '}
-            <span className="font-mono tabular-nums">{bal}</span>{' '}
-            {source.tokenSymbol}.
-          </div>
-        </div>
+    <Callout
+      tone="warn"
+      title="Amount exceeds net spendable"
+      className="rounded-md px-3 py-3"
+    >
+      <div className="space-y-2.5 text-xs">
+        <p className="text-[var(--fg-2)]">
+          Sending this much would leave the source unable to cover gas.
+          Either lower the amount or proceed and let the backend reject with
+          a suggested value. Source holds{' '}
+          <span className="font-mono tabular-nums">{bal}</span>{' '}
+          {source.tokenSymbol}.
+        </p>
+        <label className="flex cursor-pointer items-start gap-2 rounded-md border border-[var(--warn-border)] bg-card px-3 py-2">
+          <input
+            type="checkbox"
+            checked={proceedAnyway}
+            onChange={(e) => onToggleProceed(e.target.checked)}
+            className="mt-0.5 size-3.5 cursor-pointer accent-warn"
+          />
+          <span className="text-[var(--fg-1)]">
+            I understand — submit anyway and apply the backend&rsquo;s suggested
+            amount if it rejects.
+          </span>
+        </label>
       </div>
-      <label className="flex cursor-pointer items-start gap-2 rounded-md border border-warn/40 bg-card px-3 py-2">
-        <input
-          type="checkbox"
-          checked={proceedAnyway}
-          onChange={(e) => onToggleProceed(e.target.checked)}
-          className="mt-0.5 size-3.5 cursor-pointer accent-warn"
-        />
-        <span className="text-[var(--fg-1)]">
-          I understand — submit anyway and apply the backend&rsquo;s suggested
-          amount if it rejects.
-        </span>
-      </label>
-    </div>
+    </Callout>
   )
 }
 
@@ -2412,7 +2386,7 @@ function SourcePanel({
   const sponsorNeeded = topUp !== null && !sponsorMissing
 
   return (
-    <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-3 text-2xs">
+    <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-3 text-xs">
       <div className="eyebrow mb-1.5">Picked source</div>
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
@@ -2455,19 +2429,16 @@ function SourcePanel({
       )}
 
       {sponsorMissing && (
-        <div className="mt-2.5 flex items-start gap-2 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-destructive">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-          <span>
-            Source lacks gas and no other HD address has enough native to
-            sponsor. Submit will fail with{' '}
-            <span className="font-mono">NO_GAS_SPONSOR_AVAILABLE</span>.
-          </span>
-        </div>
+        <Callout tone="danger" className="mt-2.5 rounded-md px-3 py-2 text-xs">
+          Source lacks gas and no other HD address has enough native to
+          sponsor. Submit will fail with{' '}
+          <span className="font-mono">NO_GAS_SPONSOR_AVAILABLE</span>.
+        </Callout>
       )}
 
       {alternatives.length > 0 && (
         <details className="mt-2.5">
-          <summary className="cursor-pointer select-none text-[var(--fg-3)] hover:text-[var(--fg-2)]">
+          <summary className="cursor-pointer select-none text-[var(--fg-2)] hover:text-foreground">
             {alternatives.length} alternative source
             {alternatives.length === 1 ? '' : 's'}
           </summary>
@@ -2477,10 +2448,10 @@ function SourcePanel({
                 key={alt.address}
                 className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
               >
-                <span className="font-mono text-2xs text-[var(--fg-2)]">
+                <span className="font-mono text-xs text-[var(--fg-1)]">
                   {truncateAddr(alt.address, 8, 6)}
                 </span>
-                <span className="text-2xs text-[var(--fg-3)]">
+                <span className="text-xs text-[var(--fg-2)]">
                   <span className="font-mono tabular-nums">
                     {fmtToken(alt.tokenBalance)}
                   </span>{' '}
@@ -2532,29 +2503,25 @@ function SuggestedAmountCard({
   })()
 
   return (
-    <div className="rounded-md border border-[var(--accent-border)] bg-[var(--accent-bg)] px-3 py-3">
-      <div className="flex items-start gap-2">
-        <Info className="mt-0.5 size-4 shrink-0 text-primary" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-[var(--fg-1)]">
-            Amount leaves no room for gas
-          </div>
-          {errorMessage && (
-            <div className="mt-0.5 text-2xs text-[var(--fg-2)]">
-              {errorMessage}
-            </div>
-          )}
+    <Callout
+      tone="info"
+      title="Amount leaves no room for gas"
+      className="rounded-md px-3 py-3"
+    >
+      {errorMessage && (
+        <div className="text-xs text-[var(--fg-2)]">
+          {errorMessage}
         </div>
-      </div>
+      )}
 
       <div className="mt-2.5 flex flex-wrap items-end gap-3 rounded-md border border-border bg-card px-3 py-2.5">
         <div className="min-w-0 flex-1">
           <div className="eyebrow mb-0.5">Suggested</div>
           <div className="flex flex-wrap items-baseline gap-1.5">
-            <span className="font-mono text-lg font-semibold tabular-nums text-[var(--fg-1)]">
+            <span className="font-mono text-lg font-semibold tabular-nums text-foreground">
               {primary.value}
             </span>
-            <span className="text-2xs text-[var(--fg-2)]">
+            <span className="text-xs text-[var(--fg-2)]">
               {primary.suffix}
             </span>
           </div>
@@ -2589,6 +2556,6 @@ function SuggestedAmountCard({
           Use suggested amount
         </Button>
       </div>
-    </div>
+    </Callout>
   )
 }

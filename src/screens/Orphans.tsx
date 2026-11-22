@@ -4,15 +4,17 @@ import { toast } from 'sonner'
 import { AlertTriangle, RefreshCw, Target, X } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
-import { chainInfo } from '@/lib/chains'
 import { fmtUsd, truncateAddr, useNow } from '@/lib/format'
 import type { OrphanTransaction } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
+import { ChainPill } from '@/components/ChainPill'
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
+import { PageHeader } from '@/components/PageHeader'
+import { EmptyState, ErrorState, ListSkeleton } from '@/components/States'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -22,6 +24,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import {
+  Table,
+  TableWrap,
+  TBody,
+  Td,
+  Th,
+  THead,
+  Tr,
+} from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 
 export function OrphansPage() {
@@ -46,65 +57,60 @@ export function OrphansPage() {
   }
 
   return (
-    <div className="fade-in space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow">Operations</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Orphan transactions
-          </h1>
-          <p className="mt-1 text-sm text-[var(--fg-2)]">
-            On-chain transfers the gateway couldn't attribute at ingest — usually
-            payments on an address whose invoice has already closed.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => list.refetch()}
-          disabled={list.isFetching}
-        >
-          <RefreshCw className={'size-3.5' + (list.isFetching ? ' animate-spin' : '')} />
-          Refresh
-        </Button>
-      </div>
+    <div className="fade-in space-y-5">
+      <PageHeader
+        eyebrow="Payments"
+        title="Orphan transactions"
+        description="On-chain transfers the gateway couldn't attribute at ingest — usually payments on an address whose invoice has already closed."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => list.refetch()}
+            disabled={list.isFetching}
+          >
+            <RefreshCw className={'size-3.5' + (list.isFetching ? ' animate-spin' : '')} />
+            Refresh
+          </Button>
+        }
+      />
 
       {list.isLoading ? (
-        <Card className="p-10 text-center text-sm text-[var(--fg-2)]">Loading…</Card>
+        <ListSkeleton rows={5} />
       ) : list.isError ? (
-        <Card className="p-10 text-center text-sm text-destructive">
-          {list.error instanceof Error ? list.error.message : 'Error'}
-        </Card>
+        <ErrorState
+          title="Could not load orphan transactions"
+          message={list.error instanceof Error ? list.error.message : 'Error'}
+        />
       ) : (list.data?.orphans.length ?? 0) === 0 ? (
-        <Card className="p-10 text-center">
-          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-[var(--bg-2)]">
-            <AlertTriangle className="size-5 text-[var(--fg-2)]" />
-          </div>
-          <div className="mt-3 text-sm text-[var(--fg-1)]">No open orphans.</div>
-          <p className="mt-1 text-xs text-[var(--fg-2)]">
-            Every on-chain transfer is attributed or dismissed.
-          </p>
-        </Card>
+        <EmptyState
+          framed
+          icon={AlertTriangle}
+          title="No open orphans"
+          description="Every on-chain transfer is attributed or dismissed."
+        />
       ) : (
-        <Card className="overflow-hidden p-0">
-          <CardContent className="p-0">
-            <table className="w-full border-separate border-spacing-0 text-sm">
-              <thead>
+        <Card className="overflow-hidden">
+          <TableWrap>
+            <Table className="min-w-[1000px]">
+              <THead>
                 <tr>
                   <Th>Tx</Th>
                   <Th>Chain</Th>
                   <Th>Token</Th>
                   <Th>From → To</Th>
-                  <Th>Amount</Th>
-                  <Th>USD</Th>
-                  <Th>Conf</Th>
+                  <Th align="right">Amount</Th>
+                  <Th align="right">USD</Th>
+                  <Th align="right">Conf</Th>
                   <Th>Detected</Th>
-                  <Th />
+                  <Th>
+                    <span className="sr-only">Actions</span>
+                  </Th>
                 </tr>
-              </thead>
-              <tbody>
+              </THead>
+              <TBody>
                 {list.data!.orphans.map((o) => (
-                  <tr key={o.id} className="transition-colors hover:bg-[var(--bg-2)]">
+                  <Tr key={o.id}>
                     <Td>
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs">
@@ -124,15 +130,15 @@ export function OrphansPage() {
                         <Addr value={o.toAddress} />
                       </div>
                     </Td>
-                    <Td className="font-mono text-xs">{o.amountRaw}</Td>
-                    <Td className="font-mono text-xs">
+                    <Td align="right" className="text-xs">{o.amountRaw}</Td>
+                    <Td align="right" className="text-xs">
                       {o.amountUsd ? fmtUsd(o.amountUsd) : '—'}
                     </Td>
-                    <Td className="font-mono text-xs">{o.confirmations}</Td>
-                    <Td className="font-mono text-xs text-[var(--fg-2)]">
+                    <Td align="right" className="text-xs">{o.confirmations}</Td>
+                    <Td className="whitespace-nowrap text-xs text-[var(--fg-2)]">
                       {formatAgo(o.detectedAt, now)}
                     </Td>
-                    <Td className="text-right">
+                    <Td align="right" className="font-sans">
                       <div className="flex justify-end gap-1.5">
                         <Button
                           size="sm"
@@ -156,11 +162,11 @@ export function OrphansPage() {
                         </Button>
                       </div>
                     </Td>
-                  </tr>
+                  </Tr>
                 ))}
-              </tbody>
-            </table>
-          </CardContent>
+              </TBody>
+            </Table>
+          </TableWrap>
         </Card>
       )}
 
@@ -171,40 +177,6 @@ export function OrphansPage() {
         <DismissDialog open={open} onOpenChange={close} orphan={target} />
       )}
     </div>
-  )
-}
-
-function Th({ children }: { children?: React.ReactNode }) {
-  return (
-    <th className="border-b border-border bg-card px-3.5 py-2.5 text-left text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
-      {children}
-    </th>
-  )
-}
-function Td({
-  children,
-  className = '',
-}: {
-  children?: React.ReactNode
-  className?: string
-}) {
-  return (
-    <td className={'border-b border-border px-3.5 py-2.5 align-middle ' + className}>
-      {children}
-    </td>
-  )
-}
-
-function ChainPill({ chainId }: { chainId: number }) {
-  const info = chainInfo(chainId)
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs">
-      <span
-        className="size-[7px] rounded-full"
-        style={{ background: info.color }}
-      />
-      {info.name}
-    </span>
   )
 }
 
@@ -254,7 +226,7 @@ function AttributeDialog({
             <span className="font-mono"> overpaid</span> if the payment covers it.
           </DialogDescription>
         </DialogHeader>
-        <div className="rounded-md border border-border bg-secondary p-3 text-xs font-mono">
+        <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 font-mono text-xs break-all tabular-nums">
           {truncateAddr(orphan.txHash, 10, 8)} · {orphan.token}{' '}
           {orphan.amountRaw}
         </div>
@@ -321,7 +293,7 @@ function DismissDialog({
             The tx stays in the audit log but drops off the open-orphans queue.
           </DialogDescription>
         </DialogHeader>
-        <div className="rounded-md border border-border bg-secondary p-3 text-xs font-mono">
+        <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 font-mono text-xs break-all tabular-nums">
           {truncateAddr(orphan.txHash, 10, 8)} · {orphan.token}{' '}
           {orphan.amountRaw}
         </div>
@@ -340,7 +312,7 @@ function DismissDialog({
               autoFocus
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="dust · test tx · merchant asked us to ignore"
+              placeholder="dust · test tx · store asked us to ignore"
               maxLength={512}
               rows={3}
               required
