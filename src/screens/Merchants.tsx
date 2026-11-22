@@ -4,19 +4,32 @@ import { toast } from 'sonner'
 import {
   AlertTriangle,
   Ban,
+  Calendar,
   ChevronDown,
+  ChevronUp,
   CircleDashed,
+  Clock,
+  Copy,
+  Database,
+  ClipboardText,
   Download,
+  Info,
   KeyRound,
   Layers,
+  ListBullets,
+  Lock,
   MoreHorizontal,
-  Pencil,
   Plus,
   Power,
+  Save,
+  Scale,
   Search,
+  Settings,
   Shield,
   ShieldAlert,
+  SlidersHorizontal,
   Store,
+  Timer,
   Trash2,
   Webhook,
   X,
@@ -38,6 +51,7 @@ import type {
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -66,22 +80,35 @@ import {
   Sheet,
   SheetBody,
   SheetContent,
-  SheetHeader,
-  SheetTitle,
+  SheetFooter,
+  SheetHero,
+  SheetSection,
+  SheetTabs,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableWrap, TBody, Td, Th, THead, Tr } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { SegmentedBar, Segmented } from '@/components/charts'
 import { CopyButton } from '@/components/CopyButton'
+import { ChainIcon, TokenIcon } from '@/components/CryptoIcon'
+import {
+  Pager,
+  RowAvatar,
+  TableCard,
+  TableSearch,
+  TableToolbar,
+  usePaged,
+} from '@/components/DataTable'
 import { Field } from '@/components/Field'
 import { PageHeader } from '@/components/PageHeader'
 import { PasswordField } from '@/components/PasswordField'
-import {
-  Callout,
-  EmptyState as SharedEmptyState,
-  ListSkeleton,
-} from '@/components/States'
+import { StatusPill, type StatusTone } from '@/components/StatusPill'
+import { Callout, EmptyState as SharedEmptyState } from '@/components/States'
 import { cn } from '@/lib/utils'
 
 type Filter = 'all' | 'active' | 'inactive' | 'orphan'
+
+const PAGE_SIZE = 25
 
 /* ── page ────────────────────────────────────────────────── */
 
@@ -95,7 +122,7 @@ export function MerchantsPage() {
   const [createOpen, setCreateOpen] = React.useState(false)
   const [importOpen, setImportOpen] = React.useState(false)
 
-  const all = merchants.data?.merchants ?? []
+  const all = React.useMemo(() => merchants.data?.merchants ?? [], [merchants.data])
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase()
     return all.filter((m) => {
@@ -111,35 +138,33 @@ export function MerchantsPage() {
     })
   }, [all, query, filter])
 
+  // Back to page 1 whenever the search or filter changes.
+  const paged = usePaged(filtered, PAGE_SIZE)
+  const filterKey = `${query}|${filter}`
+  const [lastFilterKey, setLastFilterKey] = React.useState(filterKey)
+  if (lastFilterKey !== filterKey) {
+    setLastFilterKey(filterKey)
+    paged.setPage(0)
+  }
+
   const openMerchant = filtered.find((m) => m.id === openId)
     ?? all.find((m) => m.id === openId)
     ?? null
 
   return (
-    <div className="fade-in space-y-5">
+    <div className="fade-in space-y-8">
       <PageHeader
-        eyebrow="Stores"
         title="Stores"
-        description="Every store the gateway exposes, with the ones you can transact against from this dashboard marked usable."
+        description="Stores on the gateway"
         actions={
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm">
-                <Plus className="size-3.5" /> New store
-                <ChevronDown className="size-3.5 opacity-60" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Add store</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => setCreateOpen(true)}>
-                <Plus className="size-3.5" /> Create via gateway
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setImportOpen(true)}>
-                <Download className="size-3.5" /> Import existing key
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <>
+            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+              <Download className="size-4" /> Import key
+            </Button>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" /> New store
+            </Button>
+          </>
         }
       />
 
@@ -149,86 +174,160 @@ export function MerchantsPage() {
         </Callout>
       )}
 
-      <Toolbar
-        query={query}
-        setQuery={setQuery}
-        filter={filter}
-        setFilter={setFilter}
-        total={all.length}
-        visible={filtered.length}
-      />
+      <SummaryTiles rows={all} loading={merchants.isLoading} />
 
       {merchants.isLoading ? (
-        <ListSkeleton rows={5} />
+        <TableCard>
+          <TableSkeleton />
+        </TableCard>
       ) : all.length === 0 ? (
-        <EmptyState onCreate={() => setCreateOpen(true)} onImport={() => setImportOpen(true)} />
-      ) : filtered.length === 0 ? (
-        <NoMatch />
+        <EmptyState onCreate={() => setCreateOpen(true)} />
       ) : (
-        <MerchantList rows={filtered} onOpen={setOpenId} />
+        <TableCard
+          toolbar={
+            <TableToolbar title="All stores" count={filtered.length}>
+              <Segmented<Filter>
+                ariaLabel="Status filter"
+                value={filter}
+                onChange={setFilter}
+                options={[
+                  { value: 'all', label: 'All' },
+                  { value: 'active', label: 'Active' },
+                  { value: 'inactive', label: 'Inactive' },
+                  { value: 'orphan', label: 'Gateway-only' },
+                ]}
+              />
+              <TableSearch
+                value={query}
+                onChange={setQuery}
+                placeholder="Name, id, webhook"
+                className="w-full sm:w-56"
+              />
+            </TableToolbar>
+          }
+          footer={
+            filtered.length > 0 ? (
+              <Pager
+                page={paged.page}
+                pageSize={paged.pageSize}
+                total={paged.total}
+                hasNext={paged.page < paged.pageCount - 1}
+                onPage={paged.setPage}
+                noun="stores"
+              />
+            ) : undefined
+          }
+        >
+          {filtered.length === 0 ? (
+            <NoMatch
+              onClear={() => {
+                setQuery('')
+                setFilter('all')
+              }}
+            />
+          ) : (
+            <MerchantTable rows={paged.rows} onOpen={setOpenId} />
+          )}
+        </TableCard>
       )}
 
       <CreateMerchantDialog open={createOpen} onOpenChange={setCreateOpen} />
       <ImportMerchantDialog open={importOpen} onOpenChange={setImportOpen} />
       <MerchantSheet
         merchant={openMerchant}
+        stores={all}
         onOpenChange={(v) => !v && setOpenId(null)}
       />
     </div>
   )
 }
 
-/* ── toolbar ─────────────────────────────────────────────── */
+/* ── summary tiles ───────────────────────────────────────── */
 
-function Toolbar({
-  query,
-  setQuery,
-  filter,
-  setFilter,
-  total,
-  visible,
-}: {
-  query: string
-  setQuery: (v: string) => void
-  filter: Filter
-  setFilter: (v: Filter) => void
-  total: number
-  visible: number
-}) {
+function SummaryTiles({ rows, loading }: { rows: Merchant[]; loading: boolean }) {
+  const total = rows.length
+  const orphan = rows.filter((m) => m.source === 'gateway-only').length
+  const active = rows.filter((m) => m.source !== 'gateway-only' && m.active === true).length
+  const inactive = rows.filter((m) => m.source !== 'gateway-only' && m.active === false).length
+  const unknown = total - orphan - active - inactive
+  const sealed = rows.filter((m) => m.apiKeyFingerprint != null).length
+  const pct = (n: number) => (total > 0 ? `${Math.round((n / total) * 100)}% of stores` : '—')
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-      <div className="relative min-w-0 flex-1">
-        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[var(--fg-3)]" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by name, id, webhook…"
-          className="pl-8"
-        />
-      </div>
-      <div className="flex items-center gap-2">
-        <Select value={filter} onValueChange={(v) => setFilter(v as Filter)}>
-          <SelectTrigger className="h-9 w-full text-sm sm:w-[160px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All stores</SelectItem>
-            <SelectItem value="active">Active only</SelectItem>
-            <SelectItem value="inactive">Inactive only</SelectItem>
-            <SelectItem value="orphan">Gateway-only</SelectItem>
-          </SelectContent>
-        </Select>
-        <div className="hidden shrink-0 font-mono text-xs tabular-nums text-[var(--fg-2)] sm:block">
-          {visible === total ? `${total} total` : `${visible} of ${total}`}
-        </div>
-      </div>
+    <div className="stagger grid grid-cols-2 gap-5 lg:grid-cols-4">
+      <StatTile
+        label="Stores"
+        value={total}
+        loading={loading}
+        footer={
+          <SegmentedBar
+            parts={[
+              { key: 'active', name: 'Active', value: active, color: 'var(--st-ok-dot)' },
+              { key: 'inactive', name: 'Inactive', value: inactive, color: 'var(--st-wait-dot)' },
+              { key: 'orphan', name: 'Gateway-only', value: orphan, color: 'var(--st-warn-dot)' },
+              { key: 'unknown', name: 'Unknown', value: unknown, color: 'var(--chart-muted)' },
+            ]}
+          />
+        }
+      />
+      <StatTile label="Active" value={active} sub={pct(active)} loading={loading} dot="var(--st-ok-dot)" />
+      <StatTile
+        label="Inactive"
+        value={inactive}
+        sub={orphan > 0 ? `${orphan} gateway-only` : 'None gateway-only'}
+        loading={loading}
+        dot="var(--st-wait-dot)"
+      />
+      <StatTile
+        label="Sealed keys"
+        value={sealed}
+        sub={total - sealed > 0 ? `${total - sealed} without a key` : 'Every store usable'}
+        loading={loading}
+        icon={KeyRound}
+      />
     </div>
   )
 }
 
-/* ── list ────────────────────────────────────────────────── */
+function StatTile({
+  label,
+  value,
+  sub,
+  footer,
+  loading,
+  dot,
+  icon: Icon,
+}: {
+  label: string
+  value: React.ReactNode
+  sub?: React.ReactNode
+  footer?: React.ReactNode
+  loading?: boolean
+  dot?: string
+  icon?: React.ComponentType<{ className?: string }>
+}) {
+  return (
+    <Card className="flex min-w-0 flex-col p-5">
+      <div className="flex items-center gap-2 text-sm text-[var(--fg-2)]">
+        {dot && <span className="size-2 shrink-0 rounded-full" style={{ background: dot }} />}
+        {Icon && <Icon className="size-4 shrink-0" />}
+        <span className="truncate">{label}</span>
+      </div>
+      <div className="figure mt-2 text-xl font-semibold">
+        {loading ? <Skeleton className="h-7 w-12" /> : value}
+      </div>
+      {sub != null && (
+        <div className="mt-1 truncate text-xs text-[var(--fg-2)]">
+          {loading ? <Skeleton className="h-3 w-20" /> : sub}
+        </div>
+      )}
+      {footer && <div className="mt-auto pt-4">{loading ? <Skeleton className="h-2 w-full" /> : footer}</div>}
+    </Card>
+  )
+}
 
-function MerchantList({
+/* ── table ───────────────────────────────────────────────── */
+
+function MerchantTable({
   rows,
   onOpen,
 }: {
@@ -236,101 +335,103 @@ function MerchantList({
   onOpen: (id: string) => void
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden h-9 grid-cols-[1fr_112px_140px_120px_40px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-4 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)] sm:grid">
-        <div>Store</div>
-        <div>Status</div>
-        <div>Key</div>
-        <div>Updated</div>
-        <div />
-      </div>
-      <ul>
-        {rows.map((m) => (
-          <MerchantRow key={m.id} m={m} onOpen={() => onOpen(m.id)} />
-        ))}
-      </ul>
-    </div>
+    <TableWrap>
+      <Table className="min-w-[720px]">
+        <THead>
+          <tr>
+            <Th>Store</Th>
+            <Th>Status</Th>
+            <Th>API key</Th>
+            <Th align="right">Updated</Th>
+            <Th className="w-12">
+              <span className="sr-only">Actions</span>
+            </Th>
+          </tr>
+        </THead>
+        <TBody>
+          {rows.map((m) => (
+            <MerchantRow key={m.id} m={m} onOpen={() => onOpen(m.id)} />
+          ))}
+        </TBody>
+      </Table>
+    </TableWrap>
   )
 }
 
+function initialsOf(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return '?'
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
+  return (words[0][0] + words[1][0]).toUpperCase()
+}
+
 function MerchantRow({ m, onOpen }: { m: Merchant; onOpen: () => void }) {
+  const confCount = m.confirmationThresholds ? Object.keys(m.confirmationThresholds).length : 0
+  const tierCount = m.confirmationTiers ? Object.keys(m.confirmationTiers).length : 0
   return (
-    <li className="group border-b border-border last:border-0">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onOpen}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            onOpen()
-          }
-        }}
-        className="grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[1fr_112px_140px_120px_40px] sm:gap-4"
+    <Tr
+      interactive
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen()
+        }
+      }}
+      className="focus-visible:bg-[var(--bg-hover)] focus-visible:outline-none"
+    >
+      <Td>
+        <div className="flex min-w-0 items-center gap-3">
+          <RowAvatar text={initialsOf(m.name)} />
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate font-medium">{m.name}</span>
+              {confCount > 0 && (
+                <Badge variant="outline" className="shrink-0" title="Per-chain confirmation overrides set">
+                  <Layers /> {confCount} conf
+                </Badge>
+              )}
+              {tierCount > 0 && (
+                <Badge variant="outline" className="shrink-0" title="Per-(chain, token) amount-tier rules set">
+                  <Layers /> {tierCount} tier
+                </Badge>
+              )}
+            </div>
+            <div className="max-w-[260px] truncate font-mono text-xs text-[var(--fg-3)]">{m.id}</div>
+          </div>
+        </div>
+      </Td>
+      <Td>
+        <MerchantStatus status={statusOf(m)} />
+      </Td>
+      <Td>
+        {m.apiKeyFingerprint ? (
+          <span className="inline-flex items-center gap-1.5 font-mono text-xs text-[var(--fg-1)]">
+            <KeyRound className="size-3.5 text-[var(--fg-3)]" />
+            sk_…{m.apiKeyFingerprint}
+          </span>
+        ) : (
+          <span className="text-sm text-[var(--fg-3)]">—</span>
+        )}
+      </Td>
+      <Td
+        align="right"
+        className="text-sm whitespace-nowrap text-[var(--fg-2)]"
+        title={fmtLocal(m.updatedAt)}
       >
-        <div className="col-span-2 min-w-0 sm:col-span-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-medium">{m.name}</span>
-            {m.source === 'gateway-only' && (
-              <Badge variant="warn" className="shrink-0">
-                orphan
-              </Badge>
-            )}
-            {m.confirmationThresholds &&
-              Object.keys(m.confirmationThresholds).length > 0 && (
-                <Badge
-                  variant="outline"
-                  className="shrink-0"
-                  title="Per-chain confirmation overrides set"
-                >
-                  <Layers className="size-3" />
-                  {Object.keys(m.confirmationThresholds).length} conf
-                </Badge>
-              )}
-            {m.confirmationTiers &&
-              Object.keys(m.confirmationTiers).length > 0 && (
-                <Badge
-                  variant="accent"
-                  className="shrink-0"
-                  title="Per-(chain, token) amount-tier rules set"
-                >
-                  <Layers className="size-3" />
-                  {Object.keys(m.confirmationTiers).length} tier
-                </Badge>
-              )}
-          </div>
-          <div className="mt-0.5 truncate font-mono text-2xs text-[var(--fg-3)]">
-            {m.id}
-          </div>
-        </div>
-
-        <div className="flex min-w-0 items-center gap-2">
-          <StatusBadge status={statusOf(m)} />
-          {m.apiKeyFingerprint && (
-            <span className="truncate font-mono text-2xs text-[var(--fg-3)] sm:hidden">
-              …{m.apiKeyFingerprint}
-            </span>
-          )}
-        </div>
-
-        <div className="hidden font-mono text-xs text-[var(--fg-2)] sm:block">
-          {m.apiKeyFingerprint ? (
-            <>…{m.apiKeyFingerprint}</>
-          ) : (
-            <span className="text-[var(--fg-3)]">—</span>
-          )}
-        </div>
-
-        <div className="hidden text-xs text-[var(--fg-2)] sm:block">{fmtRel(m.updatedAt)}</div>
-
+        {fmtRel(m.updatedAt)}
+      </Td>
+      <Td className="w-12">
         <div
-          className="col-start-2 row-start-2 justify-self-end sm:col-start-auto sm:row-start-auto"
+          className="flex justify-end"
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
         >
           <RowKebab m={m} />
         </div>
-      </div>
-    </li>
+      </Td>
+    </Tr>
   )
 }
 
@@ -343,29 +444,26 @@ function statusOf(m: Merchant): Status {
   return 'unknown'
 }
 
-function labelOf(s: Status): string {
-  switch (s) {
-    case 'active':
-      return 'Active'
-    case 'inactive':
-      return 'Inactive'
-    case 'orphan':
-      return 'Gateway-only'
-    default:
-      return 'Unknown'
-  }
+const STATUS_META: Record<Status, { label: string; tone: StatusTone }> = {
+  active: { label: 'Active', tone: 'ok' },
+  inactive: { label: 'Inactive', tone: 'off' },
+  orphan: { label: 'Gateway-only', tone: 'warn' },
+  unknown: { label: 'Unknown', tone: 'wait' },
 }
 
-function StatusBadge({ status }: { status: Status }) {
-  const variant =
-    status === 'active'
-      ? 'success'
-      : status === 'inactive'
-        ? 'warn'
-        : status === 'orphan'
-          ? 'danger'
-          : 'default'
-  return <Badge variant={variant}>{labelOf(status)}</Badge>
+function MerchantStatus({ status, size }: { status: Status; size?: 'sm' | 'md' }) {
+  const s = STATUS_META[status]
+  return (
+    <StatusPill tone={s.tone} size={size}>
+      {s.label}
+    </StatusPill>
+  )
+}
+
+const SOURCE_LABEL: Record<Merchant['source'], string> = {
+  dashboard: 'Created here',
+  imported: 'Imported',
+  'gateway-only': 'Gateway-only',
 }
 
 /* ── row kebab menu ──────────────────────────────────────── */
@@ -425,21 +523,19 @@ function RowKebab({ m }: { m: Merchant }) {
             <MoreHorizontal className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-          <DropdownMenuSeparator />
+        <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem onSelect={() => setConfirmRotate(true)}>
-            <KeyRound className="size-3.5" />
+            <KeyRound className="size-4" />
             {m.source === 'gateway-only' ? 'Rotate & import key' : 'Rotate API key'}
           </DropdownMenuItem>
           {m.active === true && (
             <DropdownMenuItem onSelect={() => setActive.mutate(false)}>
-              <Power className="size-3.5" /> Deactivate
+              <Power className="size-4" /> Deactivate
             </DropdownMenuItem>
           )}
           {m.active === false && (
             <DropdownMenuItem onSelect={() => setActive.mutate(true)}>
-              <Power className="size-3.5" /> Activate
+              <Power className="size-4" /> Activate
             </DropdownMenuItem>
           )}
           {m.source !== 'gateway-only' && (
@@ -449,7 +545,7 @@ function RowKebab({ m }: { m: Merchant }) {
                 onSelect={() => setConfirmRemove(true)}
                 className="text-destructive focus:text-destructive"
               >
-                <Trash2 className="size-3.5" /> Remove from dashboard
+                <Trash2 className="size-4" /> Remove from dashboard
               </DropdownMenuItem>
             </>
           )}
@@ -459,6 +555,7 @@ function RowKebab({ m }: { m: Merchant }) {
       <ConfirmDialog
         open={confirmRotate}
         onOpenChange={setConfirmRotate}
+        icon={KeyRound}
         title="Rotate API key?"
         body={
           <>
@@ -482,6 +579,7 @@ function RowKebab({ m }: { m: Merchant }) {
       <ConfirmDialog
         open={confirmRemove}
         onOpenChange={setConfirmRemove}
+        icon={Trash2}
         title="Remove local record?"
         body={
           <>
@@ -501,16 +599,19 @@ function RowKebab({ m }: { m: Merchant }) {
 
 /* ── detail sheet ────────────────────────────────────────── */
 
+type Section = 'overview' | 'keys' | 'webhook' | 'tuning' | 'danger'
+
 function MerchantSheet({
   merchant,
+  stores,
   onOpenChange,
 }: {
   merchant: Merchant | null
+  /** Every store from the already-loaded list (for "copy tiers from store"). */
+  stores: Merchant[]
   onOpenChange: (v: boolean) => void
 }) {
-  const [section, setSection] = React.useState<
-    'overview' | 'keys' | 'webhook' | 'tuning' | 'danger'
-  >('overview')
+  const [section, setSection] = React.useState<Section>('overview')
   // Reset to overview whenever a different merchant is opened.
   const merchantId = merchant?.id ?? null
   const [prevMerchantId, setPrevMerchantId] = React.useState<string | null>(merchantId)
@@ -524,54 +625,45 @@ function MerchantSheet({
       <SheetContent>
         {merchant && (
           <>
-            <SheetHeader className="pb-0">
-              <div className="eyebrow mb-1">Store</div>
-              <div className="flex min-w-0 items-center gap-2 pr-8">
-                <SheetTitle className="truncate pr-0">{merchant.name}</SheetTitle>
-                <StatusBadge status={statusOf(merchant)} />
-              </div>
-              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <Badge variant="outline">{merchant.source}</Badge>
-                <span className="min-w-0 truncate font-mono text-2xs text-[var(--fg-2)]">
-                  {merchant.id}
-                </span>
-                <CopyButton value={merchant.id} />
-              </div>
-              <nav
-                role="tablist"
-                aria-label="Store sections"
-                className="-mx-6 mt-4 flex gap-1 overflow-x-auto px-4 [scrollbar-width:none]"
-              >
-                {(['overview', 'keys', 'webhook', 'tuning', 'danger'] as const).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    role="tab"
-                    aria-selected={section === s}
-                    onClick={() => setSection(s)}
-                    className={cn(
-                      'relative shrink-0 cursor-pointer rounded-t-md px-2 pt-1 pb-2.5 text-sm font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-                      section === s
-                        ? 'text-foreground'
-                        : 'text-[var(--fg-2)] hover:text-foreground',
-                    )}
-                  >
-                    {s === 'danger' ? 'Danger zone' : s === 'keys' ? 'API keys' : s}
-                    {section === s && (
-                      <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />
-                    )}
-                  </button>
-                ))}
-              </nav>
-            </SheetHeader>
+            <SheetHero
+              icon={Store}
+              title={merchant.name}
+              meta={
+                <>
+                  <MerchantStatus status={statusOf(merchant)} />
+                  {merchant.source !== 'gateway-only' && (
+                    <Badge variant="default">{SOURCE_LABEL[merchant.source]}</Badge>
+                  )}
+                  <span className="max-w-[200px] truncate font-mono text-xs text-[var(--fg-3)]">
+                    {merchant.id}
+                  </span>
+                </>
+              }
+              actions={<CopyButton value={merchant.id} title="Copy store id" />}
+            >
+              <MerchantHero m={merchant} />
+            </SheetHero>
 
-            <SheetBody>
-              {section === 'overview' && <OverviewSection m={merchant} />}
+            <SheetTabs<Section>
+              value={section}
+              onChange={setSection}
+              tabs={[
+                { value: 'overview', label: 'Overview', icon: ListBullets },
+                { value: 'keys', label: 'API keys', icon: KeyRound },
+                { value: 'webhook', label: 'Webhook', icon: Webhook },
+                { value: 'tuning', label: 'Tuning', icon: SlidersHorizontal },
+                { value: 'danger', label: 'Settings', icon: Settings },
+              ]}
+            />
+
+            {/* Each tab renders its own SheetBody (+ SheetFooter for its actions). */}
+            <React.Fragment key={section}>
+              {section === 'overview' && <OverviewSection m={merchant} onNavigate={setSection} />}
               {section === 'keys' && <ApiKeysSection m={merchant} />}
               {section === 'webhook' && <WebhookSection m={merchant} />}
-              {section === 'tuning' && <TuningSection m={merchant} />}
+              {section === 'tuning' && <TuningSection m={merchant} stores={stores} />}
               {section === 'danger' && <DangerSection m={merchant} onDone={() => onOpenChange(false)} />}
-            </SheetBody>
+            </React.Fragment>
           </>
         )}
       </SheetContent>
@@ -579,47 +671,229 @@ function MerchantSheet({
   )
 }
 
+/* Three key facts under the sheet title. */
+function MerchantHero({ m }: { m: Merchant }) {
+  const overrides =
+    (m.confirmationThresholds ? Object.keys(m.confirmationThresholds).length : 0) +
+    (m.confirmationTiers ? Object.keys(m.confirmationTiers).length : 0)
+  const cells: Array<{ label: string; value: React.ReactNode }> = [
+    {
+      label: 'Main key',
+      value: m.apiKeyFingerprint ? (
+        <span className="font-mono text-sm">sk_…{m.apiKeyFingerprint}</span>
+      ) : (
+        <span className="text-[var(--fg-3)]">None</span>
+      ),
+    },
+    {
+      label: 'Webhook',
+      value: m.webhookUrl ? 'Set' : <span className="text-[var(--fg-3)]">Not set</span>,
+    },
+    {
+      label: 'Overrides',
+      value: <span className="figure">{overrides}</span>,
+    },
+  ]
+  return (
+    <div className="mt-5 grid grid-cols-3 divide-x divide-border rounded-2xl border border-border bg-[var(--bg-2)]">
+      {cells.map((c) => (
+        <div key={c.label} className="min-w-0 px-4 py-3">
+          <div className="text-xs text-[var(--fg-2)]">{c.label}</div>
+          <div className="mt-0.5 truncate text-base font-semibold">{c.value}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /* ── sheet: overview ─────────────────────────────────────── */
 
-function OverviewSection({ m }: { m: Merchant }) {
+function bpsLabel(bps: number): string {
+  if (bps === 0) return '0%'
+  const pct = bps / 100
+  return pct < 1 ? `${pct.toFixed(2)}%` : `${pct.toFixed(1)}%`
+}
+
+function OverviewSection({
+  m,
+  onNavigate,
+}: {
+  m: Merchant
+  onNavigate: (s: Section) => void
+}) {
+  const confCount = m.confirmationThresholds ? Object.keys(m.confirmationThresholds).length : 0
+  const tierCount = m.confirmationTiers ? Object.keys(m.confirmationTiers).length : 0
+  const hasTolerance = m.paymentToleranceUnderBps != null || m.paymentToleranceOverBps != null
+  // Distinct chains that carry an override (flat or tiered), for the logo row.
+  const overrideChains = Array.from(
+    new Set([
+      ...Object.keys(m.confirmationThresholds ?? {}),
+      ...Object.keys(m.confirmationTiers ?? {}).map((k) => k.split(':')[0]),
+    ]),
+  )
+    .map((c) => parseInt(c, 10))
+    .filter((c) => Number.isFinite(c))
   return (
-    <div className="space-y-5">
-      <KeyValueGrid
-        rows={[
-          ['Name', m.name],
-          [
-            'Status',
-            <Badge
-              variant={
-                m.active === true ? 'success' : m.active === false ? 'warn' : 'default'
-              }
-            >
-              {m.active === true ? 'Active' : m.active === false ? 'Inactive' : 'Unknown'}
-            </Badge>,
-          ],
-          ['Source', <span className="font-mono text-xs">{m.source}</span>],
-          [
-            'Main API key',
-            m.apiKeyFingerprint ? (
-              <span className="font-mono text-xs">
-                sk_…{m.apiKeyFingerprint} · full access
-              </span>
-            ) : (
-              '—'
-            ),
-          ],
-          ['Created', fmtLocal(m.createdAt)],
-          ['Updated', fmtRel(m.updatedAt)],
-        ]}
-      />
+    <>
+    <SheetBody className="fade-in">
+    <div className="space-y-6">
       {m.source === 'gateway-only' && (
         <Callout tone="warn" icon={Shield} title="Not usable from this dashboard">
-          The gateway has this store but we don't hold a sealed API key. In{' '}
-          <span className="font-medium">Danger zone</span>: <em>Attach</em> if
+          No sealed API key is held here. In{' '}
+          <span className="font-medium">Settings</span>: <em>Attach</em> if
           you still have the plaintext, or <em>Rotate</em> to mint a fresh one.
         </Callout>
       )}
+
+      <SheetSection title="Details">
+        <dl className="divide-y divide-border rounded-xl border border-border">
+          <Fact icon={Store} label="Name">
+            <span className="font-medium">{m.name}</span>
+          </Fact>
+          <Fact icon={Power} label="Status">
+            <span className="inline-flex justify-end">
+              <StatusPill
+                tone={m.active === true ? 'ok' : m.active === false ? 'off' : 'wait'}
+              >
+                {m.active === true ? 'Active' : m.active === false ? 'Inactive' : 'Unknown'}
+              </StatusPill>
+            </span>
+          </Fact>
+          <Fact icon={Database} label="Source">
+            {SOURCE_LABEL[m.source]}
+          </Fact>
+          <Fact icon={KeyRound} label="Main key">
+            {m.apiKeyFingerprint ? (
+              <span className="font-mono text-xs">
+                sk_…{m.apiKeyFingerprint}
+                <span className="ml-1.5 font-sans text-[var(--fg-2)]">· full access</span>
+              </span>
+            ) : (
+              <span className="text-[var(--fg-3)]">—</span>
+            )}
+          </Fact>
+          <Fact icon={Webhook} label="Webhook">
+            {m.webhookUrl ? (
+              <span className="flex min-w-0 items-center justify-end gap-1">
+                <span className="truncate font-mono text-xs" title={m.webhookUrl}>
+                  {m.webhookUrl}
+                </span>
+                <CopyButton value={m.webhookUrl} />
+              </span>
+            ) : (
+              <span className="text-[var(--fg-3)]">Not set</span>
+            )}
+          </Fact>
+        </dl>
+      </SheetSection>
+
+      <SheetSection title="Payments">
+        <dl className="divide-y divide-border rounded-xl border border-border">
+          <Fact icon={Scale} label="Tolerance">
+            {hasTolerance ? (
+              <span className="figure">
+                −{bpsLabel(m.paymentToleranceUnderBps ?? 0)} / +
+                {bpsLabel(m.paymentToleranceOverBps ?? 0)}
+              </span>
+            ) : (
+              <span className="text-[var(--fg-3)]">Default</span>
+            )}
+          </Fact>
+          <Fact icon={Timer} label="Cooldown">
+            {m.addressCooldownSeconds != null ? (
+              <span className="figure">{m.addressCooldownSeconds}s</span>
+            ) : (
+              <span className="text-[var(--fg-3)]">Default</span>
+            )}
+          </Fact>
+          <Fact icon={Layers} label="Confirmations">
+            {confCount + tierCount > 0 ? (
+              <span className="inline-flex items-center justify-end gap-2">
+                <span className="inline-flex items-center">
+                  {overrideChains.slice(0, 5).map((c, i) => (
+                    <span
+                      key={c}
+                      className="grid place-items-center rounded-full bg-card ring-2 ring-[var(--bg-1)]"
+                      style={{ marginLeft: i === 0 ? 0 : -5 }}
+                    >
+                      <ChainIcon chainId={c} size={18} />
+                    </span>
+                  ))}
+                </span>
+                <span className="figure">
+                  {confCount} chain{confCount === 1 ? '' : 's'} · {tierCount} tier
+                  {tierCount === 1 ? '' : 's'}
+                </span>
+              </span>
+            ) : (
+              <span className="text-[var(--fg-3)]">Gateway defaults</span>
+            )}
+          </Fact>
+        </dl>
+      </SheetSection>
+
+      <SheetSection title="Activity">
+        <dl className="divide-y divide-border rounded-xl border border-border">
+          <Fact icon={Calendar} label="Created">
+            {fmtLocal(m.createdAt)}
+          </Fact>
+          <Fact icon={Clock} label="Updated">
+            <span title={fmtLocal(m.updatedAt)}>{fmtRel(m.updatedAt)}</span>
+          </Fact>
+        </dl>
+      </SheetSection>
     </div>
+    </SheetBody>
+    <SheetFooter>
+      <Button size="sm" variant="outline" onClick={() => onNavigate('tuning')}>
+        <SlidersHorizontal className="size-4" /> Tune
+      </Button>
+      <Button size="sm" onClick={() => onNavigate('keys')}>
+        <KeyRound className="size-4" /> Manage keys
+      </Button>
+    </SheetFooter>
+    </>
+  )
+}
+
+/** One row of a details list: icon · label on the left, value on the right. */
+function Fact({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex min-h-11 items-center gap-3 px-4 py-2.5 text-sm">
+      <dt className="flex w-32 shrink-0 items-center gap-2 text-[var(--fg-2)]">
+        <Icon className="size-4 shrink-0" />
+        {label}
+      </dt>
+      <dd className="min-w-0 flex-1 text-right">{children}</dd>
+    </div>
+  )
+}
+
+/** Info icon with a tooltip, for guidance that would otherwise be a paragraph. */
+function InfoTip({ children }: { children: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label="More info"
+          className="inline-flex size-5 cursor-help items-center justify-center rounded-full text-[var(--fg-3)] transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          <Info className="size-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs text-pretty font-normal leading-relaxed">
+        {children}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -676,76 +950,56 @@ function WebhookSection({ m }: { m: Merchant }) {
   const dirty = (m.webhookUrl ?? '') !== url.trim()
   const firstTime = !m.webhookUrl && !!url.trim()
 
-  return (
-    <div className="space-y-5">
-      <form
-        className="space-y-3"
-        onSubmit={(e) => {
-          e.preventDefault()
-          save.mutate()
-        }}
-      >
-        <Field
-          label="Webhook URL"
-          hint={
-            firstTime
-              ? 'First-time URL — the gateway will mint a signing secret you can view once.'
-              : 'Where the gateway POSTs status updates for this store.'
-          }
-        >
-          <Input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://store.example.com/hooks/gateway"
-            type="url"
-            className="font-mono"
-          />
-        </Field>
-        <div className="flex flex-wrap justify-end gap-2">
-          {m.webhookUrl && url.trim() === '' && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setUrl(m.webhookUrl ?? '')}
-            >
-              Undo clear
-            </Button>
-          )}
-          <Button size="sm" type="submit" disabled={!dirty || save.isPending}>
-            {save.isPending ? 'Saving…' : 'Save URL'}
-          </Button>
-        </div>
-      </form>
+  const formId = `webhook-${m.id}`
 
-      <div
-        className={cn(
-          'rounded-lg border px-4 py-3',
-          m.webhookUrl
-            ? 'border-border bg-[var(--bg-2)]'
-            : 'border-dashed border-[var(--border-strong)] bg-card',
-        )}
-      >
-        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-          <div className="min-w-0 flex-1 basis-60">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Webhook className="size-4 text-[var(--fg-2)]" /> Signing secret
+  return (
+    <>
+    <SheetBody className="fade-in">
+    <div className="space-y-6">
+      <SheetSection title="Endpoint" icon={Webhook}>
+        <form
+          id={formId}
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            save.mutate()
+          }}
+        >
+          <Field
+            label="Webhook URL"
+            hint={
+              firstTime
+                ? 'First-time URL — the gateway will mint a signing secret you can view once.'
+                : 'Where the gateway POSTs status updates.'
+            }
+          >
+            <Input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://store.example.com/hooks/gateway"
+              type="url"
+              className="font-mono"
+            />
+          </Field>
+        </form>
+      </SheetSection>
+
+      <SheetSection title="Signing secret" icon={KeyRound}>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-border px-4 py-3.5">
+          <div className="min-w-0 flex-1 basis-56">
+            <div className="flex items-center gap-2">
+              {m.webhookUrl ? (
+                <StatusPill tone="ok">Issued</StatusPill>
+              ) : (
+                <StatusPill tone="wait">Not issued</StatusPill>
+              )}
+              <span className="text-xs text-[var(--fg-2)]">HMAC · 64 hex</span>
             </div>
-            {m.webhookUrl ? (
-              <p className="mt-1 text-xs text-[var(--fg-2)]">
-                Shared HMAC the gateway uses to sign webhook bodies. Rotating
-                invalidates the old secret immediately — shown once on success.
-              </p>
-            ) : (
-              <p className="mt-1 text-xs text-[var(--fg-2)]">
-                No secret yet. Save a{' '}
-                <span className="font-medium">Webhook URL</span> above first —
-                the gateway auto-mints a 64-hex secret on the first save and
-                reveals it once. Use{' '}
-                <span className="font-mono">Rotate</span> afterwards to issue a
-                new one.
-              </p>
-            )}
+            <p className="mt-1.5 text-sm text-[var(--fg-2)]">
+              {m.webhookUrl
+                ? 'Rotating invalidates the old secret immediately — shown once on success.'
+                : 'Minted on the first URL save and shown once.'}
+            </p>
           </div>
           <Button
             size="sm"
@@ -758,14 +1012,34 @@ function WebhookSection({ m }: { m: Merchant }) {
                 : 'Save a webhook URL first'
             }
           >
-            <KeyRound className="size-3.5" /> Rotate
+            <KeyRound className="size-4" /> Rotate
           </Button>
         </div>
-      </div>
+      </SheetSection>
+    </div>
+    </SheetBody>
+
+    <SheetFooter>
+      {m.webhookUrl && url.trim() === '' && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setUrl(m.webhookUrl ?? '')}
+        >
+          Undo clear
+        </Button>
+      )}
+      <Button size="sm" type="submit" form={formId} disabled={!dirty || save.isPending}>
+        <Save className="size-4" />
+        {save.isPending ? 'Saving…' : 'Save URL'}
+      </Button>
+    </SheetFooter>
 
       <ConfirmDialog
         open={confirmRotate}
         onOpenChange={setConfirmRotate}
+        icon={KeyRound}
         title="Rotate webhook secret?"
         body="The gateway will invalidate the current signing secret and mint a fresh one, shown once."
         cta="Rotate secret"
@@ -779,7 +1053,7 @@ function WebhookSection({ m }: { m: Merchant }) {
         description="Shown once. Paste it into your store's HMAC verifier before dismissing."
         onClose={() => setRevealed(null)}
       />
-    </div>
+    </>
   )
 }
 
@@ -812,6 +1086,27 @@ const SCOPE_GROUPS: Array<{ resource: string; scopes: ApiKeyScope[] }> =
 
 function apiKeysQueryKey(merchantId: string) {
   return ['merchant-api-keys', merchantId] as const
+}
+
+function unixOf(iso: string): number {
+  const t = Date.parse(iso)
+  return isFinite(t) ? Math.floor(t / 1000) : 0
+}
+
+function ScopeTag({ scope }: { scope: ApiKeyScope }) {
+  const info = SCOPE_INFO[scope]
+  if (info?.risky) {
+    return (
+      <Badge variant="warn" title={`${scope} · sensitive`}>
+        <ShieldAlert /> {info.label}
+      </Badge>
+    )
+  }
+  return (
+    <Badge variant="default" title={scope}>
+      {info?.label ?? scope}
+    </Badge>
+  )
 }
 
 function ApiKeysSection({ m }: { m: Merchant }) {
@@ -854,11 +1149,12 @@ function ApiKeysSection({ m }: { m: Merchant }) {
   const shown = showRevoked ? all : active
 
   return (
-    <div className="space-y-4">
-      <Callout icon={KeyRound} title="Keys for this store's website and apps">
-        Give each website or integration its own key with only the access it
-        needs. New keys can create and read invoices only; payout access must be
-        turned on explicitly. The store's main key{' '}
+    <>
+    <SheetBody className="fade-in">
+    <div className="space-y-6">
+      <Callout icon={KeyRound}>
+        One key per website or app, with only the access it needs. Payout
+        access is off by default. The main key{' '}
         {m.apiKeyFingerprint && (
           <span className="font-mono">(sk_…{m.apiKeyFingerprint})</span>
         )}{' '}
@@ -871,112 +1167,134 @@ function ApiKeysSection({ m }: { m: Merchant }) {
         </Callout>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm text-[var(--fg-2)]">
-          {keys.isSuccess &&
-            `${active.length} active${revoked.length ? ` · ${revoked.length} revoked` : ''}`}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {revoked.length > 0 && (
+      <SheetSection
+        title={
+          <span className="flex items-center gap-2">
+            Keys
+            {keys.isSuccess && (
+              <span className="figure rounded-full bg-[var(--bg-active)] px-1.5 text-2xs font-medium text-[var(--fg-1)]">
+                {active.length}
+              </span>
+            )}
+          </span>
+        }
+        action={
+          revoked.length > 0 ? (
             <Button size="sm" variant="ghost" onClick={() => setShowRevoked((v) => !v)}>
-              {showRevoked ? 'Hide revoked' : 'Show revoked'}
+              {showRevoked ? 'Hide revoked' : `Show revoked (${revoked.length})`}
             </Button>
-          )}
-          <Button size="sm" onClick={() => setCreateOpen(true)} disabled={!keys.isSuccess}>
-            <Plus className="size-3.5" /> New key
-          </Button>
-        </div>
-      </div>
-
-      {keys.isPending && (
-        <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-          {Array.from({ length: 2 }).map((_, i) => (
-            <div key={i} className="space-y-2 px-4 py-3.5">
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-3.5 w-32" />
-                <Skeleton className="h-3 w-16" />
-              </div>
-              <div className="flex gap-1.5">
-                <Skeleton className="h-5 w-24" />
-                <Skeleton className="h-5 w-20" />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {keys.isError && (
-        <Callout tone="warn" title="Couldn't load keys">
-          {(keys.error as ApiError)?.message || 'The gateway did not answer.'} If
-          this keeps happening, the gateway may not have the scoped-keys update
-          (migration 0027) yet.
-        </Callout>
-      )}
-
-      {keys.isSuccess && shown.length === 0 && (
-        <SharedEmptyState
-          framed
-          compact
-          icon={KeyRound}
-          title="No extra keys yet."
-          description="Create one for each website or app that talks to the gateway."
-        />
-      )}
-
-      {keys.isSuccess && shown.length > 0 && (
-        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-          {shown.map((k) => (
-            <li
-              key={k.id}
-              className={cn('px-4 py-3', k.revokedAt && 'bg-[var(--bg-2)]')}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-                <div className={cn('min-w-0 flex-1', k.revokedAt && 'opacity-70')}>
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="truncate text-sm font-medium">
-                      {k.label ?? 'Unnamed key'}
-                    </span>
-                    <span className="font-mono text-xs text-[var(--fg-2)]">
-                      sk_…{k.fingerprint}
-                    </span>
-                    {k.revokedAt && <Badge variant="danger">Revoked</Badge>}
+          ) : null
+        }
+      >
+        {keys.isPending && (
+          <div className="divide-y divide-border rounded-xl border border-border">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+                <Skeleton className="size-8 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-3.5 w-32" />
+                  <div className="flex gap-1.5">
+                    <Skeleton className="h-5 w-24 rounded-full" />
+                    <Skeleton className="h-5 w-20 rounded-full" />
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {k.scopes.length === 0 ? (
-                      <Badge variant="danger">No valid scopes</Badge>
-                    ) : (
-                      k.scopes.map((s) => (
-                        <Badge
-                          key={s}
-                          variant={SCOPE_INFO[s]?.risky ? 'warn' : 'default'}
-                          title={s}
-                        >
-                          {SCOPE_INFO[s]?.risky && <ShieldAlert />}
-                          {SCOPE_INFO[s]?.label ?? s}
-                        </Badge>
-                      ))
-                    )}
-                  </div>
-                  <div className="mt-2 text-2xs text-[var(--fg-3)]">
-                    Created {fmtLocal(k.createdAt)}
-                    {k.revokedAt && ` · revoked ${fmtLocal(k.revokedAt)}`}
+                </div>
+                <Skeleton className="h-8 w-20" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {keys.isError && (
+          <Callout tone="warn" title="Couldn't load keys">
+            {(keys.error as ApiError)?.message || 'The gateway did not answer.'} If
+            this keeps happening, the gateway may not have the scoped-keys update
+            (migration 0027) yet.
+          </Callout>
+        )}
+
+        {keys.isSuccess && shown.length === 0 && (
+          <SharedEmptyState
+            framed
+            compact
+            icon={KeyRound}
+            title="No extra keys yet"
+            description="Create one per website or app."
+            action={
+              <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)}>
+                <Plus className="size-4" /> New key
+              </Button>
+            }
+          />
+        )}
+
+        {keys.isSuccess && shown.length > 0 && (
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+            {shown.map((k) => (
+              <li
+                key={k.id}
+                className={cn(
+                  'flex items-start gap-3 px-4 py-3.5',
+                  k.revokedAt && 'bg-[var(--bg-2)]',
+                )}
+              >
+                <div className={cn('flex min-w-0 flex-1 items-start gap-3', k.revokedAt && 'opacity-55')}>
+                  <RowAvatar icon={KeyRound} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="truncate font-medium">{k.label ?? 'Unnamed key'}</span>
+                      <span className="font-mono text-xs text-[var(--fg-2)]">sk_…{k.fingerprint}</span>
+                      {k.revokedAt && (
+                        <StatusPill tone="bad" size="sm">
+                          Revoked
+                        </StatusPill>
+                      )}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {k.scopes.length === 0 ? (
+                        <StatusPill tone="bad" size="sm">
+                          No valid scopes
+                        </StatusPill>
+                      ) : (
+                        k.scopes.map((s) => <ScopeTag key={s} scope={s} />)
+                      )}
+                    </div>
+                    <div
+                      className="mt-2 text-xs text-[var(--fg-3)]"
+                      title={`Created ${fmtLocal(k.createdAt)}${k.revokedAt ? ` · revoked ${fmtLocal(k.revokedAt)}` : ''}`}
+                    >
+                      Created {fmtRel(unixOf(k.createdAt))}
+                      {k.revokedAt && ` · revoked ${fmtRel(unixOf(k.revokedAt))}`}
+                    </div>
                   </div>
                 </div>
                 {!k.revokedAt && (
                   <Button
                     size="sm"
                     variant="outline"
+                    className="shrink-0 text-destructive hover:bg-[var(--danger-bg)] hover:text-destructive"
                     onClick={() => setRevokeTarget(k)}
                     disabled={revoke.isPending}
                   >
-                    <Ban className="size-3.5" /> Revoke
+                    <Ban className="size-4" /> Revoke
                   </Button>
                 )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </SheetSection>
+    </div>
+    </SheetBody>
+
+    <SheetFooter className="justify-between">
+      <div className="figure text-xs text-[var(--fg-2)]">
+        {keys.isSuccess &&
+          `${active.length} active${revoked.length ? ` · ${revoked.length} revoked` : ''}`}
+      </div>
+      <Button size="sm" onClick={() => setCreateOpen(true)} disabled={!keys.isSuccess}>
+        <Plus className="size-4" /> New key
+      </Button>
+    </SheetFooter>
 
       <CreateApiKeyDialog
         merchantId={m.id}
@@ -992,6 +1310,7 @@ function ApiKeysSection({ m }: { m: Merchant }) {
       <ConfirmDialog
         open={!!revokeTarget}
         onOpenChange={(v) => !v && setRevokeTarget(null)}
+        icon={Ban}
         title="Revoke this API key?"
         body={
           <>
@@ -1013,7 +1332,7 @@ function ApiKeysSection({ m }: { m: Merchant }) {
         description="Shown once and not stored by this dashboard. Copy it into the store's website or app settings now."
         onClose={() => setRevealed(null)}
       />
-    </div>
+    </>
   )
 }
 
@@ -1079,13 +1398,13 @@ function CreateApiKeyDialog({
           </DialogDescription>
         </DialogHeader>
         <form
-          className="space-y-4"
+          className="space-y-5"
           onSubmit={(e) => {
             e.preventDefault()
             if (scopes.length > 0) create.mutate()
           }}
         >
-          <Field label="Name" hint="So you can tell keys apart, e.g. “Main website”.">
+          <Field label="Name" hint="e.g. “Main website”">
             <Input
               value={label}
               onChange={(e) => setLabel(e.target.value)}
@@ -1095,21 +1414,18 @@ function CreateApiKeyDialog({
           </Field>
           <fieldset className="space-y-2">
             <legend className="mb-1.5 text-sm font-medium">Access</legend>
-            <div className="space-y-3">
+            <div className="divide-y divide-border overflow-hidden rounded-xl border border-border">
               {SCOPE_GROUPS.map((g) => (
-                <div
-                  key={g.resource}
-                  className="overflow-hidden rounded-md border border-border"
-                >
-                  <div className="flex h-8 items-center border-b border-border bg-[var(--bg-2)] px-3 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
+                <div key={g.resource}>
+                  <div className="bg-[var(--bg-2)] px-4 py-2 text-xs font-medium text-[var(--fg-2)] capitalize">
                     {g.resource}
                   </div>
-                  <div className="divide-y divide-border">
+                  <div className="divide-y divide-border border-t border-border">
                     {g.scopes.map((s) => (
                       <label
                         key={s}
                         className={cn(
-                          'flex cursor-pointer items-start gap-3 px-3 py-2.5 transition-colors',
+                          'flex cursor-pointer items-start gap-3 px-4 py-3 transition-colors',
                           SCOPE_INFO[s].risky && scopes.includes(s)
                             ? 'bg-[var(--warn-bg)]'
                             : 'bg-card hover:bg-[var(--bg-hover)]',
@@ -1125,7 +1441,7 @@ function CreateApiKeyDialog({
                         <span className="min-w-0 flex-1">
                           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                             <span className="text-sm font-medium">{SCOPE_INFO[s].label}</span>
-                            <span className="font-mono text-2xs text-[var(--fg-3)]">{s}</span>
+                            <span className="font-mono text-xs text-[var(--fg-3)]">{s}</span>
                             {SCOPE_INFO[s].risky && (
                               <Badge variant="warn">
                                 <ShieldAlert /> Sensitive
@@ -1259,7 +1575,7 @@ function tiersToGroups(
     })
 }
 
-function TuningSection({ m }: { m: Merchant }) {
+function TuningSection({ m, stores }: { m: Merchant; stores: Merchant[] }) {
   const qc = useQueryClient()
   const [name, setName] = React.useState(m.name)
   const [under, setUnder] = React.useState(
@@ -1578,90 +1894,350 @@ function TuningSection({ m }: { m: Merchant }) {
       }),
     )
 
+  // ── tier clipboard / copy-from-store (fills the editor only; Save applies) ──
+  const tiersFormId = `tuning-${m.id}`
+  const otherStores = stores.filter((s) => s.id !== m.id)
+
+  const copyTiers = async () => {
+    const t = buildTiersPatch()
+    if (!t.ok) {
+      toast.error(t.error)
+      return
+    }
+    const value = t.value === undefined ? (m.confirmationTiers ?? {}) : (t.value ?? {})
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(value, null, 2))
+      toast.success(`Copied ${Object.keys(value).length} tier group(s)`)
+    } catch {
+      toast.error('Clipboard is not available')
+    }
+  }
+
+  const pasteTiers = async () => {
+    let text: string
+    try {
+      text = await navigator.clipboard.readText()
+    } catch {
+      toast.error('Clipboard is not available')
+      return
+    }
+    const parsed = parseTiersJson(text)
+    if (!parsed.ok) {
+      toast.error(parsed.error)
+      return
+    }
+    setTierGroups(tiersToGroups(parsed.value))
+    toast.success('Tiers pasted — press Save to apply')
+  }
+
+  const loadTiersFrom = (store: Merchant) => {
+    setTierGroups(tiersToGroups(store.confirmationTiers))
+    toast.success(`Loaded tiers from ${store.name} — press Save to apply`)
+  }
+
   return (
-    <form
-      className="space-y-4"
-      onSubmit={(e) => {
-        e.preventDefault()
-        save.mutate()
-      }}
-    >
-      <Field label="Display name">
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={128}
-        />
-      </Field>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Under-pay tolerance (bps)">
-          <Input
-            value={under}
-            onChange={(e) => setUnder(e.target.value)}
-            placeholder="0"
-            inputMode="numeric"
-            className="font-mono"
+    <>
+      <SheetBody className="fade-in">
+        <form
+          id={tiersFormId}
+          className="space-y-8"
+          onSubmit={(e) => {
+            e.preventDefault()
+            save.mutate()
+          }}
+        >
+          <SheetSection title="General" icon={Store}>
+            <Field label="Display name">
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={128}
+              />
+            </Field>
+          </SheetSection>
+
+          <SheetSection
+            title="Payments"
+            icon={Scale}
+            action={<InfoTip>1 bps = 0.01% (50 = 0.5%, 100 = 1%).</InfoTip>}
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Under-pay (bps)">
+                <Input
+                  value={under}
+                  onChange={(e) => setUnder(e.target.value)}
+                  placeholder="0"
+                  inputMode="numeric"
+                  className="figure"
+                />
+              </Field>
+              <Field label="Over-pay (bps)">
+                <Input
+                  value={over}
+                  onChange={(e) => setOver(e.target.value)}
+                  placeholder="0"
+                  inputMode="numeric"
+                  className="figure"
+                />
+              </Field>
+              <div className="sm:col-span-2">
+                <Field
+                  label="Address cooldown (seconds)"
+                  hint="Applies to releases AFTER this change; stamped cooldowns are unaffected."
+                >
+                  <Input
+                    value={cooldown}
+                    onChange={(e) => setCooldown(e.target.value)}
+                    placeholder="0 – 604800"
+                    inputMode="numeric"
+                    className="figure"
+                  />
+                </Field>
+              </div>
+            </div>
+          </SheetSection>
+
+          <ConfirmationThresholdsEditor
+            rows={thresholdRows}
+            defaults={defaultByChainId}
+            availableChains={chainsQ.data?.chains ?? []}
+            onAdd={addThresholdRow}
+            onUpdate={updateThresholdRow}
+            onRemove={removeThresholdRow}
+            onClear={() => setThresholdRows([])}
           />
-        </Field>
-        <Field label="Over-pay tolerance (bps)">
-          <Input
-            value={over}
-            onChange={(e) => setOver(e.target.value)}
-            placeholder="0"
-            inputMode="numeric"
-            className="font-mono"
+
+          <ConfirmationTiersEditor
+            groups={tierGroups}
+            availableChains={chainsQ.data?.chains ?? []}
+            onAddGroup={addTierGroup}
+            onUpdateGroup={updateTierGroup}
+            onRemoveGroup={removeTierGroup}
+            onAddRule={addTierRule}
+            onUpdateRule={updateTierRule}
+            onRemoveRule={removeTierRule}
+            onMoveRule={moveTierRule}
+            onClear={() => setTierGroups([])}
+            toolbar={
+              <TierToolbar
+                stores={otherStores}
+                onCopy={copyTiers}
+                onPaste={pasteTiers}
+                onLoadFrom={loadTiersFrom}
+              />
+            }
           />
-        </Field>
-      </div>
-      <Field
-        label="Address cooldown (seconds)"
-        hint="Applies to releases AFTER this change; stamped cooldowns are unaffected."
-      >
-        <Input
-          value={cooldown}
-          onChange={(e) => setCooldown(e.target.value)}
-          placeholder="0 – 604800"
-          inputMode="numeric"
-          className="font-mono"
-        />
-      </Field>
-
-      <ConfirmationThresholdsEditor
-        rows={thresholdRows}
-        defaults={defaultByChainId}
-        availableChains={chainsQ.data?.chains ?? []}
-        onAdd={addThresholdRow}
-        onUpdate={updateThresholdRow}
-        onRemove={removeThresholdRow}
-        onClear={() => setThresholdRows([])}
-      />
-
-      <ConfirmationTiersEditor
-        groups={tierGroups}
-        availableChains={chainsQ.data?.chains ?? []}
-        onAddGroup={addTierGroup}
-        onUpdateGroup={updateTierGroup}
-        onRemoveGroup={removeTierGroup}
-        onAddRule={addTierRule}
-        onUpdateRule={updateTierRule}
-        onRemoveRule={removeTierRule}
-        onMoveRule={moveTierRule}
-        onClear={() => setTierGroups([])}
-      />
-
-      <Callout icon={CircleDashed}>
-        Tolerance, threshold + tier changes apply to{' '}
-        <span className="font-medium">new</span> invoices only — existing
-        invoices keep their snapshotted values.
-      </Callout>
-
-      <div className="flex justify-end border-t border-border pt-4">
-        <Button type="submit" size="sm" disabled={save.isPending}>
-          <Pencil className="size-3.5" />
+        </form>
+      </SheetBody>
+      <SheetFooter className="justify-between">
+        <div className="flex min-w-0 items-center gap-2 text-xs text-[var(--fg-2)]">
+          <CircleDashed className="size-4 shrink-0" />
+          <span>
+            Tolerance, threshold + tier changes apply to{' '}
+            <span className="font-medium text-foreground">new</span> invoices only —
+            existing invoices keep their snapshotted values.
+          </span>
+        </div>
+        <Button type="submit" form={tiersFormId} size="sm" className="shrink-0" disabled={save.isPending}>
+          <Save className="size-4" />
           {save.isPending ? 'Saving…' : 'Save changes'}
         </Button>
-      </div>
-    </form>
+      </SheetFooter>
+    </>
+  )
+}
+
+/** Validates a pasted `confirmationTiers` JSON blob (shape only). */
+function parseTiersJson(
+  text: string,
+):
+  | { ok: true; value: Record<string, ConfirmationTierRule[]> }
+  | { ok: false; error: string } {
+  let raw: unknown
+  try {
+    raw = JSON.parse(text.trim())
+  } catch {
+    return { ok: false, error: 'Clipboard does not hold valid JSON' }
+  }
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, error: 'Expected an object of "chainId:TOKEN" → rules' }
+  }
+  const out: Record<string, ConfirmationTierRule[]> = {}
+  for (const [key, rules] of Object.entries(raw as Record<string, unknown>)) {
+    if (!/^\d+:[A-Za-z0-9]+$/.test(key)) {
+      return { ok: false, error: `Bad tier key "${key}" — expected "chainId:TOKEN"` }
+    }
+    if (!Array.isArray(rules)) {
+      return { ok: false, error: `${key}: rules must be an array` }
+    }
+    const list: ConfirmationTierRule[] = []
+    for (const r of rules as unknown[]) {
+      if (r == null || typeof r !== 'object' || Array.isArray(r)) {
+        return { ok: false, error: `${key}: each rule must be an object` }
+      }
+      const rule = r as Record<string, unknown>
+      if (typeof rule.confirmations !== 'number' || !Number.isInteger(rule.confirmations)) {
+        return { ok: false, error: `${key}: confirmations must be an integer` }
+      }
+      if (rule.op == null) {
+        list.push({ confirmations: rule.confirmations })
+        continue
+      }
+      if (!TIER_OPS.includes(rule.op as ConfirmationTierOp)) {
+        return { ok: false, error: `${key}: unknown operator "${String(rule.op)}"` }
+      }
+      if (typeof rule.amount !== 'string' && typeof rule.amount !== 'number') {
+        return { ok: false, error: `${key}: rule with an operator needs an amount` }
+      }
+      list.push({
+        op: rule.op as ConfirmationTierOp,
+        amount: String(rule.amount),
+        confirmations: rule.confirmations,
+      })
+    }
+    out[key.split(':')[0] + ':' + key.split(':')[1].toUpperCase()] = list
+  }
+  return { ok: true, value: out }
+}
+
+function ToolIconButton({
+  label,
+  onClick,
+  children,
+  disabled,
+}: {
+  label: string
+  onClick?: () => void
+  children: React.ReactNode
+  disabled?: boolean
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          aria-label={label}
+          onClick={onClick}
+          disabled={disabled}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+function TierToolbar({
+  stores,
+  onCopy,
+  onPaste,
+  onLoadFrom,
+}: {
+  stores: Merchant[]
+  onCopy: () => void
+  onPaste: () => void
+  onLoadFrom: (store: Merchant) => void
+}) {
+  const tierCount = (s: Merchant) =>
+    s.confirmationTiers ? Object.keys(s.confirmationTiers).length : 0
+  return (
+    <div className="flex items-center gap-0.5 rounded-[10px] border border-border p-0.5">
+      <ToolIconButton label="Copy tiers as JSON" onClick={onCopy}>
+        <Copy className="size-4" />
+      </ToolIconButton>
+      <ToolIconButton label="Paste tiers from clipboard" onClick={onPaste}>
+        <ClipboardText className="size-4" />
+      </ToolIconButton>
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Copy from store"
+                disabled={stores.length === 0}
+              >
+                <Store className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>Copy from store…</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end" className="max-h-72 w-60 overflow-y-auto">
+          <DropdownMenuLabel>Load tiers from</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {stores.map((s) => {
+            const n = tierCount(s)
+            return (
+              <DropdownMenuItem key={s.id} disabled={n === 0} onSelect={() => onLoadFrom(s)}>
+                <RowAvatar text={initialsOf(s.name)} className="size-6" />
+                <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                <span className="figure text-xs text-[var(--fg-3)]">{n === 0 ? 'none' : n}</span>
+              </DropdownMenuItem>
+            )
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
+function RowIconButton({
+  label,
+  onClick,
+  disabled,
+  danger,
+  children,
+}: {
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  danger?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+      className={cn(
+        'inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-[10px] text-[var(--fg-3)] transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+        danger
+          ? 'hover:bg-[var(--danger-bg)] hover:text-destructive'
+          : 'hover:bg-[var(--bg-hover)] hover:text-foreground',
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+function AddRowButton({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void
+  disabled?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-[10px] border border-dashed border-[var(--border-strong)] px-3 text-sm text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <Plus className="size-4" />
+      {children}
+    </button>
   )
 }
 
@@ -1691,127 +2267,114 @@ function ConfirmationThresholdsEditor({
     [availableChains],
   )
   return (
-    <Field
-      label={
+    <SheetSection
+      title={
         <span className="flex items-center gap-1.5">
-          <Layers className="size-3.5 text-[var(--fg-3)]" />
-          Confirmation thresholds (per chain)
+          Confirmations per chain
+          <InfoTip>
+            {rows.length === 0
+              ? 'Empty = use gateway defaults for every chain. Set a per-chain override to tighten or loosen finality for this store.'
+              : 'Lower-than-default values trade reorg risk for faster finality and surface a WARN in gateway logs. 0 = zero-conf: on Bitcoin/Litecoin the payment settles once the mempool holds a non-replaceable (non-RBF) transaction carrying it; on other chains 0 settles at the first block.'}
+          </InfoTip>
         </span>
       }
-      right={
+      icon={Layers}
+      action={
         rows.length > 0 ? (
-          <button
-            type="button"
-            onClick={onClear}
-            className="cursor-pointer text-xs text-[var(--fg-2)] hover:text-destructive"
-          >
+          <Button type="button" size="sm" variant="ghost" onClick={onClear}>
             Clear all
-          </button>
+          </Button>
         ) : null
-      }
-      hint={
-        rows.length === 0
-          ? 'Empty = use gateway defaults for every chain. Set a per-chain override to tighten or loosen finality for this store.'
-          : 'Lower-than-default values trade reorg risk for faster finality and surface a WARN in gateway logs. 0 = zero-conf: on Bitcoin/Litecoin the payment settles once the mempool holds a non-replaceable (non-RBF) transaction carrying it; on other chains 0 settles at the first block.'
       }
     >
       <div className="space-y-2">
-        {rows.map((row) => {
-          const def = row.chainId.trim()
-            ? defaults.get(row.chainId.trim()) ?? null
-            : null
-          const parsedV = /^\d+$/.test(row.value.trim())
-            ? parseInt(row.value.trim(), 10)
-            : null
-          const belowDefault =
-            def != null && parsedV != null && parsedV < def
-          const info = row.chainId.trim()
-            ? chainInfo(parseInt(row.chainId.trim(), 10))
-            : null
-          return (
-            <div
-              key={row.id}
-              className={
-                'grid grid-cols-[minmax(0,1.4fr)_96px_auto] items-start gap-2 rounded-md border p-2 ' +
-                (belowDefault
-                  ? 'border-[var(--warn-border)] bg-[var(--warn-bg)]'
-                  : 'border-border bg-[var(--bg-2)]')
-              }
-            >
-              <div className="space-y-1">
-                <Select
-                  value={row.chainId}
-                  onValueChange={(v) => onUpdate(row.id, { chainId: v })}
+        {rows.length === 0 && (
+          <p className="text-sm text-[var(--fg-2)]">Using gateway defaults.</p>
+        )}
+        {rows.length > 0 && (
+          <div className="divide-y divide-border rounded-xl border border-border">
+            {rows.map((row) => {
+              const def = row.chainId.trim()
+                ? defaults.get(row.chainId.trim()) ?? null
+                : null
+              const parsedV = /^\d+$/.test(row.value.trim())
+                ? parseInt(row.value.trim(), 10)
+                : null
+              const belowDefault =
+                def != null && parsedV != null && parsedV < def
+              const info = row.chainId.trim()
+                ? chainInfo(parseInt(row.chainId.trim(), 10))
+                : null
+              return (
+                <div
+                  key={row.id}
+                  className={cn(
+                    'space-y-1.5 px-3 py-2.5 first:rounded-t-xl last:rounded-b-xl',
+                    belowDefault && 'bg-[var(--warn-bg)]',
+                  )}
                 >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Pick a chain" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {chainOptions.map((c) => (
-                      <SelectItem key={c.chainId} value={String(c.chainId)}>
-                        <span className="flex items-center gap-2">
-                          <span>{c.displayName}</span>
-                          <span className="font-mono text-2xs text-[var(--fg-3)]">
-                            {c.chainId}
-                          </span>
-                          <span className="text-2xs text-[var(--fg-3)]">
-                            default {c.confirmationsRequired}
-                          </span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {info && def != null && (
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-2xs text-[var(--fg-2)]">
-                    <span className="font-mono">{info.short}</span>
-                    <span>·</span>
-                    <span>
-                      gateway default{' '}
-                      <span className="font-mono text-[var(--fg-1)]">
-                        {def}
-                      </span>{' '}
-                      blocks
-                    </span>
-                    {belowDefault && (
-                      <span className="inline-flex items-center gap-1 text-warn">
-                        <AlertTriangle className="size-3" /> below default
-                      </span>
-                    )}
+                  <div className="grid grid-cols-[minmax(0,1fr)_96px_auto] items-center gap-2">
+                    <Select
+                      value={row.chainId}
+                      onValueChange={(v) => onUpdate(row.id, { chainId: v })}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="Pick a chain" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {chainOptions.map((c) => (
+                          <SelectItem key={c.chainId} value={String(c.chainId)}>
+                            <span className="flex items-center gap-2">
+                              <ChainIcon chainId={c.chainId} size={16} />
+                              <span>{c.displayName}</span>
+                              <span className="figure text-xs text-[var(--fg-3)]">
+                                default {c.confirmationsRequired}
+                              </span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={row.value}
+                      onChange={(e) =>
+                        onUpdate(row.id, { value: e.target.value })
+                      }
+                      placeholder="blocks"
+                      inputMode="numeric"
+                      aria-label="Confirmations"
+                      className="figure h-9"
+                    />
+                    <RowIconButton label="Remove override" danger onClick={() => onRemove(row.id)}>
+                      <X className="size-4" />
+                    </RowIconButton>
                   </div>
-                )}
-              </div>
-              <Input
-                value={row.value}
-                onChange={(e) =>
-                  onUpdate(row.id, { value: e.target.value })
-                }
-                placeholder="blocks"
-                inputMode="numeric"
-                className="h-8 font-mono text-xs"
-              />
-              <button
-                type="button"
-                onClick={() => onRemove(row.id)}
-                className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-[var(--fg-3)] transition-colors hover:bg-[var(--danger-bg)] hover:text-destructive"
-                title="Remove override"
-                aria-label="Remove override"
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
-          )
-        })}
-        <button
-          type="button"
-          onClick={onAdd}
-          className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-[var(--border-strong)] px-2.5 text-xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
-        >
-          <Plus className="size-3.5" />
-          Add chain override
-        </button>
+                  {info && def != null && (
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-xs text-[var(--fg-2)]">
+                      <span className="font-mono">{info.short}</span>
+                      <span>·</span>
+                      <span>
+                        gateway default{' '}
+                        <span className="figure font-medium text-[var(--fg-1)]">
+                          {def}
+                        </span>{' '}
+                        blocks
+                      </span>
+                      {belowDefault && (
+                        <span className="inline-flex items-center gap-1 font-medium text-[var(--st-warn)]">
+                          <AlertTriangle className="size-3.5" /> below default
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <AddRowButton onClick={onAdd}>Add chain override</AddRowButton>
       </div>
-    </Field>
+    </SheetSection>
   )
 }
 
@@ -1826,6 +2389,7 @@ function ConfirmationTiersEditor({
   onRemoveRule,
   onMoveRule,
   onClear,
+  toolbar,
 }: {
   groups: TierGroup[]
   availableChains: ChainInventoryEntry[]
@@ -1841,6 +2405,7 @@ function ConfirmationTiersEditor({
   onRemoveRule: (groupId: string, ruleId: string) => void
   onMoveRule: (groupId: string, ruleId: string, delta: number) => void
   onClear: () => void
+  toolbar?: React.ReactNode
 }) {
   const chainOptions = React.useMemo(
     () =>
@@ -1855,31 +2420,33 @@ function ConfirmationTiersEditor({
   }
 
   return (
-    <Field
-      label={
+    <SheetSection
+      title={
         <span className="flex items-center gap-1.5">
-          <Layers className="size-3.5 text-[var(--fg-3)]" />
-          Amount-tiered rules (per chain &amp; token)
+          Amount tiers
+          <InfoTip>
+            {groups.length === 0
+              ? 'Optional. Override confirmations by amount tier — e.g. "<$3 LTC: 0 conf (non-RBF mempool), otherwise 12". Falls back to flat thresholds then gateway defaults if no rule matches.'
+              : 'Rules evaluate top-down — first matching predicate wins. A rule with no operator acts as a catch-all and should sit last.'}
+          </InfoTip>
         </span>
       }
-      right={
-        groups.length > 0 ? (
-          <button
-            type="button"
-            onClick={onClear}
-            className="cursor-pointer text-xs text-[var(--fg-2)] hover:text-destructive"
-          >
-            Clear all
-          </button>
-        ) : null
-      }
-      hint={
-        groups.length === 0
-          ? 'Optional. Override confirmations by amount tier — e.g. "<$3 LTC: 0 conf (non-RBF mempool), otherwise 12". Falls back to flat thresholds then gateway defaults if no rule matches.'
-          : 'Rules evaluate top-down — first matching predicate wins. A rule with no operator acts as a catch-all and should sit last.'
+      icon={Layers}
+      action={
+        <div className="flex items-center gap-1.5">
+          {groups.length > 0 && (
+            <Button type="button" size="sm" variant="ghost" onClick={onClear}>
+              Clear all
+            </Button>
+          )}
+          {toolbar}
+        </div>
       }
     >
       <div className="space-y-3">
+        {groups.length === 0 && (
+          <p className="text-sm text-[var(--fg-2)]">No tier rules.</p>
+        )}
         {groups.map((group) => {
           const tokenList = tokensFor(group.chainId)
           const info = group.chainId.trim()
@@ -1888,91 +2455,82 @@ function ConfirmationTiersEditor({
           return (
             <div
               key={group.id}
-              className="space-y-2 rounded-md border border-border bg-[var(--bg-2)] p-2"
+              className="overflow-hidden rounded-xl border border-border"
             >
-              <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] items-center gap-2">
-                <Select
-                  value={group.chainId}
-                  onValueChange={(v) =>
-                    onUpdateGroup(group.id, { chainId: v, token: '' })
-                  }
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Pick a chain" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {chainOptions.map((c) => (
-                      <SelectItem key={c.chainId} value={String(c.chainId)}>
-                        <span className="flex items-center gap-2">
-                          <span>{c.displayName}</span>
-                          <span className="font-mono text-2xs text-[var(--fg-3)]">
-                            {c.chainId}
+              <div className="space-y-1.5 border-b border-border bg-[var(--bg-2)] px-3 py-2.5">
+                <div className="grid grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_auto] items-center gap-2">
+                  <Select
+                    value={group.chainId}
+                    onValueChange={(v) =>
+                      onUpdateGroup(group.id, { chainId: v, token: '' })
+                    }
+                  >
+                    <SelectTrigger className="h-9 bg-card">
+                      <SelectValue placeholder="Pick a chain" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {chainOptions.map((c) => (
+                        <SelectItem key={c.chainId} value={String(c.chainId)}>
+                          <span className="flex items-center gap-2">
+                            <ChainIcon chainId={c.chainId} size={16} />
+                            <span>{c.displayName}</span>
                           </span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={group.token}
-                  onValueChange={(v) => onUpdateGroup(group.id, { token: v })}
-                  disabled={tokenList.length === 0}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue
-                      placeholder={
-                        group.chainId
-                          ? tokenList.length === 0
-                            ? 'No tokens'
-                            : 'Pick token'
-                          : 'Pick chain first'
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tokenList.map((t) => (
-                      <SelectItem key={t.symbol} value={t.symbol}>
-                        <span className="flex items-center gap-2">
-                          <span className="font-mono">{t.symbol}</span>
-                          <span className="text-2xs text-[var(--fg-3)]">
-                            {t.displayName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={group.token}
+                    onValueChange={(v) => onUpdateGroup(group.id, { token: v })}
+                    disabled={tokenList.length === 0}
+                  >
+                    <SelectTrigger className="h-9 bg-card">
+                      <SelectValue
+                        placeholder={
+                          group.chainId
+                            ? tokenList.length === 0
+                              ? 'No tokens'
+                              : 'Pick token'
+                            : 'Pick chain first'
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tokenList.map((t) => (
+                        <SelectItem key={t.symbol} value={t.symbol}>
+                          <span className="flex items-center gap-2">
+                            <TokenIcon symbol={t.symbol} size={16} />
+                            <span className="font-medium">{t.symbol}</span>
+                            <span className="text-xs text-[var(--fg-3)]">
+                              {t.displayName}
+                            </span>
                           </span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <button
-                  type="button"
-                  onClick={() => onRemoveGroup(group.id)}
-                  className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-[var(--fg-3)] transition-colors hover:bg-[var(--danger-bg)] hover:text-destructive"
-                  title="Remove tier group"
-                  aria-label="Remove tier group"
-                >
-                  <X className="size-3.5" />
-                </button>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <RowIconButton label="Remove tier group" danger onClick={() => onRemoveGroup(group.id)}>
+                    <Trash2 className="size-4" />
+                  </RowIconButton>
+                </div>
+                {info && group.chainId && (
+                  <div className="px-1 text-xs text-[var(--fg-2)]">
+                    Key{' '}
+                    <span className="font-mono text-[var(--fg-1)]">
+                      {group.chainId}:{group.token || '<token>'}
+                    </span>{' '}
+                    · {info.short}
+                  </div>
+                )}
               </div>
 
-              {info && group.chainId && (
-                <div className="px-1 text-2xs text-[var(--fg-2)]">
-                  Key{' '}
-                  <span className="font-mono text-[var(--fg-1)]">
-                    {group.chainId}:{group.token || '<token>'}
-                  </span>{' '}
-                  · {info.short}
-                </div>
-              )}
-
-              <div className="space-y-1.5">
+              <div className="divide-y divide-border">
                 {group.rules.map((rule, idx) => {
                   const isCatchAll = rule.op === ''
                   const last = idx === group.rules.length - 1
                   return (
-                    <div
-                      key={rule.id}
-                      className="space-y-1 rounded-md border border-border bg-card p-1.5"
-                    >
-                      <div className="grid grid-cols-2 items-center gap-1.5 sm:grid-cols-[150px_minmax(0,1.2fr)_88px_auto]">
+                    <div key={rule.id} className="space-y-1.5 px-3 py-2.5">
+                      <div className="grid grid-cols-2 items-center gap-2 sm:grid-cols-[150px_minmax(0,1fr)_80px_auto]">
                         <Select
                           value={rule.op === '' ? '__any__' : rule.op}
                           onValueChange={(v) =>
@@ -1982,7 +2540,7 @@ function ConfirmationTiersEditor({
                             })
                           }
                         >
-                          <SelectTrigger className="h-7 px-1.5 text-xs">
+                          <SelectTrigger className="h-8 px-2 text-sm">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -2020,7 +2578,8 @@ function ConfirmationTiersEditor({
                           }
                           disabled={isCatchAll}
                           inputMode="decimal"
-                          className="h-7 font-mono text-xs"
+                          aria-label="Amount"
+                          className="figure h-8"
                         />
                         <Input
                           value={rule.confirmations}
@@ -2031,71 +2590,58 @@ function ConfirmationTiersEditor({
                           }
                           placeholder="conf"
                           inputMode="numeric"
-                          className="h-7 font-mono text-xs"
+                          aria-label="Confirmations"
+                          className="figure h-8"
                         />
                         <div className="flex items-center justify-end">
-                          <button
-                            type="button"
+                          <RowIconButton
+                            label="Move up"
                             onClick={() => onMoveRule(group.id, rule.id, -1)}
                             disabled={idx === 0}
-                            className="inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                            title="Move up"
                           >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
+                            <ChevronUp className="size-4" />
+                          </RowIconButton>
+                          <RowIconButton
+                            label="Move down"
                             onClick={() => onMoveRule(group.id, rule.id, 1)}
                             disabled={last}
-                            className="inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                            title="Move down"
                           >
-                            ↓
-                          </button>
-                          <button
-                            type="button"
+                            <ChevronDown className="size-4" />
+                          </RowIconButton>
+                          <RowIconButton
+                            label="Remove rule"
+                            danger
                             onClick={() => onRemoveRule(group.id, rule.id)}
-                            className="inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-[var(--fg-3)] transition-colors hover:bg-[var(--danger-bg)] hover:text-destructive"
-                            title="Remove rule"
-                            aria-label="Remove rule"
                           >
-                            <X className="size-3" />
-                          </button>
+                            <X className="size-4" />
+                          </RowIconButton>
                         </div>
                       </div>
-                      <div className="px-1 text-2xs text-[var(--fg-2)]">
+                      <div className="px-1 text-xs text-[var(--fg-2)]">
                         {describeTierRule(rule, group.token)}
                       </div>
                     </div>
                   )
                 })}
-                <button
-                  type="button"
-                  onClick={() => onAddRule(group.id)}
-                  disabled={group.rules.length >= 20}
-                  className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-dashed border-[var(--border-strong)] px-2 text-xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Plus className="size-3" />
-                  Add rule {group.rules.length >= 20 ? '(max 20)' : ''}
-                </button>
+                <div className="px-3 py-2.5">
+                  <AddRowButton
+                    onClick={() => onAddRule(group.id)}
+                    disabled={group.rules.length >= 20}
+                  >
+                    Add rule {group.rules.length >= 20 ? '(max 20)' : ''}
+                  </AddRowButton>
+                </div>
               </div>
             </div>
           )
         })}
-        <button
-          type="button"
-          onClick={onAddGroup}
-          className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-[var(--border-strong)] px-2.5 text-xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
-        >
-          <Plus className="size-3.5" />
-          Add (chain, token) tier group
-        </button>
+        <AddRowButton onClick={onAddGroup}>Add (chain, token) tier group</AddRowButton>
       </div>
-    </Field>
+    </SheetSection>
   )
 }
 
-/* ── sheet: danger ───────────────────────────────────────── */
+/* ── sheet: settings (key, status, danger zone) ──────────── */
 
 function DangerSection({
   m,
@@ -2153,94 +2699,107 @@ function DangerSection({
   })
 
   return (
-    <div className="space-y-3">
-      {m.source === 'gateway-only' && (
-        <DangerRow
-          title="Attach existing key"
-          body="Already have the plaintext from elsewhere (e.g. created via Postman)? Paste it here to bind it to this store without rotating."
-          icon={<Download className="size-4" />}
-          action={
-            <Button size="sm" onClick={() => setAttachOpen(true)}>
-              Attach
-            </Button>
-          }
-        />
-      )}
+    <>
+      <SheetBody className="fade-in">
+        <div className="space-y-6">
+          <SheetSection title="API key" icon={KeyRound}>
+            <div className="divide-y divide-border rounded-xl border border-border">
+              {m.source === 'gateway-only' && (
+                <ActionRow
+                  title="Attach existing key"
+                  body="Already have the plaintext from elsewhere (e.g. created via Postman)? Paste it here to bind it to this store without rotating."
+                  icon={Download}
+                  action={
+                    <Button size="sm" onClick={() => setAttachOpen(true)}>
+                      Attach
+                    </Button>
+                  }
+                />
+              )}
+              <ActionRow
+                title={m.source === 'gateway-only' ? 'Rotate key' : 'Rotate API key'}
+                body={
+                  m.source === 'gateway-only'
+                    ? "Use this only if you've lost the plaintext. Generates a fresh sk_… and invalidates the old key — any integrations still using it will break."
+                    : 'Generates a fresh sk_… on the gateway and invalidates the current key. The new plaintext is shown once.'
+                }
+                icon={KeyRound}
+                action={
+                  <Button
+                    size="sm"
+                    variant={m.source === 'gateway-only' ? 'outline' : 'default'}
+                    onClick={() => setConfirmRotate(true)}
+                  >
+                    Rotate
+                  </Button>
+                }
+              />
+            </div>
+          </SheetSection>
 
-      <DangerRow
-        title={m.source === 'gateway-only' ? 'Rotate key' : 'Rotate API key'}
-        body={
-          m.source === 'gateway-only'
-            ? "Use this only if you've lost the plaintext. Generates a fresh sk_… and invalidates the old key — any integrations still using it will break."
-            : 'Generates a fresh sk_… on the gateway and invalidates the current key. The new plaintext is shown once.'
-        }
-        icon={<KeyRound className="size-4" />}
-        action={
-          <Button
-            size="sm"
-            variant={m.source === 'gateway-only' ? 'outline' : 'default'}
-            onClick={() => setConfirmRotate(true)}
-          >
-            Rotate
-          </Button>
-        }
-      />
-
-      {m.active === true && (
-        <DangerRow
-          title="Deactivate store"
-          body="Inbound API requests with this store's key are rejected while inactive. Reactivating restores the same key."
-          icon={<Ban className="size-4" />}
-          action={
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setActive.mutate(false)}
-              disabled={setActive.isPending}
-            >
-              Deactivate
-            </Button>
-          }
-        />
-      )}
-      {m.active === false && (
-        <DangerRow
-          title="Activate store"
-          body="Re-enable inbound requests with this store's API key."
-          icon={<Power className="size-4" />}
-          action={
-            <Button
-              size="sm"
-              onClick={() => setActive.mutate(true)}
-              disabled={setActive.isPending}
-            >
-              Activate
-            </Button>
-          }
-        />
-      )}
+          {(m.active === true || m.active === false) && (
+            <SheetSection title="Status" icon={Power}>
+              <div className="divide-y divide-border rounded-xl border border-border">
+                {m.active === true && (
+                  <ActionRow
+                    title="Deactivate store"
+                    body="Inbound API requests with this store's key are rejected while inactive. Reactivating restores the same key."
+                    icon={Ban}
+                    action={
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setActive.mutate(false)}
+                        disabled={setActive.isPending}
+                      >
+                        Deactivate
+                      </Button>
+                    }
+                  />
+                )}
+                {m.active === false && (
+                  <ActionRow
+                    title="Activate store"
+                    body="Re-enable inbound requests with this store's API key."
+                    icon={Power}
+                    action={
+                      <Button
+                        size="sm"
+                        onClick={() => setActive.mutate(true)}
+                        disabled={setActive.isPending}
+                      >
+                        Activate
+                      </Button>
+                    }
+                  />
+                )}
+              </div>
+            </SheetSection>
+          )}
+        </div>
+      </SheetBody>
 
       {m.source !== 'gateway-only' && (
-        <DangerRow
-          title="Remove from dashboard"
-          body="Drops the sealed API key from KV. The store stays on the gateway; re-import to get it back."
-          icon={<Trash2 className="size-4" />}
-          tone="destructive"
-          action={
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => setConfirmRemove(true)}
-            >
-              Remove
-            </Button>
-          }
-        />
+        <SheetFooter className="justify-between">
+          <div className="min-w-0 text-xs text-[var(--fg-2)]">
+            <span className="font-medium text-destructive">Remove from dashboard</span> · Drops
+            the sealed API key from KV. The store stays on the gateway; re-import to get it back.
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 text-destructive hover:bg-[var(--danger-bg)] hover:text-destructive"
+            onClick={() => setConfirmRemove(true)}
+          >
+            <Trash2 className="size-4" /> Remove
+          </Button>
+        </SheetFooter>
       )}
 
       <ConfirmDialog
         open={confirmRotate}
         onOpenChange={setConfirmRotate}
+        icon={KeyRound}
         title="Rotate API key?"
         body="The gateway generates a fresh sk_… and invalidates the current key. The new plaintext is shown once and sealed here."
         cta="Rotate key"
@@ -2258,6 +2817,7 @@ function DangerSection({
       <ConfirmDialog
         open={confirmRemove}
         onOpenChange={setConfirmRemove}
+        icon={Trash2}
         title="Remove local record?"
         body="Removes the store from this dashboard and drops the sealed key. Does not delete it on the gateway."
         cta="Remove"
@@ -2271,69 +2831,38 @@ function DangerSection({
         onOpenChange={setAttachOpen}
         prefill={{ id: m.id, name: m.name, lockId: true }}
       />
-    </div>
+    </>
   )
 }
 
-function DangerRow({
+function ActionRow({
   title,
   body,
-  icon,
+  icon: Icon,
   action,
-  tone,
 }: {
   title: string
   body: string
-  icon: React.ReactNode
+  icon: React.ComponentType<{ className?: string }>
   action: React.ReactNode
-  tone?: 'destructive'
 }) {
   return (
-    <div
-      className={cn(
-        'flex flex-wrap items-start justify-between gap-x-4 gap-y-3 rounded-lg border px-4 py-3',
-        tone === 'destructive'
-          ? 'border-[var(--danger-border)] bg-[var(--danger-bg)]'
-          : 'border-border bg-card',
-      )}
-    >
-      <div className="flex min-w-0 flex-1 basis-60 gap-3">
-        <div
-          className={cn(
-            'grid size-8 shrink-0 place-items-center rounded-md border',
-            tone === 'destructive'
-              ? 'border-[var(--danger-border)] bg-card text-destructive'
-              : 'border-border bg-[var(--bg-2)] text-[var(--fg-2)]',
-          )}
-        >
-          {icon}
-        </div>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3.5">
+      <div className="flex min-w-0 flex-1 basis-64 gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-[var(--bg-2)] text-[var(--fg-1)] ring-1 ring-border">
+          <Icon className="size-4" />
+        </span>
         <div className="min-w-0">
           <div className="text-sm font-medium">{title}</div>
           <p className="mt-0.5 text-xs text-pretty text-[var(--fg-2)]">{body}</p>
         </div>
       </div>
-      <div className="shrink-0 self-center">{action}</div>
+      <div className="shrink-0">{action}</div>
     </div>
   )
 }
 
 /* ── shared primitives ───────────────────────────────────── */
-
-function KeyValueGrid({ rows }: { rows: Array<[string, React.ReactNode]> }) {
-  return (
-    <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-y-3">
-      {rows.map(([k, v], i) => (
-        <React.Fragment key={i}>
-          <dt className="text-xs text-[var(--fg-2)] max-sm:mt-2 max-sm:first:mt-0">
-            {k}
-          </dt>
-          <dd className="min-w-0 text-sm break-words">{v}</dd>
-        </React.Fragment>
-      ))}
-    </dl>
-  )
-}
 
 function ConfirmDialog({
   open,
@@ -2344,6 +2873,7 @@ function ConfirmDialog({
   destructive,
   pending,
   onConfirm,
+  icon: Icon,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
@@ -2353,11 +2883,24 @@ function ConfirmDialog({
   destructive?: boolean
   pending?: boolean
   onConfirm: () => void
+  icon?: React.ComponentType<{ className?: string }>
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-md">
         <DialogHeader>
+          {Icon && (
+            <span
+              className={cn(
+                'mb-2 grid size-10 place-items-center rounded-xl ring-1',
+                destructive
+                  ? 'bg-[var(--danger-bg)] text-destructive ring-[var(--danger-border)]'
+                  : 'bg-[var(--bg-2)] text-foreground ring-border',
+              )}
+            >
+              <Icon className="size-5" />
+            </span>
+          )}
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{body}</DialogDescription>
         </DialogHeader>
@@ -2393,6 +2936,9 @@ function RevealOnceDialog({
     <Dialog open={!!value} onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
+          <span className="mb-2 grid size-10 place-items-center rounded-xl bg-[var(--warn-bg)] text-[var(--st-warn)] ring-1 ring-[var(--warn-border)]">
+            <KeyRound className="size-5" />
+          </span>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
@@ -2402,7 +2948,7 @@ function RevealOnceDialog({
             icon={KeyRound}
             title="Copy it now — it won't be shown again."
           >
-            <div className="mt-2 flex items-start gap-2 rounded-md border border-border bg-card px-3 py-2.5">
+            <div className="mt-2 flex items-start gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
               <code className="min-w-0 flex-1 font-mono text-sm break-all text-foreground select-all">
                 {value}
               </code>
@@ -2420,40 +2966,57 @@ function RevealOnceDialog({
 
 /* ── loading / empty ─────────────────────────────────────── */
 
-function EmptyState({
-  onCreate,
-  onImport,
-}: {
-  onCreate: () => void
-  onImport: () => void
-}) {
+function TableSkeleton() {
+  return (
+    <div>
+      <div className="h-11 border-b border-border" />
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex h-14 items-center gap-4 border-b border-border px-6 last:border-0"
+        >
+          <Skeleton className="size-8 rounded-full" />
+          <div className="w-48 space-y-1.5">
+            <Skeleton className="h-3.5 w-32" />
+            <Skeleton className="h-2.5 w-40" />
+          </div>
+          <Skeleton className="h-6 w-20 rounded-full" />
+          <Skeleton className="hidden h-3 w-20 sm:block" />
+          <div className="flex-1" />
+          <Skeleton className="h-3 w-14" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <SharedEmptyState
       framed
       icon={Store}
       title="No stores yet"
-      description="Create a store via the gateway's admin surface to receive the API key here, or import an existing key you already have."
+      description="Create one, or import a key you already have."
       action={
-        <div className="flex flex-wrap justify-center gap-2">
-          <Button size="sm" onClick={onCreate}>
-            <Plus className="size-3.5" /> Create store
-          </Button>
-          <Button size="sm" variant="outline" onClick={onImport}>
-            <Download className="size-3.5" /> Import key
-          </Button>
-        </div>
+        <Button size="sm" onClick={onCreate}>
+          <Plus className="size-4" /> New store
+        </Button>
       }
     />
   )
 }
 
-function NoMatch() {
+function NoMatch({ onClear }: { onClear: () => void }) {
   return (
     <SharedEmptyState
-      framed
       compact
       icon={Search}
-      title="No stores match the current filter."
+      title="No stores match"
+      action={
+        <Button size="sm" variant="outline" onClick={onClear}>
+          <X className="size-4" /> Clear filters
+        </Button>
+      }
     />
   )
 }
@@ -2520,87 +3083,86 @@ function CreateMerchantDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Create store</DialogTitle>
+          <DialogTitle>New store</DialogTitle>
           <DialogDescription>
-            Calls <span className="font-mono">POST /admin/merchants</span> on the
-            gateway. The returned plaintext API key is sealed and stored here.
+            Created on the gateway; its API key is sealed here.
           </DialogDescription>
         </DialogHeader>
         <form
-          className="space-y-4"
+          className="space-y-5"
           onSubmit={(e) => {
             e.preventDefault()
             create.mutate()
           }}
         >
-          <Field label="Name" hint="1–128 characters. Visible in reports.">
-            <Input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Acme Corp"
-              maxLength={128}
-              required
-            />
-          </Field>
-          <Field
-            label="Webhook URL (optional)"
-            hint="Setting this at creation mints a signing secret returned once."
-          >
-            <Input
-              value={webhookUrl}
-              onChange={(e) => setWebhookUrl(e.target.value)}
-              placeholder="https://store.example.com/hooks/gateway"
-              type="url"
-              className="font-mono"
-            />
-          </Field>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Name" hint="1–128 characters">
+              <Input
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Acme Corp"
+                maxLength={128}
+                required
+              />
+            </Field>
+            <Field
+              label="Webhook URL"
+              right={<span className="text-xs text-[var(--fg-3)]">Optional</span>}
+              hint="Mints a signing secret, shown once."
+            >
+              <Input
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+                placeholder="https://store.example.com/hooks"
+                type="url"
+                className="font-mono"
+              />
+            </Field>
+          </div>
 
-          <details className="rounded-md border border-border bg-[var(--bg-2)] open:pb-3">
-            <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-[var(--fg-1)] hover:text-foreground">
-              Advanced — payment tolerances &amp; cooldown
+          <details className="group rounded-xl border border-border">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <SlidersHorizontal className="size-4 text-[var(--fg-2)]" />
+              Advanced
+              <span className="text-[var(--fg-3)] font-normal">· tolerances &amp; cooldown</span>
+              <ChevronDown className="ml-auto size-4 text-[var(--fg-2)] transition-transform group-open:rotate-180" />
             </summary>
-            <div className="space-y-3 px-3 pt-1">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 border-t border-border px-4 py-4 sm:grid-cols-2">
+              <Field label="Under-pay (bps)" hint="0–2000 · 100 = 1% · default 0">
+                <Input
+                  value={under}
+                  onChange={(e) => setUnder(e.target.value)}
+                  placeholder="0"
+                  inputMode="numeric"
+                  className="figure"
+                />
+              </Field>
+              <Field label="Over-pay (bps)" hint="0–2000 · default 0">
+                <Input
+                  value={over}
+                  onChange={(e) => setOver(e.target.value)}
+                  placeholder="0"
+                  inputMode="numeric"
+                  className="figure"
+                />
+              </Field>
+              <div className="sm:col-span-2">
                 <Field
-                  label="Under-pay tolerance (bps)"
-                  hint="0–2000. 1 bps = 0.01% (50 = 0.5%, 100 = 1%). Default 0 (strict)."
+                  label="Address cooldown (seconds)"
+                  hint="0–604800 (7 days) · default 0, immediate reuse"
                 >
                   <Input
-                    value={under}
-                    onChange={(e) => setUnder(e.target.value)}
+                    value={cooldown}
+                    onChange={(e) => setCooldown(e.target.value)}
                     placeholder="0"
                     inputMode="numeric"
-                    className="font-mono"
-                  />
-                </Field>
-                <Field
-                  label="Over-pay tolerance (bps)"
-                  hint="0–2000. 1 bps = 0.01%. Default 0."
-                >
-                  <Input
-                    value={over}
-                    onChange={(e) => setOver(e.target.value)}
-                    placeholder="0"
-                    inputMode="numeric"
-                    className="font-mono"
+                    className="figure"
                   />
                 </Field>
               </div>
-              <Field
-                label="Address cooldown (seconds)"
-                hint="0–604800 (7 days). Default 0 — immediate reuse."
-              >
-                <Input
-                  value={cooldown}
-                  onChange={(e) => setCooldown(e.target.value)}
-                  placeholder="0"
-                  inputMode="numeric"
-                  className="font-mono"
-                />
-              </Field>
             </div>
           </details>
 
@@ -2675,7 +3237,7 @@ function ImportMerchantDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>
             {prefill?.lockId ? 'Attach existing key' : 'Import existing store'}
@@ -2683,44 +3245,53 @@ function ImportMerchantDialog({
           <DialogDescription>
             {prefill?.lockId
               ? 'Bind the plaintext API key you already have to this gateway store. Sealed locally with AES-GCM.'
-              : 'For stores created directly on the gateway. The plaintext key is AES-GCM sealed before writing to KV.'}
+              : 'For stores created directly on the gateway. The key is AES-GCM sealed before it is stored.'}
           </DialogDescription>
         </DialogHeader>
         <form
-          className="space-y-4"
+          className="space-y-5"
           onSubmit={(e) => {
             e.preventDefault()
             importIt.mutate()
           }}
         >
-          <Field
-            label="Store id"
-            hint={
-              prefill?.lockId
-                ? 'Bound to the gateway record — cannot be changed here.'
-                : 'Leave blank to generate a local id.'
-            }
-          >
-            <Input
-              value={id}
-              onChange={(e) => setId(e.target.value)}
-              placeholder="uuid-or-slug"
-              className="font-mono"
-              readOnly={prefill?.lockId}
-            />
-          </Field>
-          <Field label="Name">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Acme Corp"
-              maxLength={128}
-              required
-            />
-          </Field>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field
+              label="Store id"
+              right={
+                prefill?.lockId ? (
+                  <Lock className="size-3.5 text-[var(--fg-3)]" aria-label="Locked" />
+                ) : (
+                  <span className="text-xs text-[var(--fg-3)]">Optional</span>
+                )
+              }
+              hint={
+                prefill?.lockId
+                  ? 'Bound to the gateway record — cannot be changed here.'
+                  : 'Blank = generate a local id.'
+              }
+            >
+              <Input
+                value={id}
+                onChange={(e) => setId(e.target.value)}
+                placeholder="uuid-or-slug"
+                className={cn('font-mono', prefill?.lockId && 'bg-[var(--bg-2)] text-[var(--fg-2)]')}
+                readOnly={prefill?.lockId}
+              />
+            </Field>
+            <Field label="Name">
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Acme Corp"
+                maxLength={128}
+                required
+              />
+            </Field>
+          </div>
           <Field
             label="API key"
-            hint="Shown once by the gateway on create. Store it here to use it for invoice/payout calls."
+            hint="Shown once by the gateway on create. Stored here for invoice/payout calls."
           >
             <PasswordField
               value={apiKey}
@@ -2728,11 +3299,14 @@ function ImportMerchantDialog({
               placeholder="sk_…"
             />
           </Field>
-          <Field label="Webhook URL (optional)">
+          <Field
+            label="Webhook URL"
+            right={<span className="text-xs text-[var(--fg-3)]">Optional</span>}
+          >
             <Input
               value={webhookUrl}
               onChange={(e) => setWebhookUrl(e.target.value)}
-              placeholder="https://store.example.com/hooks/gateway"
+              placeholder="https://store.example.com/hooks"
               type="url"
               className="font-mono"
             />
@@ -2749,6 +3323,7 @@ function ImportMerchantDialog({
               type="submit"
               disabled={importIt.isPending || !name || apiKey.length < 8}
             >
+              <Download className="size-4" />
               {importIt.isPending ? 'Importing…' : 'Import'}
             </Button>
           </DialogFooter>

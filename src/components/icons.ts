@@ -116,5 +116,6 @@ export {
   ChartPieSliceIcon as ChartPie,
   SealWarningIcon as SealWarning,
   ArrowsLeftRightIcon as ArrowsLeftRight,
+  ClipboardTextIcon as ClipboardText,
 } from '@phosphor-icons/react'
 export type { Icon as IconType, IconProps } from '@phosphor-icons/react'

@@ -1,5 +1,6 @@
 import * as React from 'react'
-import { Plus, X } from '@/components/icons'
+import { Braces, ListBullets, Plus, X } from '@/components/icons'
+import { cn } from '@/lib/utils'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -78,13 +79,17 @@ export function MetadataEditor({ value, onChange }: Props) {
   }
 
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-card">
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-[var(--bg-2)] px-2 py-1.5">
-        <div className="inline-flex rounded-md border border-border bg-card p-0.5">
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-[var(--bg-2)] px-2.5 py-2">
+        <div
+          role="radiogroup"
+          aria-label="Metadata editor mode"
+          className="inline-flex h-8 items-center rounded-[10px] bg-[var(--bg-active)] p-0.5"
+        >
           {(
             [
-              { k: 'rows', label: 'Fields' },
-              { k: 'raw', label: 'Raw JSON' },
+              { k: 'rows', label: 'Fields', Icon: ListBullets },
+              { k: 'raw', label: 'JSON', Icon: Braces },
             ] as const
           ).map((opt) => {
             const active = mode === opt.k
@@ -92,14 +97,15 @@ export function MetadataEditor({ value, onChange }: Props) {
               <button
                 key={opt.k}
                 type="button"
+                role="radio"
+                aria-checked={active}
                 onClick={() => (opt.k === 'raw' ? switchToRaw() : switchToRows())}
-                className={
-                  'h-6 cursor-pointer rounded-sm px-2.5 text-xs font-medium transition-colors ' +
-                  (active
-                    ? 'bg-[var(--bg-active)] text-foreground'
-                    : 'text-[var(--fg-2)] hover:text-foreground')
-                }
+                className={cn(
+                  'inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-[var(--fg-2)] transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                  active && 'bg-[var(--bg-1)] text-foreground shadow-[var(--shadow-sm)]',
+                )}
               >
+                <opt.Icon className="size-3.5" />
                 {opt.label}
               </button>
             )
@@ -110,27 +116,27 @@ export function MetadataEditor({ value, onChange }: Props) {
             type="button"
             size="sm"
             variant="ghost"
-            className="h-7"
             onClick={() => setRows((r) => [...r, { key: '', value: '' }])}
           >
-            <Plus className="size-3.5" /> Field
+            <Plus className="size-4" /> Field
           </Button>
         )}
       </div>
 
       {mode === 'rows' ? (
-        <div className="space-y-1.5 p-2">
+        <div className="space-y-2 p-2.5">
           {rows.length === 0 ? (
-            <div className="px-1 py-3 text-center text-xs text-[var(--fg-2)]">
-              No fields. Click <span className="font-medium">+ Field</span> to
-              add key/value pairs, or switch to Raw JSON.
+            <div className="flex flex-col items-center gap-1 py-4 text-center">
+              <Braces className="size-5 text-[var(--fg-3)]" />
+              <div className="text-sm text-[var(--fg-2)]">No fields</div>
             </div>
           ) : (
             rows.map((r, i) => (
-              <div key={i} className="flex items-center gap-1.5">
+              <div key={i} className="flex items-center gap-2">
                 <Input
                   value={r.key}
                   placeholder="key"
+                  aria-label="Key"
                   onChange={(e) =>
                     setRows((cur) => {
                       const next = cur.slice()
@@ -138,12 +144,13 @@ export function MetadataEditor({ value, onChange }: Props) {
                       return next
                     })
                   }
-                  className="h-8 min-w-0 flex-1 font-mono text-xs"
+                  className="h-9 min-w-0 flex-1 font-mono text-sm"
                   maxLength={128}
                 />
                 <Input
                   value={r.value}
                   placeholder="value"
+                  aria-label="Value"
                   onChange={(e) =>
                     setRows((cur) => {
                       const next = cur.slice()
@@ -151,24 +158,25 @@ export function MetadataEditor({ value, onChange }: Props) {
                       return next
                     })
                   }
-                  className="h-8 min-w-0 flex-[2] font-mono text-xs"
+                  className="h-9 min-w-0 flex-[2] font-mono text-sm"
                 />
                 <button
                   type="button"
                   onClick={() =>
                     setRows((cur) => cur.filter((_, j) => j !== i))
                   }
-                  className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-[var(--fg-3)] transition-colors hover:bg-[var(--bg-hover)] hover:text-destructive"
+                  title="Remove field"
+                  className="grid size-9 shrink-0 cursor-pointer place-items-center rounded-[10px] text-[var(--fg-3)] transition-colors hover:bg-[var(--danger-bg)] hover:text-destructive"
                   aria-label="Remove field"
                 >
-                  <X className="size-3.5" />
+                  <X className="size-4" />
                 </button>
               </div>
             ))
           )}
         </div>
       ) : (
-        <div className="p-2">
+        <div className="p-2.5">
           <Textarea
             value={raw}
             onChange={(e) => {
@@ -176,11 +184,11 @@ export function MetadataEditor({ value, onChange }: Props) {
               setRawError(null)
             }}
             placeholder='{"orderId":"42"}'
-            rows={3}
-            className="font-mono text-xs"
+            rows={4}
+            className="font-mono text-sm"
           />
           {rawError && (
-            <div className="mt-1.5 text-xs text-destructive">{rawError}</div>
+            <div className="mt-2 text-xs text-destructive">{rawError}</div>
           )}
         </div>
       )}
