@@ -1066,7 +1066,7 @@ function AddressesTab({ data }: { data: InvoiceDetails }) {
             <Badge variant="default" className="uppercase">
               {r.family}
             </Badge>
-            <CopyButton value={r.address} />
+            <Addr value={r.address} chainId={r.family === chainInfo(data.invoice.chainId).family ? data.invoice.chainId : undefined} className="[&>span:first-child]:hidden" />
           </div>
           <div className="rounded-xl bg-white p-2 ring-1 ring-border">
             <QrCode value={r.address} size={168} />
@@ -1147,12 +1147,12 @@ function TransactionsTab({ data }: { data: InvoiceDetails }) {
             </div>
             <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1.5 border-t border-border pt-3 text-xs sm:grid-cols-[auto_1fr_auto]">
               <span className="text-[var(--fg-2)]">Tx</span>
-              <Addr value={t.txHash} />
+              <Addr value={t.txHash} chainId={t.chainId} kind="tx" />
               <span className="figure text-[var(--fg-2)] sm:row-span-2 sm:self-center">
                 <span className="font-semibold text-foreground">{t.confirmations}</span> conf
               </span>
               <span className="text-[var(--fg-2)]">From</span>
-              <Addr value={t.fromAddress} />
+              <Addr value={t.fromAddress} chainId={t.chainId} />
             </div>
           </li>
         )

@@ -23,15 +23,18 @@ export function CopyButton({ value, label, className, ...props }: CopyButtonProp
     <button
       type="button"
       onClick={onCopy}
-      title="Copy"
+      title={copied ? 'Copied' : 'Copy'}
+      aria-label="Copy"
       className={cn(
-        'inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground cursor-pointer',
-        copied && 'text-success hover:text-success',
+        label != null
+          ? 'inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground cursor-pointer'
+          : 'inline-grid size-6 shrink-0 place-items-center rounded-md text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+        copied && 'text-[var(--st-ok)] hover:text-[var(--st-ok)]',
         className,
       )}
       {...props}
     >
-      {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
       {label != null && <span>{copied ? 'Copied' : label}</span>}
     </button>
   )
