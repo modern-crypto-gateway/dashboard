@@ -154,7 +154,7 @@ export function DashboardPage() {
     {
       key: 'hooks',
       label: 'Dead webhooks',
-      hint: 'Merchant deliveries that gave up retrying',
+      hint: 'Store deliveries that gave up retrying',
       icon: Webhook,
       to: '/webhooks',
       count: deadHooks.data?.deliveries.length,

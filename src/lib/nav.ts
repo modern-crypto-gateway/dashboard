@@ -59,9 +59,9 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    group: 'Merchants',
+    group: 'Stores',
     items: [
-      { to: '/merchants', label: 'Merchants', icon: Store },
+      { to: '/stores', label: 'Stores', icon: Store },
       { to: '/webhooks', label: 'Webhooks', icon: Webhook },
     ],
   },

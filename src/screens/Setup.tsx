@@ -146,7 +146,7 @@ export function SetupScreen() {
             >
               <Field
                 label="Gateway base URL"
-                hint="The dashboard will proxy admin + merchant calls to this host."
+                hint="The dashboard will proxy admin + store calls to this host."
               >
                 <Input
                   autoFocus

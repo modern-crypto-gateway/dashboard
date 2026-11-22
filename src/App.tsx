@@ -110,6 +110,12 @@ function FullPageSpinner() {
   )
 }
 
+/** Redirect that keeps the query string and hash. */
+function RedirectTo({ to }: { to: string }) {
+  const loc = useLocation()
+  return <Navigate to={{ pathname: to, search: loc.search, hash: loc.hash }} replace />
+}
+
 function Bootstrap() {
   const setup = useSetupStatus()
   const session = useSession()
@@ -258,13 +264,15 @@ export default function App() {
                     }
                   />
                   <Route
-                    path="/merchants"
+                    path="/stores"
                     element={
                       <Suspense fallback={<Spinner />}>
                         <MerchantsPage />
                       </Suspense>
                     }
                   />
+                  {/* Old URL, kept so bookmarks and links still land. */}
+                  <Route path="/merchants" element={<RedirectTo to="/stores" />} />
                   <Route
                     path="/audit-address"
                     element={

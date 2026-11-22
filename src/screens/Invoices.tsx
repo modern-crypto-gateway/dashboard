@@ -408,7 +408,7 @@ export function InvoicesPage() {
       <PageHeader
         eyebrow="Payments"
         title="Invoices"
-        description="Every invoice the selected merchant has issued, straight from the gateway."
+        description="Every invoice the selected store has issued, straight from the gateway."
         actions={
           <>
             <MerchantSwitcher />
@@ -1389,7 +1389,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       framed
       icon={FileText}
       title="No invoices yet"
-      description="Create the first invoice for this merchant to start collecting payments."
+      description="Create the first invoice for this store to start collecting payments."
       action={
         <Button size="sm" onClick={onCreate}>
           <Plus className="size-3.5" /> Create invoice
@@ -1428,10 +1428,10 @@ function NoApiKeyCard({ merchant }: { merchant: Merchant }) {
           No API key for <span className="font-mono">{merchant.name}</span>
         </>
       }
-      description="The gateway sees this merchant, but no sealed API key is held here. Rotate or import the key from Merchants to list invoices."
+      description="The gateway sees this store, but no sealed API key is held here. Rotate or import the key from Stores to list invoices."
       action={
         <Button size="sm" asChild>
-          <Link to="/merchants">
+          <Link to="/stores">
             <KeyRound className="size-3.5" /> Set up API key
           </Link>
         </Button>
@@ -1447,12 +1447,12 @@ function NoMerchants() {
       <SharedEmptyState
         framed
         icon={FileText}
-        title="Add a merchant first"
-        description="Invoices are issued against a merchant's API key. Create or import one in Merchants."
+        title="Add a store first"
+        description="Invoices are issued against a store's API key. Create or import one in Stores."
         action={
           <Button size="sm" asChild>
-            <Link to="/merchants">
-              Go to Merchants <ChevronDown className="size-3.5 -rotate-90" />
+            <Link to="/stores">
+              Go to Stores <ChevronDown className="size-3.5 -rotate-90" />
             </Link>
           </Button>
         }
@@ -1589,7 +1589,7 @@ function CreateInvoiceDialog({
         <DialogHeader>
           <DialogTitle>Create invoice</DialogTitle>
           <DialogDescription>
-            Posts to the gateway with the selected merchant's API key. Pick
+            Posts to the gateway with the selected store's API key. Pick
             exactly one pricing mode.
           </DialogDescription>
         </DialogHeader>
@@ -1741,7 +1741,7 @@ function CreateInvoiceDialog({
             <div className="space-y-3 px-3 pt-1">
               <Field
                 label="Webhook URL (override)"
-                hint="Events for this invoice dispatch here instead of the merchant default. Requires a secret."
+                hint="Events for this invoice dispatch here instead of the store default. Requires a secret."
               >
                 <Input
                   value={webhookUrl}
@@ -1772,7 +1772,7 @@ function CreateInvoiceDialog({
               <div className="grid grid-cols-2 gap-3">
                 <Field
                   label="Under-pay override (bps)"
-                  hint="0–2000. 1 bps = 0.01% (50 = 0.5%). Omit to inherit merchant default."
+                  hint="0–2000. 1 bps = 0.01% (50 = 0.5%). Omit to inherit store default."
                 >
                   <Input
                     value={tolUnder}

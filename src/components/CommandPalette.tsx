@@ -43,7 +43,7 @@ interface Nav {
   label: string
   to: string
   icon: React.ComponentType<{ className?: string }>
-  group: 'Overview' | 'Payments' | 'Treasury' | 'Merchants' | 'Infrastructure' | 'System'
+  group: 'Overview' | 'Payments' | 'Treasury' | 'Stores' | 'Infrastructure' | 'System'
 }
 
 const NAV: Nav[] = [
@@ -59,8 +59,8 @@ const NAV: Nav[] = [
   { label: 'Auto-consolidation schedules', to: '/consolidation-schedules', icon: CalendarClock, group: 'Treasury' },
   { label: 'Address pool', to: '/pool', icon: Waypoints, group: 'Treasury' },
   { label: 'Pool addresses (park / re-enable)', to: '/pool/addresses', icon: Waypoints, group: 'Treasury' },
-  { label: 'Merchants', to: '/merchants', icon: Store, group: 'Merchants' },
-  { label: 'Webhooks', to: '/webhooks', icon: Webhook, group: 'Merchants' },
+  { label: 'Stores', to: '/stores', icon: Store, group: 'Stores' },
+  { label: 'Webhooks', to: '/webhooks', icon: Webhook, group: 'Stores' },
   { label: 'Chains', to: '/chains', icon: Link2, group: 'Infrastructure' },
   { label: 'Fee wallets', to: '/fee-wallets', icon: Wallet, group: 'Infrastructure' },
   { label: 'Alchemy webhooks', to: '/alchemy', icon: Radio, group: 'Infrastructure' },
