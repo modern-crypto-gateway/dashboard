@@ -258,6 +258,34 @@ function buildRoutes(db: MockDb, flags: Set<Flag>, auth: { authenticated: boolea
     }
   }
 
+  // AI assistant mock state.
+  type MockAiAction = {
+    id: string
+    method: string
+    path: string
+    query: null
+    body: unknown
+    risk: 'write' | 'money'
+    label: string
+    facts: Array<[string, string]>
+    reason: string
+  }
+  const ai: {
+    configured: boolean
+    model: string
+    ui: Array<Record<string, unknown>>
+    pending: { id: string; expiresAt: number; actions: MockAiAction[] } | null
+  } = { configured: true, model: 'claude-opus-5-5', ui: [], pending: null }
+  const aiState = () => ({
+    config: { configured: ai.configured, keyHint: ai.configured ? 'a1B2' : null, model: ai.model },
+    models: [
+      { id: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
+      { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
+      { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5' },
+    ],
+    conversation: { rev: 0, busy: false, ui: ai.ui, pending: ai.pending },
+  })
+
   return [
     /* auth / setup */
     route('GET', '/api/auth/setup-status', () => ({
@@ -294,6 +322,90 @@ function buildRoutes(db: MockDb, flags: Set<Flag>, auth: { authenticated: boolea
       auth.setupComplete = true
       auth.authenticated = true
       return { recoveryCodes: Array.from({ length: 10 }, () => `${gen.alnum(r, 5)}-${gen.alnum(r, 5)}`.toLowerCase()) }
+    }),
+
+    /* AI assistant (mock: canned replies, no model) */
+    route('GET', '/api/assistant/state', () => aiState()),
+    route('POST', '/api/assistant/config', ({ body }) => {
+      const b = (body ?? {}) as { apiKey?: string; model?: string }
+      if (b.apiKey) ai.configured = true
+      if (b.model) ai.model = b.model
+      return { config: aiState().config }
+    }),
+    route('POST', '/api/assistant/key/delete', () => {
+      ai.configured = false
+      return { config: aiState().config }
+    }),
+    route('POST', '/api/assistant/test', () => ({ ok: true, model: ai.model })),
+    route('POST', '/api/assistant/reset', () => {
+      ai.ui = []
+      ai.pending = null
+      return { ok: true }
+    }),
+    route('POST', '/api/assistant/chat', ({ body }) => {
+      const text = String((body as { message?: string })?.message ?? '')
+      const at = Date.now()
+      ai.ui.push({ kind: 'user', text, at })
+      ai.ui.push({ kind: 'action', label: 'List stores', method: 'GET', path: '/api/merchants', risk: 'read', status: 'ok', at })
+      if (/pay|send|invoice/i.test(text)) {
+        ai.ui.push({ kind: 'action', label: 'Estimate payout fees', method: 'POST', path: '/api/mg/mrc_demo/payouts/estimate', risk: 'read', status: 'ok', at })
+        ai.ui.push({
+          kind: 'assistant',
+          text: 'The fee for **250 USDT** on Tron is about **1.1 TRX**. I have queued the payout and the invoice below for your approval.',
+          at,
+        })
+        ai.pending = {
+          id: gen.uuid(r),
+          expiresAt: Date.now() + 10 * 60 * 1000,
+          actions: [
+            {
+              id: 'tu_demo_1',
+              method: 'POST',
+              path: '/api/mg/mrc_demo/invoices',
+              query: null,
+              body: { chainId: 'tron', token: 'USDT', amountUsd: '120.00', externalId: 'order-1042' },
+              risk: 'write',
+              label: 'Create invoice',
+              facts: [['storeId', 'mrc_demo'], ['amountUsd', '120.00'], ['token', 'USDT'], ['chainId', 'tron']],
+              reason: 'You asked for an invoice for order 1042.',
+            },
+            {
+              id: 'tu_demo_2',
+              method: 'POST',
+              path: '/api/mg/mrc_demo/payouts',
+              query: null,
+              body: { chainId: 'tron', token: 'USDT', amount: '250', destinationAddress: 'TQ5NvQ2t1r7cGx3dV4h7oW2m8bTnE6yZkP' },
+              risk: 'money',
+              label: 'Send payout',
+              facts: [['storeId', 'mrc_demo'], ['amount', '250'], ['token', 'USDT'], ['chainId', 'tron'], ['destinationAddress', 'TQ5NvQ2t1r7cGx3dV4h7oW2m8bTnE6yZkP']],
+              reason: 'Pays the supplier invoice you mentioned.',
+            },
+          ],
+        }
+      } else {
+        ai.ui.push({
+          kind: 'assistant',
+          text: [
+            'Today so far:',
+            '',
+            '- **14** invoices created, **11** paid ($3,482.10)',
+            '- **3** payouts sent, all confirmed',
+            '- No orphan transactions',
+          ].join('\n'),
+          at,
+        })
+      }
+      return { conversation: aiState().conversation }
+    }),
+    route('POST', '/api/assistant/approve', ({ body }) => {
+      const d = ((body as { decisions?: Record<string, string> })?.decisions ?? {}) as Record<string, string>
+      const at = Date.now()
+      for (const a of ai.pending?.actions ?? []) {
+        ai.ui.push({ kind: 'action', label: a.label, method: a.method, path: a.path, risk: a.risk, status: d[a.id] === 'approve' ? 'ok' : 'declined', at })
+      }
+      ai.ui.push({ kind: 'assistant', text: 'Done. The payout is submitted; I will show its status when you ask.', at })
+      ai.pending = null
+      return { conversation: aiState().conversation }
     }),
 
     /* settings / security */

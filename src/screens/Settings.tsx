@@ -22,6 +22,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { Callout } from '@/components/States'
 import { StatusPill } from '@/components/StatusPill'
 import { SecurityPanel } from './SecurityPanel'
+import { AssistantSettingsCard } from './AssistantSettings'
 
 export function SettingsPage() {
   const qc = useQueryClient()
@@ -198,6 +199,10 @@ export function SettingsPage() {
           <DefaultMerchantCard
             currentId={cfg.data?.defaultMerchantId ?? null}
           />
+        </SettingsSection>
+
+        <SettingsSection title="AI assistant" description="Claude, inside the dashboard.">
+          <AssistantSettingsCard />
         </SettingsSection>
 
         <SettingsSection title="Security" description="Sign-in, 2FA and devices.">

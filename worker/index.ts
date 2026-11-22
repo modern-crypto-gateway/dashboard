@@ -75,6 +75,7 @@ import {
   listPayouts,
 } from './routes/payouts'
 import { getAvatar } from './routes/avatar'
+import { assistantPost, getAssistantState } from './assistant/routes'
 
 const router = new Router()
 
@@ -255,6 +256,20 @@ router.post('/api/merchants/*', async (req, env, _ctx, params) => {
   return error('BAD_ACTION', 'Unknown merchant action', 404)
 })
 
+/* ── AI assistant ─────────────────────────────────────────── */
+// Signed-in sessions only (POSTs also need CSRF). Tool calls the assistant
+// makes go back through this router with the operator's own cookies, so every
+// route keeps its own auth, CSRF and rate limits (see assistant/agent.ts).
+router.get('/api/assistant/state', async (req, env) => {
+  const sess = await requireAuth(req, env)
+  return getAssistantState(req, env, sess)
+})
+router.post('/api/assistant/*', async (req, env, ctx, params) => {
+  const sess = await guardAuthAndCsrf(req, env)
+  await cfLimit(env.GW_RL, clientId(req), 'gw')
+  return assistantPost(params.tail ?? '', req, env, sess, (r) => router.handle(r, env, ctx))
+})
+
 /* ── gateway proxy (admin-scoped) ────────────────────────── */
 router.any('/api/gw/*', async (req, env, _ctx, params) => {
   await guardAuthAndCsrf(req, env)
@@ -360,6 +375,7 @@ async function handle(
 }
 
 export { AuthGuard } from './lib/guard'
+export { AssistantStore } from './assistant/store'
 
 export default {
   async fetch(request, env, ctx) {

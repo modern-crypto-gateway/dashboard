@@ -117,5 +117,8 @@ export {
   SealWarningIcon as SealWarning,
   ArrowsLeftRightIcon as ArrowsLeftRight,
   ClipboardTextIcon as ClipboardText,
+  // AI assistant
+  SparkleIcon as Sparkle,
+  PaperPlaneRightIcon as SendRight,
 } from '@phosphor-icons/react'
 export type { Icon as IconType, IconProps } from '@phosphor-icons/react'

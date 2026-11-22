@@ -7,6 +7,7 @@ import {
   useCommandPaletteShortcut,
 } from '@/components/CommandPalette'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { Assistant } from '@/components/Assistant'
 import { useSession } from '@/lib/session'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { cn } from '@/lib/utils'
@@ -81,6 +82,7 @@ export function AppShell() {
           </div>
         </main>
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        <Assistant />
       </div>
     </TooltipProvider>
   )

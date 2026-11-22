@@ -3,10 +3,16 @@
  */
 
 import type { AuthGuard } from './guard'
+import type { AssistantStore } from '../assistant/store'
 
 export interface Bindings extends Env {
   /** Exact login/2FA attempt counters (Durable Object, see guard.ts). */
   AUTH_GUARD: DurableObjectNamespace<AuthGuard>
+  /** AI assistant conversations, one per login session (assistant/store.ts). */
+  ASSISTANT_STORE: DurableObjectNamespace<AssistantStore>
+  /** Local development only: Anthropic API base URL for a stub server.
+   * Ignored unless the request itself is to localhost. */
+  ASSISTANT_DEV_ANTHROPIC_URL?: string
   /** Cloudflare Turnstile. Login requires a Turnstile token once the secret is set. */
   TURNSTILE_SITE_KEY?: string
   TURNSTILE_SECRET_KEY?: string

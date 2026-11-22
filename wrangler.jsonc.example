@@ -82,9 +82,16 @@
 	 * under-count parallel guesses, so brute-force limits live here.
 	 */
 	"durable_objects": {
-		"bindings": [{ "name": "AUTH_GUARD", "class_name": "AuthGuard" }]
+		"bindings": [
+			{ "name": "AUTH_GUARD", "class_name": "AuthGuard" },
+			// AI assistant conversations, one per login session.
+			{ "name": "ASSISTANT_STORE", "class_name": "AssistantStore" }
+		]
 	},
-	"migrations": [{ "tag": "v1-auth-guard", "new_sqlite_classes": ["AuthGuard"] }],
+	"migrations": [
+		{ "tag": "v1-auth-guard", "new_sqlite_classes": ["AuthGuard"] },
+		{ "tag": "v2-assistant-store", "new_sqlite_classes": ["AssistantStore"] }
+	],
 
 	/**
 	 * Cloudflare Turnstile on the login page. Create a widget in the
