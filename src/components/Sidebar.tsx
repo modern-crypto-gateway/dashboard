@@ -67,7 +67,7 @@ export function Sidebar({
             {rail ? (
               i > 0 && <div className="my-2 h-px w-6 bg-border" aria-hidden />
             ) : (
-              <div className="px-2.5 pt-5 pb-1.5 text-2xs font-medium text-[var(--fg-3)]">
+              <div className="px-2.5 pt-4 pb-1 text-2xs font-medium text-[var(--fg-3)]">
                 {section.group}
               </div>
             )}

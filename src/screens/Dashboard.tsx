@@ -276,8 +276,8 @@ function AttentionStrip({ items }: { items: AttentionItem[] }) {
           </span>
         ) : null}
       </div>
-      <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-border gap-px sm:grid-cols-3 xl:grid-cols-5">
-        {items.map((it) => {
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-6 xl:grid-cols-5">
+        {items.map((it, idx) => {
           const Icon = it.icon
           const n = it.count ?? 0
           const hot = n > 0
@@ -286,12 +286,14 @@ function AttentionStrip({ items }: { items: AttentionItem[] }) {
               key={it.key}
               to={it.to}
               className={cn(
-                'group relative flex flex-col gap-2 bg-card px-4 py-3.5 outline-none transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
-                hot && 'bg-[var(--warn-bg)] hover:bg-[var(--warn-bg)]',
+                'group relative flex flex-col gap-2 bg-card px-4 py-3.5 outline-none transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset xl:col-span-1',
+                // 2 cols on phones (last tile spans), 3+2 on tablets.
+                idx === items.length - 1 && items.length % 2 === 1 ? 'col-span-2' : 'col-span-1',
+                idx < 3 ? 'sm:col-span-2' : 'sm:col-span-3',
               )}
             >
               {hot && (
-                <span aria-hidden className="absolute inset-x-0 top-0 h-0.5 bg-warn" />
+                <span aria-hidden className="absolute inset-x-0 top-0 h-[3px] bg-warn" />
               )}
               <div className="flex items-center justify-between gap-2">
                 <span
