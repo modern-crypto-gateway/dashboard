@@ -95,6 +95,7 @@ import {
 } from '@/components/ui/sheet'
 import { StatusPill, toneFor, type StatusTone } from '@/components/StatusPill'
 import { Pager, RowAvatar, TableCard } from '@/components/DataTable'
+import { FamilyStack, TokenIcon, TokenOnChain } from '@/components/CryptoIcon'
 import { Table, TableWrap, TBody, Td, Th, THead, Tr } from '@/components/ui/table'
 import { chainInfo } from '@/lib/chains'
 import { cn } from '@/lib/utils'
@@ -538,7 +539,6 @@ function InvoiceRow({
   const paid = inv.paidUsd ? parseFloat(inv.paidUsd) : 0
   const required = inv.amountUsd ? parseFloat(inv.amountUsd) : 0
   const showPaid = inv.amountUsd != null && paid > 0
-  const info = chainInfo(inv.chainId)
   return (
     <Tr
       interactive
@@ -554,11 +554,11 @@ function InvoiceRow({
     >
       <Td>
         <div className="flex min-w-0 items-center gap-3">
-          <RowAvatar
-            text={inv.token.slice(0, 1)}
-            color={multiFamily ? undefined : info.color}
-            icon={multiFamily ? Layers : undefined}
-          />
+          {multiFamily ? (
+            <RowAvatar icon={Layers} />
+          ) : (
+            <TokenOnChain symbol={inv.token} chainId={inv.chainId} size={32} />
+          )}
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 font-medium">
               <span className="truncate">{inv.externalId ?? truncateAddr(inv.id, 8, 6)}</span>
@@ -582,9 +582,7 @@ function InvoiceRow({
       </Td>
       <Td>
         {multiFamily ? (
-          <span className="text-sm text-[var(--fg-1)]">
-            {families.map((f) => f.toUpperCase()).join(' · ')}
-          </span>
+          <FamilyStack families={families} />
         ) : (
           <ChainPill chainId={inv.chainId} className="text-sm" />
         )}
@@ -600,7 +598,10 @@ function InvoiceRow({
               )}
             </span>
           ) : (
-            <span className="text-[var(--fg-3)]">{inv.token}</span>
+            <span className="inline-flex items-center gap-1 text-[var(--fg-2)]">
+              <TokenIcon symbol={inv.token} size={14} />
+              {inv.token}
+            </span>
           )}
         </div>
       </Td>
@@ -783,7 +784,10 @@ function InvoiceHero({ data }: { data: InvoiceDetails }) {
       <div className="flex items-end justify-between gap-4">
         <div>
           <div className="text-xs text-[var(--fg-2)]">Amount due</div>
-          <div className="figure mt-0.5 text-2xl font-semibold">{required}</div>
+          <div className="mt-0.5 flex items-center gap-2.5">
+            <TokenOnChain symbol={invoice.token} chainId={invoice.chainId} size={30} />
+            <span className="figure text-2xl font-semibold">{required}</span>
+          </div>
         </div>
         {amounts.requiredUsd != null && (
           <div className="text-right text-xs text-[var(--fg-2)]">
@@ -838,7 +842,10 @@ function OverviewTab({ data }: { data: InvoiceDetails }) {
       <SheetSection title="Details">
         <dl className="divide-y divide-border rounded-xl border border-border">
           <Fact icon={Coins} label="Token">
-            <span className="font-medium">{invoice.token}</span>
+            <span className="inline-flex items-center gap-1.5 font-medium">
+              <TokenIcon symbol={invoice.token} size={16} />
+              {invoice.token}
+            </span>
             {families.length > 1 && (
               <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
                 {families.map((f) => (
@@ -1121,7 +1128,7 @@ function TransactionsTab({ data }: { data: InvoiceDetails }) {
             }
           >
             <div className="flex items-center gap-3">
-              <RowAvatar text={t.token.slice(0, 1)} color={info.color} />
+              <TokenOnChain symbol={t.token} chainId={t.chainId} size={34} />
               <div className="min-w-0 flex-1">
                 <div className="figure flex items-center gap-2 font-semibold">
                   {fmtNum(t.amount)} {t.token}

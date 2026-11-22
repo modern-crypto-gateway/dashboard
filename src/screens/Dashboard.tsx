@@ -25,7 +25,6 @@ import type {
 import {
   AlertTriangle,
   ArrowRight,
-  CheckCircle2,
   LifeBuoy,
   Link2,
   Plus,
@@ -44,11 +43,11 @@ import {
   type Point,
   type Slice,
 } from '@/components/charts'
+import { ChainIcon, TokenOnChain } from '@/components/CryptoIcon'
 import { MerchantSwitcher } from '@/components/MerchantSwitcher'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/States'
-import { StatusDot } from '@/components/StatusDot'
-import { Badge } from '@/components/ui/badge'
+import { Status, StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -124,19 +123,11 @@ const num = (s: string | null | undefined) => {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  completed: 'var(--chart-1-fill)',
-  processing: 'var(--chart-2)',
-  pending: 'var(--chart-muted)',
-  expired: 'var(--fg-3)',
-  canceled: 'var(--chart-3)',
-}
-
-const STATUS_BADGE: Record<string, 'success' | 'accent' | 'default' | 'warn' | 'danger'> = {
-  completed: 'success',
-  processing: 'accent',
-  pending: 'default',
-  expired: 'warn',
-  canceled: 'danger',
+  completed: 'var(--st-ok-dot)',
+  processing: 'var(--st-run-dot)',
+  pending: 'var(--st-wait-dot)',
+  expired: 'var(--st-warn-dot)',
+  canceled: 'var(--st-bad-dot)',
 }
 
 function errMsg(e: unknown) {
@@ -297,7 +288,7 @@ export function DashboardPage() {
       />
 
       {/* ── KPI tiles ───────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="stagger grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
           label="Total balance"
           loading={bal.isLoading}
@@ -409,11 +400,9 @@ export function DashboardPage() {
             <h2 className="text-lg font-semibold tracking-[-0.01em]">Needs attention</h2>
             {attention.every((a) => !a.loading) &&
               (openIssues === 0 ? (
-                <Badge variant="success">
-                  <CheckCircle2 /> All clear
-                </Badge>
+                <StatusPill tone="ok">All clear</StatusPill>
               ) : (
-                <Badge variant="warn">{openIssues} open</Badge>
+                <StatusPill tone="warn">{openIssues} open</StatusPill>
               ))}
           </div>
           <ul className="mt-3 -mx-2">
@@ -576,6 +565,7 @@ function BalanceMix({ snapshot, loading }: { snapshot?: BalancesSnapshot; loadin
             {slices.map((s) => (
               <li key={s.key} className="flex items-center gap-2 text-sm">
                 <span className="size-2.5 rounded-full" style={{ background: s.color }} />
+                {s.key !== 'other' && <ChainIcon chainId={Number(s.key)} size={16} />}
                 <span className="truncate text-[var(--fg-1)]">{s.name}</span>
                 <span className="figure ml-auto font-medium">{compactUsd(s.value)}</span>
                 <span className="figure w-12 text-right text-xs text-[var(--fg-3)]">
@@ -686,18 +676,9 @@ function HealthBadge({
   error: boolean
 }) {
   if (loading) return <Skeleton className="h-5 w-24 rounded-full" />
-  if (error)
-    return (
-      <Badge variant="danger">
-        <StatusDot tone="danger" /> Unreachable
-      </Badge>
-    )
+  if (error) return <StatusPill tone="bad">Unreachable</StatusPill>
   const ok = health?.status === 'ok'
-  return (
-    <Badge variant={ok ? 'success' : 'warn'}>
-      <StatusDot tone={ok ? 'success' : 'warn'} pulse /> {ok ? 'Operational' : 'Degraded'}
-    </Badge>
-  )
+  return <StatusPill tone={ok ? 'ok' : 'warn'}>{ok ? 'Operational' : 'Degraded'}</StatusPill>
 }
 
 function PoolMeters({ stats, loading }: { stats?: PoolStatsRow[]; loading: boolean }) {
@@ -753,13 +734,7 @@ function RecentInvoiceRow({ inv }: { inv: GatewayInvoice }) {
         to="/invoices"
         className="flex items-center gap-4 px-6 py-3.5 text-sm outline-none transition-colors hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)]"
       >
-        <span
-          className="grid size-8 shrink-0 place-items-center rounded-full text-2xs font-semibold text-white"
-          style={{ background: info.color }}
-          aria-hidden
-        >
-          {inv.token.slice(0, 1)}
-        </span>
+        <TokenOnChain symbol={inv.token} chainId={inv.chainId} size={32} />
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium">{inv.externalId ?? truncateAddr(inv.id, 8, 4)}</div>
           <div className="truncate text-xs text-[var(--fg-2)]">
@@ -767,9 +742,7 @@ function RecentInvoiceRow({ inv }: { inv: GatewayInvoice }) {
           </div>
         </div>
         <div className="hidden w-28 sm:block">
-          <Badge variant={STATUS_BADGE[inv.status] ?? 'default'} className="capitalize">
-            {inv.status}
-          </Badge>
+          <Status value={inv.status} />
         </div>
         <div className="figure w-28 text-right font-medium">{amount}</div>
         <div className="hidden w-20 text-right text-xs text-[var(--fg-3)] sm:block">
