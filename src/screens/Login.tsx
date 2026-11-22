@@ -58,13 +58,13 @@ export function LoginScreen() {
   })
 
   return (
-    <div className="grid min-h-screen grid-cols-1 md:grid-cols-2 fade-in">
+    <div className="fade-in flex min-h-dvh flex-col bg-background">
       <AuthSide mode="login" />
-      <div className="flex items-center justify-center p-6 md:p-10">
-        <div className="w-full max-w-md space-y-6">
+      <div className="flex flex-1 items-start justify-center px-4 pt-[6vh] pb-16 sm:items-center sm:pt-0">
+        <div className="w-full max-w-[400px] space-y-6 rounded-xl border border-border bg-card p-6 sm:p-8">
           <div>
             <div className="eyebrow mb-2">Sign in</div>
-            <h1 className="text-2xl font-semibold tracking-tight">
+            <h1 className="text-xl font-semibold tracking-[-0.015em]">
               Welcome back, operator
             </h1>
             <p className="mt-1.5 text-sm text-[var(--fg-2)]">
@@ -105,7 +105,7 @@ export function LoginScreen() {
                   required
                 />
               </Field>
-              <label className="flex items-center gap-2 text-[13px] text-[var(--fg-1)] select-none">
+              <label className="flex items-center gap-2 text-sm text-[var(--fg-1)] select-none">
                 <input
                   type="checkbox"
                   className="size-4 rounded border-border"
@@ -213,7 +213,7 @@ export function LoginScreen() {
           )}
 
           {needsSetup && (
-            <div className="flex items-center justify-between border-t border-border pt-4 text-[13px]">
+            <div className="flex items-center justify-between border-t border-border pt-4 text-sm">
               <span className="text-[var(--fg-2)]">First deployment?</span>
               <Button asChild variant="outline" size="sm">
                 <Link to="/setup">

@@ -125,14 +125,14 @@ export function SetupScreen() {
   const pwScore = scorePassword(password)
 
   return (
-    <div className="grid min-h-screen grid-cols-1 md:grid-cols-2 fade-in">
+    <div className="fade-in flex min-h-dvh flex-col bg-background">
       <AuthSide mode="setup" />
-      <div className="flex items-center justify-center p-6 md:p-10">
-        <div className="w-full max-w-md space-y-6">
+      <div className="flex flex-1 items-start justify-center px-4 pt-[6vh] pb-16 sm:items-center sm:pt-0">
+        <div className="w-full max-w-[460px] space-y-6 rounded-xl border border-border bg-card p-6 sm:p-8">
           <Stepper steps={4} current={Math.min(step, 3)} />
 
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">{meta.title}</h1>
+            <h1 className="text-xl font-semibold tracking-[-0.015em]">{meta.title}</h1>
             <p className="mt-1.5 text-sm text-[var(--fg-2)]">{meta.subtitle}</p>
           </div>
 
@@ -181,7 +181,7 @@ export function SetupScreen() {
                 label="Admin key"
                 hint="Found in your ADMIN_KEY environment variable. Minimum 32 characters."
                 right={
-                  <span className="font-mono text-[11px] text-[var(--fg-2)]">
+                  <span className="font-mono text-2xs text-[var(--fg-2)]">
                     gateway secret
                   </span>
                 }
@@ -194,7 +194,7 @@ export function SetupScreen() {
                 />
               </Field>
 
-              <div className="flex gap-2.5 rounded-[var(--radius-md)] border border-border bg-secondary px-3.5 py-3 text-[12.5px] leading-relaxed text-[var(--fg-1)]">
+              <div className="flex gap-2.5 rounded-[var(--radius-md)] border border-border bg-secondary px-3.5 py-3 text-xs leading-relaxed text-[var(--fg-1)]">
                 <Shield className="mt-0.5 size-4 shrink-0 text-[var(--fg-2)]" />
                 <div>
                   The admin key is sealed with a worker-held encryption key before it lands
@@ -290,7 +290,7 @@ export function SetupScreen() {
                 <div className="flex-1 space-y-2.5">
                   <div>
                     <div className="eyebrow mb-1.5">Scan with your app</div>
-                    <div className="text-[12.5px] text-[var(--fg-2)]">
+                    <div className="text-xs text-[var(--fg-2)]">
                       Google Authenticator, Authy, 1Password, and any TOTP app work.
                     </div>
                   </div>
@@ -337,7 +337,7 @@ export function SetupScreen() {
                 </div>
                 <div>
                   <div className="font-semibold text-foreground">Setup complete</div>
-                  <div className="mt-1 text-[13px] text-[var(--fg-1)]">
+                  <div className="mt-1 text-sm text-[var(--fg-1)]">
                     Your operator account and 2FA are bound. Save your recovery codes
                     before continuing — they are shown only once.
                   </div>
@@ -389,7 +389,7 @@ function RecoveryCodes({ codes }: { codes: string[] }) {
     <div className="rounded-[var(--radius-md)] border border-border bg-card p-4">
       <div className="mb-2.5 flex items-start justify-between gap-3">
         <div>
-          <div className="text-[13px] font-semibold">Recovery codes</div>
+          <div className="text-sm font-semibold">Recovery codes</div>
           <div className="text-xs text-[var(--fg-2)]">
             Store these somewhere safe. Each is usable once.
           </div>
@@ -410,7 +410,7 @@ function RecoveryCodes({ codes }: { codes: string[] }) {
         {codes.map((c, i) => (
           <div
             key={i}
-            className="rounded-md border border-border bg-secondary px-2.5 py-2 font-mono text-[13px] tracking-wider"
+            className="rounded-md border border-border bg-secondary px-2.5 py-2 font-mono text-sm tracking-wider"
           >
             {revealed ? c : '•••• ••••'}
           </div>
