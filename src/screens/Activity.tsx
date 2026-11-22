@@ -10,6 +10,8 @@ import { Addr } from '@/components/Addr'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { PageHeader } from '@/components/PageHeader'
+import { EmptyState, ListSkeleton } from '@/components/States'
 import { StatusDot } from '@/components/StatusDot'
 import { cn } from '@/lib/utils'
 
@@ -64,45 +66,39 @@ export function ActivityPage() {
 
   return (
     <div className="fade-in space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow">Overview</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Activity</h1>
-          <p className="mt-1 text-sm text-[var(--fg-2)]">
-            Live merge of pending, delivered, and dead webhook deliveries — your
-            best proxy for what the gateway is doing right now.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success-border)] bg-[var(--success-bg)] px-2 py-0.5 text-2xs text-success">
-            <StatusDot tone="success" pulse /> live
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={refresh}
-            disabled={anyFetching}
-          >
-            <RefreshCw className={'size-3.5' + (anyFetching ? ' animate-spin' : '')} />
-            Refresh
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Overview"
+        title="Activity"
+        description="Live merge of pending, delivered, and dead webhook deliveries — your best proxy for what the gateway is doing right now."
+        actions={
+          <>
+            <Badge variant="success" className="gap-1.5">
+              <StatusDot tone="success" pulse /> live
+            </Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refresh}
+              disabled={anyFetching}
+            >
+              <RefreshCw className={'size-3.5' + (anyFetching ? ' animate-spin' : '')} />
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
       {anyLoading ? (
-        <Card className="p-10 text-center text-sm text-[var(--fg-2)]">Loading…</Card>
+        <ListSkeleton rows={8} />
       ) : feed.length === 0 ? (
-        <Card className="p-10 text-center">
-          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-[var(--bg-2)]">
-            <ActivityIcon className="size-5 text-[var(--fg-2)]" />
-          </div>
-          <div className="mt-3 text-sm text-[var(--fg-1)]">No recent activity.</div>
-          <p className="mt-1 text-xs text-[var(--fg-2)]">
-            Activity appears as the gateway dispatches webhooks.
-          </p>
-        </Card>
+        <EmptyState
+          framed
+          icon={ActivityIcon}
+          title="No recent activity"
+          description="Activity appears as the gateway dispatches webhooks."
+        />
       ) : (
-        <Card className="overflow-hidden p-0">
+        <Card className="overflow-hidden">
           <CardContent className="p-0">
             <ul className="divide-y divide-border">
               {feed.map((e) => (
@@ -125,7 +121,7 @@ export function ActivityPage() {
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-2xs text-[var(--fg-2)]">
+                      <span className="font-mono text-xs text-foreground">
                         {e.eventType}
                       </span>
                       <Badge
@@ -143,17 +139,17 @@ export function ActivityPage() {
                         <Badge variant="outline">attempt {e.attempts}</Badge>
                       )}
                     </div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[var(--fg-1)]">
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[var(--fg-2)]">
                       <span>delivery</span>
-                      <span className="font-mono">
+                      <span className="font-mono text-[var(--fg-1)]">
                         {truncateAddr(e.id, 8, 6)}
                       </span>
-                      <span className="text-[var(--fg-2)]">·</span>
-                      <span>merchant</span>
+                      <span className="text-[var(--fg-3)]">·</span>
+                      <span>store</span>
                       <Addr value={e.merchantId} />
                     </div>
                     {e.lastError && (
-                      <div className="mt-1 font-mono text-2xs text-destructive">
+                      <div className="mt-1 font-mono text-2xs break-words text-destructive">
                         {e.lastError.slice(0, 120)}
                         {e.lastError.length > 120 && '…'}
                       </div>

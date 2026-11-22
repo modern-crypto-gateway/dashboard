@@ -15,6 +15,7 @@ import {
   Power,
   Search,
   Shield,
+  ShieldAlert,
   Store,
   Trash2,
   Webhook,
@@ -71,7 +72,14 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { CopyButton } from '@/components/CopyButton'
 import { Field } from '@/components/Field'
+import { PageHeader } from '@/components/PageHeader'
 import { PasswordField } from '@/components/PasswordField'
+import {
+  Callout,
+  EmptyState as SharedEmptyState,
+  ListSkeleton,
+} from '@/components/States'
+import { cn } from '@/lib/utils'
 
 type Filter = 'all' | 'active' | 'inactive' | 'orphan'
 
@@ -109,25 +117,20 @@ export function MerchantsPage() {
 
   return (
     <div className="fade-in space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow">Operations</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Merchants</h1>
-          <p className="mt-1 text-sm text-[var(--fg-2)]">
-            Every merchant the gateway exposes, with the ones you can transact
-            against from this dashboard marked usable.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        eyebrow="Stores"
+        title="Stores"
+        description="Every store the gateway exposes, with the ones you can transact against from this dashboard marked usable."
+        actions={
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="sm">
-                <Plus className="size-3.5" /> New merchant
+                <Plus className="size-3.5" /> New store
                 <ChevronDown className="size-3.5 opacity-60" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Add merchant</DropdownMenuLabel>
+              <DropdownMenuLabel>Add store</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setCreateOpen(true)}>
                 <Plus className="size-3.5" /> Create via gateway
@@ -137,14 +140,13 @@ export function MerchantsPage() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-      </div>
+        }
+      />
 
       {!gatewayReachable && merchants.data && (
-        <div className="flex items-center gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
-          <AlertTriangle className="size-3.5" />
+        <Callout tone="warn">
           Gateway unreachable — live status fields below may be stale.
-        </div>
+        </Callout>
       )}
 
       <Toolbar
@@ -157,7 +159,7 @@ export function MerchantsPage() {
       />
 
       {merchants.isLoading ? (
-        <MerchantListSkeleton />
+        <ListSkeleton rows={5} />
       ) : all.length === 0 ? (
         <EmptyState onCreate={() => setCreateOpen(true)} onImport={() => setImportOpen(true)} />
       ) : filtered.length === 0 ? (
@@ -195,7 +197,7 @@ function Toolbar({
 }) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-      <div className="relative flex-1">
+      <div className="relative min-w-0 flex-1">
         <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[var(--fg-3)]" />
         <Input
           value={query}
@@ -206,17 +208,17 @@ function Toolbar({
       </div>
       <div className="flex items-center gap-2">
         <Select value={filter} onValueChange={(v) => setFilter(v as Filter)}>
-          <SelectTrigger className="h-9 w-[160px] text-sm">
+          <SelectTrigger className="h-9 w-full text-sm sm:w-[160px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All merchants</SelectItem>
+            <SelectItem value="all">All stores</SelectItem>
             <SelectItem value="active">Active only</SelectItem>
             <SelectItem value="inactive">Inactive only</SelectItem>
             <SelectItem value="orphan">Gateway-only</SelectItem>
           </SelectContent>
         </Select>
-        <div className="hidden text-xs text-[var(--fg-3)] sm:block">
+        <div className="hidden shrink-0 font-mono text-xs tabular-nums text-[var(--fg-2)] sm:block">
           {visible === total ? `${total} total` : `${visible} of ${total}`}
         </div>
       </div>
@@ -235,8 +237,8 @@ function MerchantList({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden grid-cols-[1fr_100px_140px_120px_56px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-2xs font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
-        <div>Merchant</div>
+      <div className="hidden h-9 grid-cols-[1fr_112px_140px_120px_40px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-4 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)] sm:grid">
+        <div>Store</div>
         <div>Status</div>
         <div>Key</div>
         <div>Updated</div>
@@ -264,10 +266,10 @@ function MerchantRow({ m, onOpen }: { m: Merchant; onOpen: () => void }) {
             onOpen()
           }
         }}
-        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1fr_100px_140px_120px_56px] sm:gap-4"
+        className="grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[1fr_112px_140px_120px_40px] sm:gap-4"
       >
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
+        <div className="col-span-2 min-w-0 sm:col-span-1">
+          <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-medium">{m.name}</span>
             {m.source === 'gateway-only' && (
               <Badge variant="warn" className="shrink-0">
@@ -278,7 +280,7 @@ function MerchantRow({ m, onOpen }: { m: Merchant; onOpen: () => void }) {
               Object.keys(m.confirmationThresholds).length > 0 && (
                 <Badge
                   variant="outline"
-                  className="shrink-0 gap-1 text-2xs"
+                  className="shrink-0"
                   title="Per-chain confirmation overrides set"
                 >
                   <Layers className="size-3" />
@@ -289,7 +291,7 @@ function MerchantRow({ m, onOpen }: { m: Merchant; onOpen: () => void }) {
               Object.keys(m.confirmationTiers).length > 0 && (
                 <Badge
                   variant="accent"
-                  className="shrink-0 gap-1 text-2xs"
+                  className="shrink-0"
                   title="Per-(chain, token) amount-tier rules set"
                 >
                   <Layers className="size-3" />
@@ -302,17 +304,16 @@ function MerchantRow({ m, onOpen }: { m: Merchant; onOpen: () => void }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs">
-          <StatusDot status={statusOf(m)} />
-          <span className="text-[var(--fg-2)] sm:hidden">
-            {labelOf(statusOf(m))}
-          </span>
-          <span className="hidden text-[var(--fg-2)] sm:inline">
-            {labelOf(statusOf(m))}
-          </span>
+        <div className="flex min-w-0 items-center gap-2">
+          <StatusBadge status={statusOf(m)} />
+          {m.apiKeyFingerprint && (
+            <span className="truncate font-mono text-2xs text-[var(--fg-3)] sm:hidden">
+              …{m.apiKeyFingerprint}
+            </span>
+          )}
         </div>
 
-        <div className="font-mono text-xs text-[var(--fg-2)]">
+        <div className="hidden font-mono text-xs text-[var(--fg-2)] sm:block">
           {m.apiKeyFingerprint ? (
             <>…{m.apiKeyFingerprint}</>
           ) : (
@@ -320,9 +321,12 @@ function MerchantRow({ m, onOpen }: { m: Merchant; onOpen: () => void }) {
           )}
         </div>
 
-        <div className="text-xs text-[var(--fg-3)]">{fmtRel(m.updatedAt)}</div>
+        <div className="hidden text-xs text-[var(--fg-2)] sm:block">{fmtRel(m.updatedAt)}</div>
 
-        <div className="justify-self-end" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="col-start-2 row-start-2 justify-self-end sm:col-start-auto sm:row-start-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
           <RowKebab m={m} />
         </div>
       </div>
@@ -352,21 +356,16 @@ function labelOf(s: Status): string {
   }
 }
 
-function StatusDot({ status }: { status: Status }) {
-  const color =
+function StatusBadge({ status }: { status: Status }) {
+  const variant =
     status === 'active'
-      ? 'bg-success'
+      ? 'success'
       : status === 'inactive'
-        ? 'bg-warn'
+        ? 'warn'
         : status === 'orphan'
-          ? 'bg-destructive/70'
-          : 'bg-[var(--fg-3)]'
-  return (
-    <span className="relative inline-flex size-2 shrink-0">
-      <span className={`absolute inset-0 rounded-full ${color} opacity-70`} />
-      <span className={`absolute inset-0 rounded-full ${color} animate-ping opacity-40`} />
-    </span>
-  )
+          ? 'danger'
+          : 'default'
+  return <Badge variant={variant}>{labelOf(status)}</Badge>
 }
 
 /* ── row kebab menu ──────────────────────────────────────── */
@@ -380,7 +379,7 @@ function RowKebab({ m }: { m: Merchant }) {
         { method: 'POST' },
       ),
     onSuccess: (_res, next) => {
-      toast.success(next ? 'Merchant activated' : 'Merchant deactivated')
+      toast.success(next ? 'Store activated' : 'Store deactivated')
       qc.invalidateQueries({ queryKey: merchantsQuery.queryKey })
     },
     onError: (e: ApiError) => toast.error(e.message || 'Could not update'),
@@ -422,7 +421,7 @@ function RowKebab({ m }: { m: Merchant }) {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button size="icon-sm" variant="ghost" className="size-8">
+          <Button size="icon-sm" variant="ghost" aria-label="Store actions">
             <MoreHorizontal className="size-4" />
           </Button>
         </DropdownMenuTrigger>
@@ -486,8 +485,8 @@ function RowKebab({ m }: { m: Merchant }) {
         title="Remove local record?"
         body={
           <>
-            Removes the merchant from this dashboard and drops the sealed key.
-            Does <span className="font-semibold">not</span> delete the merchant on
+            Removes the store from this dashboard and drops the sealed key.
+            Does <span className="font-semibold">not</span> delete the store on
             the gateway.
           </>
         }
@@ -525,33 +524,41 @@ function MerchantSheet({
       <SheetContent>
         {merchant && (
           <>
-            <SheetHeader>
-              <div className="flex items-center gap-2 pr-10">
-                <StatusDot status={statusOf(merchant)} />
-                <SheetTitle className="truncate">{merchant.name}</SheetTitle>
+            <SheetHeader className="pb-0">
+              <div className="eyebrow mb-1">Store</div>
+              <div className="flex min-w-0 items-center gap-2 pr-8">
+                <SheetTitle className="truncate pr-0">{merchant.name}</SheetTitle>
+                <StatusBadge status={statusOf(merchant)} />
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
+              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <Badge variant="outline">{merchant.source}</Badge>
-                <span className="font-mono text-2xs text-[var(--fg-3)]">
+                <span className="min-w-0 truncate font-mono text-2xs text-[var(--fg-2)]">
                   {merchant.id}
                 </span>
                 <CopyButton value={merchant.id} />
               </div>
-              <nav className="mt-4 -mb-3 flex gap-5 text-sm">
+              <nav
+                role="tablist"
+                aria-label="Store sections"
+                className="-mx-6 mt-4 flex gap-1 overflow-x-auto px-4 [scrollbar-width:none]"
+              >
                 {(['overview', 'keys', 'webhook', 'tuning', 'danger'] as const).map((s) => (
                   <button
                     key={s}
                     type="button"
+                    role="tab"
+                    aria-selected={section === s}
                     onClick={() => setSection(s)}
-                    className={`relative pb-2 capitalize transition-colors ${
+                    className={cn(
+                      'relative shrink-0 cursor-pointer rounded-t-md px-2 pt-1 pb-2.5 text-sm font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                       section === s
                         ? 'text-foreground'
-                        : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'
-                    }`}
+                        : 'text-[var(--fg-2)] hover:text-foreground',
+                    )}
                   >
                     {s === 'danger' ? 'Danger zone' : s === 'keys' ? 'API keys' : s}
                     {section === s && (
-                      <span className="absolute inset-x-0 -bottom-[1px] h-[2px] rounded-full bg-primary" />
+                      <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />
                     )}
                   </button>
                 ))}
@@ -582,27 +589,35 @@ function OverviewSection({ m }: { m: Merchant }) {
           ['Name', m.name],
           [
             'Status',
-            m.active === true ? 'Active' : m.active === false ? 'Inactive' : 'Unknown',
+            <Badge
+              variant={
+                m.active === true ? 'success' : m.active === false ? 'warn' : 'default'
+              }
+            >
+              {m.active === true ? 'Active' : m.active === false ? 'Inactive' : 'Unknown'}
+            </Badge>,
           ],
-          ['Source', m.source],
+          ['Source', <span className="font-mono text-xs">{m.source}</span>],
           [
             'Main API key',
-            m.apiKeyFingerprint ? `sk_…${m.apiKeyFingerprint} · full access` : '—',
+            m.apiKeyFingerprint ? (
+              <span className="font-mono text-xs">
+                sk_…{m.apiKeyFingerprint} · full access
+              </span>
+            ) : (
+              '—'
+            ),
           ],
           ['Created', fmtLocal(m.createdAt)],
           ['Updated', fmtRel(m.updatedAt)],
         ]}
       />
       {m.source === 'gateway-only' && (
-        <HintCard
-          icon={<Shield className="size-4" />}
-          tone="warn"
-          title="Not usable from this dashboard"
-        >
-          The gateway has this merchant but we don't hold a sealed API key. In{' '}
+        <Callout tone="warn" icon={Shield} title="Not usable from this dashboard">
+          The gateway has this store but we don't hold a sealed API key. In{' '}
           <span className="font-medium">Danger zone</span>: <em>Attach</em> if
           you still have the plaintext, or <em>Rotate</em> to mint a fresh one.
-        </HintCard>
+        </Callout>
       )}
     </div>
   )
@@ -675,18 +690,18 @@ function WebhookSection({ m }: { m: Merchant }) {
           hint={
             firstTime
               ? 'First-time URL — the gateway will mint a signing secret you can view once.'
-              : 'Where the gateway POSTs status updates for this merchant.'
+              : 'Where the gateway POSTs status updates for this store.'
           }
         >
           <Input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://merchant.example.com/hooks/gateway"
+            placeholder="https://store.example.com/hooks/gateway"
             type="url"
             className="font-mono"
           />
         </Field>
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           {m.webhookUrl && url.trim() === '' && (
             <Button
               type="button"
@@ -704,15 +719,15 @@ function WebhookSection({ m }: { m: Merchant }) {
       </form>
 
       <div
-        className={
-          'rounded-lg border px-4 py-3 ' +
-          (m.webhookUrl
+        className={cn(
+          'rounded-lg border px-4 py-3',
+          m.webhookUrl
             ? 'border-border bg-[var(--bg-2)]'
-            : 'border-dashed border-border bg-[var(--bg-2)]/50')
-        }
+            : 'border-dashed border-[var(--border-strong)] bg-card',
+        )}
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+          <div className="min-w-0 flex-1 basis-60">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Webhook className="size-4 text-[var(--fg-2)]" /> Signing secret
             </div>
@@ -761,7 +776,7 @@ function WebhookSection({ m }: { m: Merchant }) {
       <RevealOnceDialog
         value={revealed}
         title="Webhook signing secret"
-        description="Shown once. Paste it into your merchant's HMAC verifier before dismissing."
+        description="Shown once. Paste it into your store's HMAC verifier before dismissing."
         onClose={() => setRevealed(null)}
       />
     </div>
@@ -781,6 +796,19 @@ const SCOPE_INFO: Record<ApiKeyScope, { label: string; hint: string; risky?: boo
   },
 }
 const DEFAULT_SCOPES: ApiKeyScope[] = ['invoices:read', 'invoices:write']
+
+/** Scopes grouped by resource (the part before ':'), in API_KEY_SCOPES order. */
+const SCOPE_GROUPS: Array<{ resource: string; scopes: ApiKeyScope[] }> =
+  API_KEY_SCOPES.reduce<Array<{ resource: string; scopes: ApiKeyScope[] }>>(
+    (groups, s) => {
+      const resource = s.split(':')[0]
+      const g = groups.find((x) => x.resource === resource)
+      if (g) g.scopes.push(s)
+      else groups.push({ resource, scopes: [s] })
+      return groups
+    },
+    [],
+  )
 
 function apiKeysQueryKey(merchantId: string) {
   return ['merchant-api-keys', merchantId] as const
@@ -827,7 +855,7 @@ function ApiKeysSection({ m }: { m: Merchant }) {
 
   return (
     <div className="space-y-4">
-      <HintCard icon={<KeyRound className="size-4" />} title="Keys for this store's website and apps">
+      <Callout icon={KeyRound} title="Keys for this store's website and apps">
         Give each website or integration its own key with only the access it
         needs. New keys can create and read invoices only; payout access must be
         turned on explicitly. The store's main key{' '}
@@ -835,20 +863,20 @@ function ApiKeysSection({ m }: { m: Merchant }) {
           <span className="font-mono">(sk_…{m.apiKeyFingerprint})</span>
         )}{' '}
         keeps full access for this dashboard — don't hand it out.
-      </HintCard>
+      </Callout>
 
       {m.active === false && (
-        <HintCard icon={<AlertTriangle className="size-4" />} tone="warn" title="Store is deactivated">
+        <Callout tone="warn" title="Store is deactivated">
           All of this store's keys are rejected until it is activated again.
-        </HintCard>
+        </Callout>
       )}
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-[var(--fg-2)]">
           {keys.isSuccess &&
             `${active.length} active${revoked.length ? ` · ${revoked.length} revoked` : ''}`}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {revoked.length > 0 && (
             <Button size="sm" variant="ghost" onClick={() => setShowRevoked((v) => !v)}>
               {showRevoked ? 'Hide revoked' : 'Show revoked'}
@@ -861,61 +889,75 @@ function ApiKeysSection({ m }: { m: Merchant }) {
       </div>
 
       {keys.isPending && (
-        <div className="space-y-2">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
+        <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="space-y-2 px-4 py-3.5">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-3.5 w-32" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+              <div className="flex gap-1.5">
+                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-5 w-20" />
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
       {keys.isError && (
-        <HintCard icon={<AlertTriangle className="size-4" />} tone="warn" title="Couldn't load keys">
+        <Callout tone="warn" title="Couldn't load keys">
           {(keys.error as ApiError)?.message || 'The gateway did not answer.'} If
           this keeps happening, the gateway may not have the scoped-keys update
           (migration 0027) yet.
-        </HintCard>
+        </Callout>
       )}
 
       {keys.isSuccess && shown.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-[var(--fg-2)]">
-          No extra keys yet. Create one for each website or app that talks to
-          the gateway.
-        </div>
+        <SharedEmptyState
+          framed
+          compact
+          icon={KeyRound}
+          title="No extra keys yet."
+          description="Create one for each website or app that talks to the gateway."
+        />
       )}
 
       {keys.isSuccess && shown.length > 0 && (
-        <ul className="space-y-2">
+        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
           {shown.map((k) => (
             <li
               key={k.id}
-              className={`rounded-lg border px-4 py-3 ${
-                k.revokedAt
-                  ? 'border-border bg-[var(--bg-2)]/50 opacity-70'
-                  : 'border-border bg-[var(--bg-2)]'
-              }`}
+              className={cn('px-4 py-3', k.revokedAt && 'bg-[var(--bg-2)]')}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+                <div className={cn('min-w-0 flex-1', k.revokedAt && 'opacity-70')}>
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="truncate text-sm font-medium">
                       {k.label ?? 'Unnamed key'}
                     </span>
-                    <span className="font-mono text-2xs text-[var(--fg-3)]">
+                    <span className="font-mono text-xs text-[var(--fg-2)]">
                       sk_…{k.fingerprint}
                     </span>
                     {k.revokedAt && <Badge variant="danger">Revoked</Badge>}
                   </div>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  <div className="mt-2 flex flex-wrap gap-1.5">
                     {k.scopes.length === 0 ? (
                       <Badge variant="danger">No valid scopes</Badge>
                     ) : (
                       k.scopes.map((s) => (
-                        <Badge key={s} variant={SCOPE_INFO[s]?.risky ? 'warn' : 'default'}>
+                        <Badge
+                          key={s}
+                          variant={SCOPE_INFO[s]?.risky ? 'warn' : 'default'}
+                          title={s}
+                        >
+                          {SCOPE_INFO[s]?.risky && <ShieldAlert />}
                           {SCOPE_INFO[s]?.label ?? s}
                         </Badge>
                       ))
                     )}
                   </div>
-                  <div className="mt-1.5 text-2xs text-[var(--fg-3)]">
+                  <div className="mt-2 text-2xs text-[var(--fg-3)]">
                     Created {fmtLocal(k.createdAt)}
                     {k.revokedAt && ` · revoked ${fmtLocal(k.revokedAt)}`}
                   </div>
@@ -1052,40 +1094,60 @@ function CreateApiKeyDialog({
             />
           </Field>
           <fieldset className="space-y-2">
-            <legend className="mb-1 text-xs uppercase tracking-wider text-[var(--fg-3)]">
-              Access
-            </legend>
-            {API_KEY_SCOPES.map((s) => (
-              <label
-                key={s}
-                className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 ${
-                  SCOPE_INFO[s].risky && scopes.includes(s)
-                    ? 'border-warn/40 bg-warn/10'
-                    : 'border-border bg-card'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={scopes.includes(s)}
-                  onChange={() => toggle(s)}
-                  disabled={create.isPending}
-                  className="mt-0.5 size-4 accent-[var(--primary)]"
-                />
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium">
-                    {SCOPE_INFO[s].label}{' '}
-                    <span className="font-mono text-2xs font-normal text-[var(--fg-3)]">{s}</span>
-                  </span>
-                  <span className="block text-xs text-[var(--fg-2)]">{SCOPE_INFO[s].hint}</span>
-                </span>
-              </label>
-            ))}
+            <legend className="mb-1.5 text-sm font-medium">Access</legend>
+            <div className="space-y-3">
+              {SCOPE_GROUPS.map((g) => (
+                <div
+                  key={g.resource}
+                  className="overflow-hidden rounded-md border border-border"
+                >
+                  <div className="flex h-8 items-center border-b border-border bg-[var(--bg-2)] px-3 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
+                    {g.resource}
+                  </div>
+                  <div className="divide-y divide-border">
+                    {g.scopes.map((s) => (
+                      <label
+                        key={s}
+                        className={cn(
+                          'flex cursor-pointer items-start gap-3 px-3 py-2.5 transition-colors',
+                          SCOPE_INFO[s].risky && scopes.includes(s)
+                            ? 'bg-[var(--warn-bg)]'
+                            : 'bg-card hover:bg-[var(--bg-hover)]',
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={scopes.includes(s)}
+                          onChange={() => toggle(s)}
+                          disabled={create.isPending}
+                          className="mt-0.5 size-4 shrink-0 cursor-pointer accent-[var(--primary)]"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span className="text-sm font-medium">{SCOPE_INFO[s].label}</span>
+                            <span className="font-mono text-2xs text-[var(--fg-3)]">{s}</span>
+                            {SCOPE_INFO[s].risky && (
+                              <Badge variant="warn">
+                                <ShieldAlert /> Sensitive
+                              </Badge>
+                            )}
+                          </span>
+                          <span className="mt-0.5 block text-xs text-[var(--fg-2)]">
+                            {SCOPE_INFO[s].hint}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </fieldset>
           {sendsPayouts && (
-            <HintCard icon={<AlertTriangle className="size-4" />} tone="warn" title="This key can send money">
+            <Callout tone="warn" title="This key can send money">
               Anyone holding it can pay out from the shared pool. Only give it
               to a server you control, never to a website or browser code.
-            </HintCard>
+            </Callout>
           )}
           {scopes.length === 0 && (
             <p className="text-xs text-destructive">Pick at least one permission.</p>
@@ -1531,7 +1593,7 @@ function TuningSection({ m }: { m: Merchant }) {
           maxLength={128}
         />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Under-pay tolerance (bps)">
           <Input
             value={under}
@@ -1587,13 +1649,13 @@ function TuningSection({ m }: { m: Merchant }) {
         onClear={() => setTierGroups([])}
       />
 
-      <HintCard icon={<CircleDashed className="size-4" />}>
+      <Callout icon={CircleDashed}>
         Tolerance, threshold + tier changes apply to{' '}
         <span className="font-medium">new</span> invoices only — existing
         invoices keep their snapshotted values.
-      </HintCard>
+      </Callout>
 
-      <div className="flex justify-end">
+      <div className="flex justify-end border-t border-border pt-4">
         <Button type="submit" size="sm" disabled={save.isPending}>
           <Pencil className="size-3.5" />
           {save.isPending ? 'Saving…' : 'Save changes'}
@@ -1641,7 +1703,7 @@ function ConfirmationThresholdsEditor({
           <button
             type="button"
             onClick={onClear}
-            className="text-2xs text-[var(--fg-2)] hover:text-destructive"
+            className="cursor-pointer text-xs text-[var(--fg-2)] hover:text-destructive"
           >
             Clear all
           </button>
@@ -1649,7 +1711,7 @@ function ConfirmationThresholdsEditor({
       }
       hint={
         rows.length === 0
-          ? 'Empty = use gateway defaults for every chain. Set a per-chain override to tighten or loosen finality for this merchant.'
+          ? 'Empty = use gateway defaults for every chain. Set a per-chain override to tighten or loosen finality for this store.'
           : 'Lower-than-default values trade reorg risk for faster finality and surface a WARN in gateway logs. 0 = zero-conf: on Bitcoin/Litecoin the payment settles once the mempool holds a non-replaceable (non-RBF) transaction carrying it; on other chains 0 settles at the first block.'
       }
     >
@@ -1670,9 +1732,9 @@ function ConfirmationThresholdsEditor({
             <div
               key={row.id}
               className={
-                'grid grid-cols-[minmax(0,1.4fr)_120px_auto] items-start gap-2 rounded-md border p-2 ' +
+                'grid grid-cols-[minmax(0,1.4fr)_96px_auto] items-start gap-2 rounded-md border p-2 ' +
                 (belowDefault
-                  ? 'border-warn/40 bg-warn/5'
+                  ? 'border-[var(--warn-border)] bg-[var(--warn-bg)]'
                   : 'border-border bg-[var(--bg-2)]')
               }
             >
@@ -1701,7 +1763,7 @@ function ConfirmationThresholdsEditor({
                   </SelectContent>
                 </Select>
                 {info && def != null && (
-                  <div className="flex items-center gap-2 px-1 text-2xs text-[var(--fg-3)]">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-2xs text-[var(--fg-2)]">
                     <span className="font-mono">{info.short}</span>
                     <span>·</span>
                     <span>
@@ -1731,8 +1793,9 @@ function ConfirmationThresholdsEditor({
               <button
                 type="button"
                 onClick={() => onRemove(row.id)}
-                className="inline-flex size-8 items-center justify-center rounded-md text-[var(--fg-3)] transition-colors hover:bg-destructive/10 hover:text-destructive"
+                className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-[var(--fg-3)] transition-colors hover:bg-[var(--danger-bg)] hover:text-destructive"
                 title="Remove override"
+                aria-label="Remove override"
               >
                 <X className="size-3.5" />
               </button>
@@ -1742,7 +1805,7 @@ function ConfirmationThresholdsEditor({
         <button
           type="button"
           onClick={onAdd}
-          className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 text-xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
+          className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-[var(--border-strong)] px-2.5 text-xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
         >
           <Plus className="size-3.5" />
           Add chain override
@@ -1804,7 +1867,7 @@ function ConfirmationTiersEditor({
           <button
             type="button"
             onClick={onClear}
-            className="text-2xs text-[var(--fg-2)] hover:text-destructive"
+            className="cursor-pointer text-xs text-[var(--fg-2)] hover:text-destructive"
           >
             Clear all
           </button>
@@ -1882,15 +1945,16 @@ function ConfirmationTiersEditor({
                 <button
                   type="button"
                   onClick={() => onRemoveGroup(group.id)}
-                  className="inline-flex size-8 items-center justify-center rounded-md text-[var(--fg-3)] transition-colors hover:bg-destructive/10 hover:text-destructive"
+                  className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-[var(--fg-3)] transition-colors hover:bg-[var(--danger-bg)] hover:text-destructive"
                   title="Remove tier group"
+                  aria-label="Remove tier group"
                 >
                   <X className="size-3.5" />
                 </button>
               </div>
 
               {info && group.chainId && (
-                <div className="px-1 text-2xs text-[var(--fg-3)]">
+                <div className="px-1 text-2xs text-[var(--fg-2)]">
                   Key{' '}
                   <span className="font-mono text-[var(--fg-1)]">
                     {group.chainId}:{group.token || '<token>'}
@@ -1906,9 +1970,9 @@ function ConfirmationTiersEditor({
                   return (
                     <div
                       key={rule.id}
-                      className="space-y-1 rounded border border-border bg-card px-1.5 py-1.5"
+                      className="space-y-1 rounded-md border border-border bg-card p-1.5"
                     >
-                      <div className="grid grid-cols-[150px_minmax(0,1.2fr)_88px_auto] items-center gap-1.5">
+                      <div className="grid grid-cols-2 items-center gap-1.5 sm:grid-cols-[150px_minmax(0,1.2fr)_88px_auto]">
                         <Select
                           value={rule.op === '' ? '__any__' : rule.op}
                           onValueChange={(v) =>
@@ -1969,12 +2033,12 @@ function ConfirmationTiersEditor({
                           inputMode="numeric"
                           className="h-7 font-mono text-xs"
                         />
-                        <div className="flex items-center">
+                        <div className="flex items-center justify-end">
                           <button
                             type="button"
                             onClick={() => onMoveRule(group.id, rule.id, -1)}
                             disabled={idx === 0}
-                            className="inline-flex size-6 items-center justify-center rounded text-[var(--fg-3)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                            className="inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                             title="Move up"
                           >
                             ↑
@@ -1983,7 +2047,7 @@ function ConfirmationTiersEditor({
                             type="button"
                             onClick={() => onMoveRule(group.id, rule.id, 1)}
                             disabled={last}
-                            className="inline-flex size-6 items-center justify-center rounded text-[var(--fg-3)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                            className="inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                             title="Move down"
                           >
                             ↓
@@ -1991,14 +2055,15 @@ function ConfirmationTiersEditor({
                           <button
                             type="button"
                             onClick={() => onRemoveRule(group.id, rule.id)}
-                            className="inline-flex size-6 items-center justify-center rounded text-[var(--fg-3)] transition-colors hover:bg-destructive/10 hover:text-destructive"
+                            className="inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-[var(--fg-3)] transition-colors hover:bg-[var(--danger-bg)] hover:text-destructive"
                             title="Remove rule"
+                            aria-label="Remove rule"
                           >
                             <X className="size-3" />
                           </button>
                         </div>
                       </div>
-                      <div className="px-1 text-2xs italic text-[var(--fg-3)]">
+                      <div className="px-1 text-2xs text-[var(--fg-2)]">
                         {describeTierRule(rule, group.token)}
                       </div>
                     </div>
@@ -2008,7 +2073,7 @@ function ConfirmationTiersEditor({
                   type="button"
                   onClick={() => onAddRule(group.id)}
                   disabled={group.rules.length >= 20}
-                  className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-1 text-2xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-dashed border-[var(--border-strong)] px-2 text-xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Plus className="size-3" />
                   Add rule {group.rules.length >= 20 ? '(max 20)' : ''}
@@ -2020,7 +2085,7 @@ function ConfirmationTiersEditor({
         <button
           type="button"
           onClick={onAddGroup}
-          className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-1.5 text-xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
+          className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-[var(--border-strong)] px-2.5 text-xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
         >
           <Plus className="size-3.5" />
           Add (chain, token) tier group
@@ -2069,7 +2134,7 @@ function DangerSection({
         { method: 'POST' },
       ),
     onSuccess: (_r, next) => {
-      toast.success(next ? 'Merchant activated' : 'Merchant deactivated')
+      toast.success(next ? 'Store activated' : 'Store deactivated')
       qc.invalidateQueries({ queryKey: merchantsQuery.queryKey })
     },
     onError: (e: ApiError) => toast.error(e.message || 'Could not update'),
@@ -2092,7 +2157,7 @@ function DangerSection({
       {m.source === 'gateway-only' && (
         <DangerRow
           title="Attach existing key"
-          body="Already have the plaintext from elsewhere (e.g. created via Postman)? Paste it here to bind it to this merchant without rotating."
+          body="Already have the plaintext from elsewhere (e.g. created via Postman)? Paste it here to bind it to this store without rotating."
           icon={<Download className="size-4" />}
           action={
             <Button size="sm" onClick={() => setAttachOpen(true)}>
@@ -2123,8 +2188,8 @@ function DangerSection({
 
       {m.active === true && (
         <DangerRow
-          title="Deactivate merchant"
-          body="Inbound API requests with this merchant's key are rejected while inactive. Reactivating restores the same key."
+          title="Deactivate store"
+          body="Inbound API requests with this store's key are rejected while inactive. Reactivating restores the same key."
           icon={<Ban className="size-4" />}
           action={
             <Button
@@ -2140,8 +2205,8 @@ function DangerSection({
       )}
       {m.active === false && (
         <DangerRow
-          title="Activate merchant"
-          body="Re-enable inbound requests with this merchant's API key."
+          title="Activate store"
+          body="Re-enable inbound requests with this store's API key."
           icon={<Power className="size-4" />}
           action={
             <Button
@@ -2158,7 +2223,7 @@ function DangerSection({
       {m.source !== 'gateway-only' && (
         <DangerRow
           title="Remove from dashboard"
-          body="Drops the sealed API key from KV. The merchant stays on the gateway; re-import to get it back."
+          body="Drops the sealed API key from KV. The store stays on the gateway; re-import to get it back."
           icon={<Trash2 className="size-4" />}
           tone="destructive"
           action={
@@ -2194,7 +2259,7 @@ function DangerSection({
         open={confirmRemove}
         onOpenChange={setConfirmRemove}
         title="Remove local record?"
-        body="Removes the merchant from this dashboard and drops the sealed key. Does not delete it on the gateway."
+        body="Removes the store from this dashboard and drops the sealed key. Does not delete it on the gateway."
         cta="Remove"
         destructive
         pending={remove.isPending}
@@ -2225,26 +2290,30 @@ function DangerRow({
 }) {
   return (
     <div
-      className={`flex items-start justify-between gap-4 rounded-lg border px-4 py-3 ${
+      className={cn(
+        'flex flex-wrap items-start justify-between gap-x-4 gap-y-3 rounded-lg border px-4 py-3',
         tone === 'destructive'
-          ? 'border-destructive/30 bg-destructive/5'
-          : 'border-border bg-[var(--bg-2)]'
-      }`}
+          ? 'border-[var(--danger-border)] bg-[var(--danger-bg)]'
+          : 'border-border bg-card',
+      )}
     >
-      <div className="flex min-w-0 gap-3">
+      <div className="flex min-w-0 flex-1 basis-60 gap-3">
         <div
-          className={`mt-0.5 shrink-0 ${
-            tone === 'destructive' ? 'text-destructive' : 'text-[var(--fg-2)]'
-          }`}
+          className={cn(
+            'grid size-8 shrink-0 place-items-center rounded-md border',
+            tone === 'destructive'
+              ? 'border-[var(--danger-border)] bg-card text-destructive'
+              : 'border-border bg-[var(--bg-2)] text-[var(--fg-2)]',
+          )}
         >
           {icon}
         </div>
         <div className="min-w-0">
           <div className="text-sm font-medium">{title}</div>
-          <p className="mt-0.5 text-xs text-[var(--fg-2)]">{body}</p>
+          <p className="mt-0.5 text-xs text-pretty text-[var(--fg-2)]">{body}</p>
         </div>
       </div>
-      <div className="shrink-0">{action}</div>
+      <div className="shrink-0 self-center">{action}</div>
     </div>
   )
 }
@@ -2253,44 +2322,16 @@ function DangerRow({
 
 function KeyValueGrid({ rows }: { rows: Array<[string, React.ReactNode]> }) {
   return (
-    <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-[140px_1fr]">
+    <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-y-3">
       {rows.map(([k, v], i) => (
         <React.Fragment key={i}>
-          <dt className="text-xs uppercase tracking-wider text-[var(--fg-3)]">
+          <dt className="text-xs text-[var(--fg-2)] max-sm:mt-2 max-sm:first:mt-0">
             {k}
           </dt>
-          <dd className="text-sm break-words">{v}</dd>
+          <dd className="min-w-0 text-sm break-words">{v}</dd>
         </React.Fragment>
       ))}
     </dl>
-  )
-}
-
-function HintCard({
-  icon,
-  title,
-  tone,
-  children,
-}: {
-  icon?: React.ReactNode
-  title?: string
-  tone?: 'warn'
-  children: React.ReactNode
-}) {
-  return (
-    <div
-      className={`flex gap-3 rounded-lg border px-3.5 py-2.5 text-xs ${
-        tone === 'warn'
-          ? 'border-warn/30 bg-warn/10 text-warn'
-          : 'border-border bg-[var(--bg-2)] text-[var(--fg-2)]'
-      }`}
-    >
-      {icon && <div className="mt-0.5 shrink-0">{icon}</div>}
-      <div>
-        {title && <div className="font-medium">{title}</div>}
-        <div className={title ? 'mt-0.5' : ''}>{children}</div>
-      </div>
-    </div>
   )
 }
 
@@ -2356,10 +2397,18 @@ function RevealOnceDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {value && (
-          <div className="flex items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2">
-            <code className="flex-1 truncate font-mono text-xs">{value}</code>
-            <CopyButton value={value} />
-          </div>
+          <Callout
+            tone="warn"
+            icon={KeyRound}
+            title="Copy it now — it won't be shown again."
+          >
+            <div className="mt-2 flex items-start gap-2 rounded-md border border-border bg-card px-3 py-2.5">
+              <code className="min-w-0 flex-1 font-mono text-sm break-all text-foreground select-all">
+                {value}
+              </code>
+              <CopyButton value={value} label="Copy" className="shrink-0" />
+            </div>
+          </Callout>
         )}
         <DialogFooter>
           <Button onClick={onClose}>Done</Button>
@@ -2371,30 +2420,6 @@ function RevealOnceDialog({
 
 /* ── loading / empty ─────────────────────────────────────── */
 
-function MerchantListSkeleton() {
-  return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div
-          key={i}
-          className="grid grid-cols-[1fr_100px_140px_120px_56px] items-center gap-4 border-b border-border px-5 py-3 last:border-0"
-        >
-          <div className="space-y-1.5">
-            <Skeleton className="h-3.5 w-40" />
-            <Skeleton className="h-3 w-56" />
-          </div>
-          <Skeleton className="h-3.5 w-16" />
-          <Skeleton className="h-3.5 w-16" />
-          <Skeleton className="h-3.5 w-14" />
-          <div className="justify-self-end">
-            <Skeleton className="size-7" />
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 function EmptyState({
   onCreate,
   onImport,
@@ -2403,32 +2428,33 @@ function EmptyState({
   onImport: () => void
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card px-6 py-16 text-center">
-      <div className="flex size-12 items-center justify-center rounded-full bg-[var(--bg-2)]">
-        <Store className="size-5 text-[var(--fg-2)]" />
-      </div>
-      <h3 className="mt-4 text-sm font-medium">No merchants yet</h3>
-      <p className="mt-1 max-w-sm text-xs text-[var(--fg-2)]">
-        Create a merchant via the gateway's admin surface to receive the API key
-        here, or import an existing key you already have.
-      </p>
-      <div className="mt-5 flex gap-2">
-        <Button size="sm" onClick={onCreate}>
-          <Plus className="size-3.5" /> Create merchant
-        </Button>
-        <Button size="sm" variant="outline" onClick={onImport}>
-          <Download className="size-3.5" /> Import key
-        </Button>
-      </div>
-    </div>
+    <SharedEmptyState
+      framed
+      icon={Store}
+      title="No stores yet"
+      description="Create a store via the gateway's admin surface to receive the API key here, or import an existing key you already have."
+      action={
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button size="sm" onClick={onCreate}>
+            <Plus className="size-3.5" /> Create store
+          </Button>
+          <Button size="sm" variant="outline" onClick={onImport}>
+            <Download className="size-3.5" /> Import key
+          </Button>
+        </div>
+      }
+    />
   )
 }
 
 function NoMatch() {
   return (
-    <div className="rounded-lg border border-dashed border-border bg-card px-6 py-12 text-center text-sm text-[var(--fg-2)]">
-      No merchants match the current filter.
-    </div>
+    <SharedEmptyState
+      framed
+      compact
+      icon={Search}
+      title="No stores match the current filter."
+    />
   )
 }
 
@@ -2485,7 +2511,7 @@ function CreateMerchantDialog({
       })
     },
     onSuccess: () => {
-      toast.success('Merchant created')
+      toast.success('Store created')
       qc.invalidateQueries({ queryKey: merchantsQuery.queryKey })
       onOpenChange(false)
     },
@@ -2496,7 +2522,7 @@ function CreateMerchantDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create merchant</DialogTitle>
+          <DialogTitle>Create store</DialogTitle>
           <DialogDescription>
             Calls <span className="font-mono">POST /admin/merchants</span> on the
             gateway. The returned plaintext API key is sealed and stored here.
@@ -2526,18 +2552,18 @@ function CreateMerchantDialog({
             <Input
               value={webhookUrl}
               onChange={(e) => setWebhookUrl(e.target.value)}
-              placeholder="https://merchant.example.com/hooks/gateway"
+              placeholder="https://store.example.com/hooks/gateway"
               type="url"
               className="font-mono"
             />
           </Field>
 
           <details className="rounded-md border border-border bg-[var(--bg-2)] open:pb-3">
-            <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-[var(--fg-2)]">
+            <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-[var(--fg-1)] hover:text-foreground">
               Advanced — payment tolerances &amp; cooldown
             </summary>
             <div className="space-y-3 px-3 pt-1">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field
                   label="Under-pay tolerance (bps)"
                   hint="0–2000. 1 bps = 0.01% (50 = 0.5%, 100 = 1%). Default 0 (strict)."
@@ -2590,7 +2616,7 @@ function CreateMerchantDialog({
               type="submit"
               disabled={create.isPending || name.length === 0 || !tuningValid}
             >
-              {create.isPending ? 'Creating…' : 'Create merchant'}
+              {create.isPending ? 'Creating…' : 'Create store'}
             </Button>
           </DialogFooter>
         </form>
@@ -2640,7 +2666,7 @@ function ImportMerchantDialog({
         }),
       }),
     onSuccess: () => {
-      toast.success('Merchant imported')
+      toast.success('Store imported')
       qc.invalidateQueries({ queryKey: merchantsQuery.queryKey })
       onOpenChange(false)
     },
@@ -2652,12 +2678,12 @@ function ImportMerchantDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {prefill?.lockId ? 'Attach existing key' : 'Import existing merchant'}
+            {prefill?.lockId ? 'Attach existing key' : 'Import existing store'}
           </DialogTitle>
           <DialogDescription>
             {prefill?.lockId
-              ? 'Bind the plaintext API key you already have to this gateway merchant. Sealed locally with AES-GCM.'
-              : 'For merchants created directly on the gateway. The plaintext key is AES-GCM sealed before writing to KV.'}
+              ? 'Bind the plaintext API key you already have to this gateway store. Sealed locally with AES-GCM.'
+              : 'For stores created directly on the gateway. The plaintext key is AES-GCM sealed before writing to KV.'}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -2668,7 +2694,7 @@ function ImportMerchantDialog({
           }}
         >
           <Field
-            label="Merchant id"
+            label="Store id"
             hint={
               prefill?.lockId
                 ? 'Bound to the gateway record — cannot be changed here.'
@@ -2706,7 +2732,7 @@ function ImportMerchantDialog({
             <Input
               value={webhookUrl}
               onChange={(e) => setWebhookUrl(e.target.value)}
-              placeholder="https://merchant.example.com/hooks/gateway"
+              placeholder="https://store.example.com/hooks/gateway"
               type="url"
               className="font-mono"
             />

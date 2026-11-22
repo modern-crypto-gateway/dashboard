@@ -78,8 +78,8 @@ export function MetadataEditor({ value, onChange }: Props) {
   }
 
   return (
-    <div className="rounded-md border border-border bg-[var(--bg-2)]">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5">
+    <div className="overflow-hidden rounded-md border border-border bg-card">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-[var(--bg-2)] px-2 py-1.5">
         <div className="inline-flex rounded-md border border-border bg-card p-0.5">
           {(
             [
@@ -94,10 +94,10 @@ export function MetadataEditor({ value, onChange }: Props) {
                 type="button"
                 onClick={() => (opt.k === 'raw' ? switchToRaw() : switchToRows())}
                 className={
-                  'rounded px-2.5 py-0.5 text-2xs font-medium transition-colors ' +
+                  'h-6 cursor-pointer rounded-sm px-2.5 text-xs font-medium transition-colors ' +
                   (active
-                    ? 'bg-[var(--bg-2)] text-[var(--fg-1)]'
-                    : 'text-[var(--fg-2)] hover:text-[var(--fg-1)]')
+                    ? 'bg-[var(--bg-active)] text-foreground'
+                    : 'text-[var(--fg-2)] hover:text-foreground')
                 }
               >
                 {opt.label}
@@ -110,6 +110,7 @@ export function MetadataEditor({ value, onChange }: Props) {
             type="button"
             size="sm"
             variant="ghost"
+            className="h-7"
             onClick={() => setRows((r) => [...r, { key: '', value: '' }])}
           >
             <Plus className="size-3.5" /> Field
@@ -120,7 +121,7 @@ export function MetadataEditor({ value, onChange }: Props) {
       {mode === 'rows' ? (
         <div className="space-y-1.5 p-2">
           {rows.length === 0 ? (
-            <div className="px-1 py-3 text-center text-2xs text-[var(--fg-3)]">
+            <div className="px-1 py-3 text-center text-xs text-[var(--fg-2)]">
               No fields. Click <span className="font-medium">+ Field</span> to
               add key/value pairs, or switch to Raw JSON.
             </div>
@@ -137,7 +138,7 @@ export function MetadataEditor({ value, onChange }: Props) {
                       return next
                     })
                   }
-                  className="h-8 flex-1 font-mono text-xs"
+                  className="h-8 min-w-0 flex-1 font-mono text-xs"
                   maxLength={128}
                 />
                 <Input
@@ -150,14 +151,14 @@ export function MetadataEditor({ value, onChange }: Props) {
                       return next
                     })
                   }
-                  className="h-8 flex-[2] font-mono text-xs"
+                  className="h-8 min-w-0 flex-[2] font-mono text-xs"
                 />
                 <button
                   type="button"
                   onClick={() =>
                     setRows((cur) => cur.filter((_, j) => j !== i))
                   }
-                  className="rounded p-1 text-[var(--fg-3)] transition-colors hover:bg-[var(--bg-hover)] hover:text-destructive"
+                  className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-[var(--fg-3)] transition-colors hover:bg-[var(--bg-hover)] hover:text-destructive"
                   aria-label="Remove field"
                 >
                   <X className="size-3.5" />
@@ -179,7 +180,7 @@ export function MetadataEditor({ value, onChange }: Props) {
             className="font-mono text-xs"
           />
           {rawError && (
-            <div className="mt-1 text-2xs text-destructive">{rawError}</div>
+            <div className="mt-1.5 text-xs text-destructive">{rawError}</div>
           )}
         </div>
       )}

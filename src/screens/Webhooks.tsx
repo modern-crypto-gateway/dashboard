@@ -20,6 +20,14 @@ import { fmtLocal, fmtLocalTime, truncateAddr, useNow } from '@/lib/format'
 import type { WebhookDelivery } from '@/lib/types'
 
 import { CopyButton } from '@/components/CopyButton'
+import { PageHeader } from '@/components/PageHeader'
+import {
+  Callout,
+  EmptyState as SharedEmptyState,
+  ErrorState,
+  KeyValue,
+  ListSkeleton,
+} from '@/components/States'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,7 +38,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
 function safeHost(url: string | undefined): string | null {
@@ -164,40 +171,36 @@ export function WebhooksPage() {
 
   return (
     <div className="fade-in space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow">Operations</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Webhook deliveries
-          </h1>
-          <p className="mt-1 text-sm text-[var(--fg-2)]">
-            Operator view of the outbox. Replay dead rows after the merchant has
-            fixed the underlying cause.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Stores"
+        title="Webhook deliveries"
+        description="Operator view of the outbox. Replay dead rows after the store has fixed the underlying cause."
+      />
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <StatusTabs value={status} onChange={setStatus} counts={counts} />
-        <div className="relative sm:flex-1">
+        <div className="relative min-w-0 sm:flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[var(--fg-3)]" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by id, merchant, event, resource, target…"
+            placeholder="Search by id, store, event, resource, target…"
             className="pl-8"
           />
         </div>
       </div>
 
       {list.isLoading ? (
-        <ListSkeleton />
+        <ListSkeleton rows={6} />
       ) : list.isError ? (
-        <div className="rounded-lg border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-destructive">
-          {list.error instanceof Error
-            ? list.error.message
-            : 'Could not load deliveries'}
-        </div>
+        <ErrorState
+          title="Could not load deliveries"
+          message={
+            list.error instanceof Error
+              ? list.error.message
+              : 'Could not load deliveries'
+          }
+        />
       ) : all.length === 0 ? (
         <EmptyState status={status} />
       ) : filtered.length === 0 ? (
@@ -232,22 +235,24 @@ function StatusTabs({
     { key: 'delivered', label: 'Delivered', Icon: CheckCircle2 },
   ]
   return (
-    <div className="inline-flex rounded-md border border-border bg-card p-0.5">
+    <div className="inline-flex w-fit max-w-full shrink-0 rounded-md border border-border bg-card p-0.5">
       {items.map(({ key, label, Icon }) => (
         <button
           key={key}
+          type="button"
+          aria-pressed={value === key}
           onClick={() => onChange(key)}
           className={cn(
-            'inline-flex cursor-pointer items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-medium transition-colors',
+            'inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-sm px-3 text-xs font-medium transition-colors',
             value === key
-              ? 'bg-secondary text-foreground shadow-xs'
+              ? 'bg-[var(--bg-active)] text-foreground'
               : 'text-[var(--fg-2)] hover:text-foreground',
           )}
         >
           <Icon className="size-3.5" />
           {label}
           {counts[key] != null && (
-            <span className="font-mono text-2xs text-[var(--fg-3)]">
+            <span className="font-mono text-2xs tabular-nums text-[var(--fg-2)]">
               {counts[key]}
             </span>
           )}
@@ -266,11 +271,11 @@ function DeliveryList({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden grid-cols-[1.7fr_1.3fr_1.3fr_70px_110px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-2xs font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
+      <div className="hidden h-9 grid-cols-[1.7fr_1.3fr_1.3fr_70px_110px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-4 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)] sm:grid">
         <div>Event &amp; resource</div>
         <div>Target</div>
         <div>Last response</div>
-        <div>Tries</div>
+        <div className="text-right">Tries</div>
         <div>Timing</div>
       </div>
       <ul>
@@ -304,13 +309,13 @@ function DeliveryRow({
             onOpen()
           }
         }}
-        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1.7fr_1.3fr_1.3fr_70px_110px] sm:gap-4"
+        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[1.7fr_1.3fr_1.3fr_70px_110px] sm:gap-4"
       >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Badge
               variant={ev.tone === 'default' ? 'outline' : ev.tone}
-              className="shrink-0 text-2xs"
+              className="shrink-0"
             >
               {ev.label}
             </Badge>
@@ -323,7 +328,7 @@ function DeliveryRow({
               </span>
             )}
           </div>
-          <div className="mt-0.5 flex items-center gap-1.5 font-mono text-2xs text-[var(--fg-3)]">
+          <div className="mt-1 flex min-w-0 items-center gap-1.5 font-mono text-2xs text-[var(--fg-3)]">
             <span className="truncate">{d.eventType}</span>
             {d.resourceId && (
               <>
@@ -338,7 +343,7 @@ function DeliveryRow({
 
         <div className="min-w-0">
           {targetHost ? (
-            <span className="truncate font-mono text-xs text-[var(--fg-2)]">
+            <span className="block truncate font-mono text-xs text-[var(--fg-1)]">
               {targetHost}
             </span>
           ) : (
@@ -357,7 +362,7 @@ function DeliveryRow({
               HTTP {d.lastStatusCode}
             </span>
           ) : d.lastError ? (
-            <span className="truncate text-xs text-destructive">
+            <span className="block truncate text-xs text-destructive">
               {d.lastError}
             </span>
           ) : (
@@ -365,9 +370,12 @@ function DeliveryRow({
           )}
         </div>
 
-        <div className="font-mono text-xs">{d.attempts}</div>
+        <div className="font-mono text-xs tabular-nums sm:text-right">
+          <span className="text-[var(--fg-2)] sm:hidden">Tries </span>
+          {d.attempts}
+        </div>
 
-        <div className="text-xs text-[var(--fg-3)]">{formatAt(d, now)}</div>
+        <div className="font-mono text-xs text-[var(--fg-2)]">{formatAt(d, now)}</div>
       </div>
     </li>
   )
@@ -419,8 +427,8 @@ function DeliveryDetailSheet({
       <SheetContent>
         <SheetHeader className="space-y-2">
           {delivery && (
-            <div className="flex items-center gap-2">
-              <SheetTitle className="truncate font-mono text-base">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 pr-8">
+              <SheetTitle className="truncate pr-0 font-mono text-base">
                 {truncateAddr(delivery.id, 10, 8)}
               </SheetTitle>
               <CopyButton value={delivery.id} />
@@ -483,7 +491,7 @@ function DeliveryDetailSheet({
               {(delivery.targetUrl ||
                 delivery.resourceId ||
                 delivery.idempotencyKey) && (
-                <div className="space-y-3 rounded-md border border-border bg-[var(--bg-2)] p-3">
+                <div className="space-y-2.5 rounded-lg border border-border bg-[var(--bg-2)] px-4 py-3">
                   {delivery.targetUrl && (
                     <DetailLine label="Target" icon={<Link2 className="size-3.5" />}>
                       <a
@@ -537,8 +545,8 @@ function DeliveryDetailSheet({
                     {delivery.id}
                   </span>
                 </KVItem>
-                <KVItem label="Merchant" wide>
-                  <span className="font-mono text-xs">
+                <KVItem label="Store" wide>
+                  <span className="break-all font-mono text-xs">
                     {delivery.merchantId}
                   </span>
                 </KVItem>
@@ -555,12 +563,11 @@ function DeliveryDetailSheet({
               </KV>
 
               {delivery.lastError && (
-                <div className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
-                  <div className="eyebrow mb-1 text-destructive">last error</div>
-                  <div className="whitespace-pre-wrap break-all font-mono text-xs text-destructive">
+                <Callout tone="danger" title="Last error">
+                  <div className="whitespace-pre-wrap break-all font-mono text-xs">
                     {delivery.lastError}
                   </div>
-                </div>
+                </Callout>
               )}
 
               {delivery.payload && <PayloadBlock payload={delivery.payload} />}
@@ -568,10 +575,10 @@ function DeliveryDetailSheet({
               {delivery.status === 'dead' && (
                 <div className="border-t border-border pt-5">
                   <div className="eyebrow mb-3">Action</div>
-                  <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-secondary px-3 py-2.5">
-                    <div>
+                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-lg border border-border bg-[var(--bg-2)] px-4 py-3">
+                    <div className="min-w-0">
                       <div className="text-sm font-medium">Replay delivery</div>
-                      <div className="text-xs text-[var(--fg-2)]">
+                      <div className="mt-0.5 text-xs text-[var(--fg-2)]">
                         Resets attempts and re-queues this delivery.
                       </div>
                     </div>
@@ -630,10 +637,9 @@ function KVItem({
   wide?: boolean
 }) {
   return (
-    <div className={wide ? 'sm:col-span-2' : ''}>
-      <dt className="eyebrow mb-1">{label}</dt>
-      <dd>{children}</dd>
-    </div>
+    <KeyValue label={label} className={wide ? 'sm:col-span-2' : undefined}>
+      {children}
+    </KeyValue>
   )
 }
 
@@ -647,8 +653,8 @@ function DetailLine({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex items-center gap-2 text-sm">
-      <span className="flex w-24 shrink-0 items-center gap-1.5 text-2xs uppercase tracking-[0.12em] text-[var(--fg-3)]">
+    <div className="flex min-w-0 items-center gap-2 text-sm">
+      <span className="flex w-24 shrink-0 items-center gap-1.5 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]">
         {icon}
         {label}
       </span>
@@ -665,9 +671,9 @@ function PayloadBlock({
   const json = React.useMemo(() => JSON.stringify(payload, null, 2), [payload])
   const [collapsed, setCollapsed] = React.useState(false)
   return (
-    <div className="rounded-md border border-border bg-card">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <div className="flex items-center gap-2 text-sm font-medium">
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-[var(--bg-2)] px-4 py-2">
+        <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
           <span className="eyebrow">Payload</span>
           <span className="font-mono text-2xs text-[var(--fg-2)]">
             {payload.event}
@@ -677,7 +683,7 @@ function PayloadBlock({
           <button
             type="button"
             onClick={() => setCollapsed((v) => !v)}
-            className="cursor-pointer rounded px-1.5 py-0.5 text-2xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
+            className="cursor-pointer rounded px-1.5 py-0.5 text-xs text-[var(--fg-2)] transition-colors hover:bg-[var(--bg-hover)] hover:text-foreground"
           >
             {collapsed ? 'Expand' : 'Collapse'}
           </button>
@@ -685,7 +691,7 @@ function PayloadBlock({
         </div>
       </div>
       {!collapsed && (
-        <pre className="max-h-[420px] overflow-auto px-3 py-2.5 font-mono text-2xs leading-relaxed text-[var(--fg-1)]">
+        <pre className="max-h-[420px] overflow-auto px-4 py-3 font-mono text-2xs leading-relaxed text-[var(--fg-1)]">
           {json}
         </pre>
       )}
@@ -695,48 +701,22 @@ function PayloadBlock({
 
 /* ── skeletons / empty ─────────────────────────────────── */
 
-function ListSkeleton() {
-  return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div
-          key={i}
-          className="grid grid-cols-[1.7fr_1.3fr_1.3fr_70px_110px] items-center gap-4 border-b border-border px-5 py-3 last:border-0"
-        >
-          <div className="space-y-1.5">
-            <Skeleton className="h-3 w-40" />
-            <Skeleton className="h-2.5 w-24" />
-          </div>
-          <Skeleton className="h-3 w-32" />
-          <Skeleton className="h-3 w-20" />
-          <Skeleton className="h-3 w-6" />
-          <Skeleton className="h-3 w-16" />
-        </div>
-      ))}
-    </div>
-  )
-}
-
 function EmptyState({ status }: { status: Status }) {
   const copy: Record<Status, string> = {
     dead: 'No permanently failed deliveries.',
     pending: 'No deliveries queued for retry.',
     delivered: 'No delivered rows in the recent window.',
   }
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-14 text-center">
-      <div className="flex size-11 items-center justify-center rounded-full bg-[var(--bg-2)]">
-        <Webhook className="size-5 text-[var(--fg-2)]" />
-      </div>
-      <div className="text-sm font-medium">{copy[status]}</div>
-    </div>
-  )
+  return <SharedEmptyState framed icon={Webhook} title={copy[status]} />
 }
 
 function NoMatch() {
   return (
-    <div className="rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-[var(--fg-2)]">
-      No deliveries match your search.
-    </div>
+    <SharedEmptyState
+      framed
+      compact
+      icon={Search}
+      title="No deliveries match your search."
+    />
   )
 }
