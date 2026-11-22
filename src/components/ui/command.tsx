@@ -30,8 +30,8 @@ export function CommandDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl overflow-hidden p-0 shadow-lg">
-        <Command className="[&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.08em] [&_[cmdk-group-heading]]:text-[var(--fg-2)] [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2">
+      <DialogContent className="top-[18vh] max-w-[580px] translate-y-0 gap-0 overflow-hidden rounded-[20px] p-0 shadow-lg [&>button[aria-label=Close]]:hidden">
+        <Command className="[&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:normal-case [&_[cmdk-group-heading]]:tracking-normal [&_[cmdk-group-heading]]:text-[var(--fg-3)] [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:text-[var(--fg-2)] [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2">
           {children}
         </Command>
       </DialogContent>
@@ -43,12 +43,12 @@ export const CommandInput = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Input>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
 >(({ className, ...props }, ref) => (
-  <div className="flex items-center gap-2 border-b border-border px-3" cmdk-input-wrapper="">
-    <Search className="size-4 shrink-0 opacity-50" />
+  <div className="flex items-center gap-3 border-b border-border px-5" cmdk-input-wrapper="">
+    <Search className="size-5 shrink-0 text-[var(--fg-3)]" />
     <CommandPrimitive.Input
       ref={ref}
       className={cn(
-        'flex h-12 w-full bg-transparent py-3 text-base outline-none placeholder:text-[var(--fg-3)] disabled:cursor-not-allowed disabled:opacity-50',
+        'flex h-14 w-full bg-transparent py-3 text-base outline-none focus-visible:outline-none placeholder:text-[var(--fg-3)] disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
       {...props}
@@ -63,7 +63,7 @@ export const CommandList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <CommandPrimitive.List
     ref={ref}
-    className={cn('max-h-[320px] overflow-y-auto overflow-x-hidden', className)}
+    className={cn('max-h-[min(420px,60vh)] overflow-y-auto overflow-x-hidden px-2 pb-2 scroll-py-2', className)}
     {...props}
   />
 ))
@@ -96,10 +96,11 @@ export const CommandItem = React.forwardRef<
   <CommandPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex cursor-pointer select-none items-center gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none',
+      'relative flex h-11 cursor-pointer select-none items-center gap-3 rounded-xl px-3 text-sm outline-none transition-colors',
       'data-[selected=true]:bg-[var(--bg-hover)] data-[selected=true]:text-foreground',
       'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50',
-      '[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-[var(--fg-2)]',
+      '[&_.go]:opacity-0 data-[selected=true]:[&_.go]:opacity-70',
+      '[&_svg]:size-[18px] [&_svg]:shrink-0 [&_svg]:text-[var(--fg-2)] data-[selected=true]:[&_svg]:text-foreground',
       className,
     )}
     {...props}

@@ -362,6 +362,13 @@ input[type='radio'] {
   border-radius: var(--radius-sm);
 }
 
+/* Text fields draw their own focus ring (or none, like the command bar). */
+input:not([type='checkbox']):not([type='radio']):focus-visible,
+textarea:focus-visible,
+[cmdk-input]:focus-visible {
+  outline: none;
+}
+
 @layer utilities {
   .mono {
     font-family: var(--font-mono);

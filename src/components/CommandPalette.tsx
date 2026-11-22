@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   ArrowUpDown,
   CalendarClock,
   CandlestickChart,
@@ -51,14 +52,14 @@ const NAV: Nav[] = [
   { label: 'Activity', to: '/activity', icon: Activity, group: 'Overview' },
   { label: 'Invoices', to: '/invoices', icon: FileText, group: 'Payments' },
   { label: 'Payouts', to: '/payouts', icon: ArrowUpDown, group: 'Payments' },
-  { label: 'Held payouts (recover stuck legs)', to: '/held-payouts', icon: LifeBuoy, group: 'Payments' },
+  { label: 'Held payouts', to: '/held-payouts', icon: LifeBuoy, group: 'Payments' },
   { label: 'Orphan txs', to: '/orphans', icon: AlertTriangle, group: 'Payments' },
   { label: 'Balances', to: '/balances', icon: CircleDollarSign, group: 'Treasury' },
   { label: 'Treasury', to: '/treasury', icon: Landmark, group: 'Treasury' },
   { label: 'Exchange', to: '/exchange', icon: CandlestickChart, group: 'Treasury' },
-  { label: 'Auto-consolidation schedules', to: '/consolidation-schedules', icon: CalendarClock, group: 'Treasury' },
+  { label: 'Auto-consolidation', to: '/consolidation-schedules', icon: CalendarClock, group: 'Treasury' },
   { label: 'Address pool', to: '/pool', icon: Waypoints, group: 'Treasury' },
-  { label: 'Pool addresses (park / re-enable)', to: '/pool/addresses', icon: Waypoints, group: 'Treasury' },
+  { label: 'Pool addresses', to: '/pool/addresses', icon: Waypoints, group: 'Treasury' },
   { label: 'Stores', to: '/stores', icon: Store, group: 'Stores' },
   { label: 'Webhooks', to: '/webhooks', icon: Webhook, group: 'Stores' },
   { label: 'Chains', to: '/chains', icon: Link2, group: 'Infrastructure' },
@@ -100,7 +101,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Jump to a page, toggle theme, sign out…" />
+      <CommandInput placeholder="Search pages and actions" />
       <CommandList>
         <CommandEmpty>No results.</CommandEmpty>
         {Object.entries(groups).map(([group, items]) => (
@@ -113,7 +114,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               >
                 <Icon />
                 <span>{label}</span>
-                <CommandShortcut>{to}</CommandShortcut>
+                <ArrowRight className="go ml-auto !size-3.5" />
               </CommandItem>
             ))}
           </CommandGroup>
@@ -141,7 +142,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           >
             <Moon />
             <span>Use system theme</span>
-            <CommandShortcut>{mode === 'system' ? '✓' : ''}</CommandShortcut>
+            {mode === 'system' && <CommandShortcut>On</CommandShortcut>}
           </CommandItem>
         </CommandGroup>
         <CommandSeparator />
@@ -155,7 +156,20 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           </CommandItem>
         </CommandGroup>
       </CommandList>
+      <div className="flex items-center gap-4 border-t border-border bg-[var(--bg-2)] px-5 py-2.5 text-xs text-[var(--fg-3)]">
+        <span className="inline-flex items-center gap-1.5"><Kbd>↑</Kbd><Kbd>↓</Kbd> move</span>
+        <span className="inline-flex items-center gap-1.5"><Kbd>↵</Kbd> open</span>
+        <span className="inline-flex items-center gap-1.5"><Kbd>esc</Kbd> close</span>
+      </div>
     </CommandDialog>
+  )
+}
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="grid h-5 min-w-5 place-items-center rounded-md border border-border bg-card px-1 font-sans text-2xs text-[var(--fg-2)]">
+      {children}
+    </kbd>
   )
 }
 
