@@ -9,6 +9,8 @@ import type { AuditResult, ChainInventoryEntry } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
 import { Field } from '@/components/Field'
+import { PageHeader } from '@/components/PageHeader'
+import { Stat } from '@/components/States'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -70,17 +72,11 @@ export function AuditAddressPage() {
 
   return (
     <div className="fade-in space-y-6">
-      <div>
-        <div className="eyebrow">Admin</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-          Audit address
-        </h1>
-        <p className="mt-1 text-sm text-[var(--fg-2)]">
-          Diff an address's on-chain history against the gateway's recorded
-          transactions. Missing transfers land as orphans (or credit an open
-          invoice).
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Infrastructure"
+        title="Audit address"
+        description="Diff an address's on-chain history against the gateway's recorded transactions. Missing transfers land as orphans (or credit an open invoice)."
+      />
 
       <Card>
         <CardHeader>
@@ -98,7 +94,7 @@ export function AuditAddressPage() {
               audit.mutate()
             }}
           >
-            <div className="grid grid-cols-[1fr_1fr] gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Chain">
                 <Select
                   value={chainId}
@@ -167,32 +163,38 @@ export function AuditAddressPage() {
         <Card>
           <CardHeader>
             <CardTitle>Result</CardTitle>
-            <CardDescription>
+            <CardDescription className="break-all">
               Chain {audit.data.audit.chainId} · {' '}
-              <span className="font-mono">{audit.data.audit.address}</span>
+              <span className="font-mono text-xs">{audit.data.audit.address}</span>
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat label="scanned" value={audit.data.audit.scanned} />
-              <Stat label="inserted" value={audit.data.audit.inserted} tone="success" />
-              <Stat label="already present" value={audit.data.audit.alreadyPresent} />
-              <Stat
-                label="since"
+          <CardContent className="pt-4">
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-4">
+              <AuditStat label="Scanned" value={audit.data.audit.scanned} />
+              <AuditStat
+                label="Inserted"
+                value={audit.data.audit.inserted}
+                tone="success"
+              />
+              <AuditStat
+                label="Already present"
+                value={audit.data.audit.alreadyPresent}
+              />
+              <AuditStat
+                label="Since"
                 value={fmtLocalDate(audit.data.audit.sinceMs)}
-                mono
               />
             </div>
             {audit.data.audit.insertedTxIds.length > 0 && (
-              <div className="mt-4">
-                <div className="eyebrow mb-2">newly inserted</div>
+              <div className="mt-5">
+                <div className="eyebrow mb-2">Newly inserted</div>
                 <div className="space-y-1.5">
                   {audit.data.audit.insertedTxIds.map((id) => (
                     <div
                       key={id}
-                      className="flex items-center gap-2 rounded-md border border-border bg-secondary px-3 py-1.5 text-xs"
+                      className="flex items-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-xs"
                     >
-                      <Shield className="size-3.5 text-success" />
+                      <Shield className="size-3.5 shrink-0 text-success" />
                       <Addr value={id} />
                     </div>
                   ))}
@@ -206,29 +208,18 @@ export function AuditAddressPage() {
   )
 }
 
-function Stat({
+function AuditStat({
   label,
   value,
   tone,
-  mono,
 }: {
   label: string
   value: React.ReactNode
   tone?: 'success'
-  mono?: boolean
 }) {
   return (
-    <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2">
-      <div className="eyebrow">{label}</div>
-      <div
-        className={
-          (mono ? 'font-mono ' : '') +
-          'mt-1 text-lg font-semibold ' +
-          (tone === 'success' ? 'text-success' : '')
-        }
-      >
-        {value}
-      </div>
+    <div className="bg-card px-4 py-3">
+      <Stat label={label} value={value} tone={tone} />
     </div>
   )
 }

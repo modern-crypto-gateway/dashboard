@@ -32,6 +32,8 @@ import type {
 
 import { Addr } from '@/components/Addr'
 import { Field } from '@/components/Field'
+import { PageHeader } from '@/components/PageHeader'
+import { Callout, ErrorState } from '@/components/States'
 import { PasswordField } from '@/components/PasswordField'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -79,43 +81,39 @@ export function FeeWalletsPage() {
 
   return (
     <div className="fade-in space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow">Admin</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Fee wallets
-          </h1>
-          <p className="mt-1 text-sm text-[var(--fg-2)]">
-            Per-family gas providers. Registering a fee wallet on a supported
-            family (Solana co-sign, Tron delegate) lets pool addresses stop
-            holding native gas. EVM is not supported today.
-          </p>
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => q.refetch()}
-          disabled={q.isFetching}
-        >
-          <RefreshCw
-            className={`size-3.5 ${q.isFetching ? 'animate-spin' : ''}`}
-          />
-          Refresh
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Infrastructure"
+        title="Fee wallets"
+        description="Per-family gas providers. Registering a fee wallet on a supported family (Solana co-sign, Tron delegate) lets pool addresses stop holding native gas. EVM is not supported today."
+        actions={
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => q.refetch()}
+            disabled={q.isFetching}
+          >
+            <RefreshCw
+              className={`size-3.5 ${q.isFetching ? 'animate-spin' : ''}`}
+            />
+            Refresh
+          </Button>
+        }
+      />
 
       {q.isError && (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          <AlertTriangle className="size-3.5" />
-          {(q.error as ApiError)?.message ||
-            'Could not load fee-wallet config. Check admin key in settings.'}
-        </div>
+        <ErrorState
+          title="Could not load fee wallets"
+          message={
+            (q.error as ApiError)?.message ||
+            'Could not load fee-wallet config. Check admin key in settings.'
+          }
+        />
       )}
 
       {q.isLoading ? (
         <FamilyCardsSkeleton />
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {(q.data?.feeWallets ?? []).map((entry) => (
             <FamilyCard key={entry.family} entry={entry} onChanged={refresh} />
           ))}
@@ -146,14 +144,15 @@ function FamilyCard({
   const configured = entry.configured
 
   return (
-    <Card className="p-5">
-      <div className="flex items-start justify-between gap-2">
+    <Card className="flex flex-col p-5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <span
-            className="size-2.5 rounded-sm"
+            aria-hidden
+            className="size-2 shrink-0 rounded-full"
             style={{ background: FAMILY_COLOR[entry.family] }}
           />
-          <span className="font-semibold uppercase tracking-[0.08em] text-sm">
+          <span className="text-sm font-semibold uppercase tracking-[0.06em]">
             {entry.family}
           </span>
           <CapabilityBadge capability={entry.capability} />
@@ -161,9 +160,9 @@ function FamilyCard({
         <StatusBadge supported={supported} configured={!!configured} />
       </div>
 
-      <div className="mt-4 min-h-[56px]">
+      <div className="mt-4 min-h-[56px] flex-1">
         {!supported ? (
-          <div className="flex items-start gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-xs text-[var(--fg-2)]">
+          <div className="flex items-start gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-xs text-[var(--fg-2)]">
             <Info className="mt-0.5 size-3.5 shrink-0" />
             <span>
               No fee-wallet topology for this family. Gas is paid from each
@@ -173,7 +172,7 @@ function FamilyCard({
         ) : configured ? (
           <div className="space-y-2">
             <div className="eyebrow">Active fee wallet</div>
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2">
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2">
               <Addr value={configured.address} />
               <Badge
                 variant={configured.mode === 'imported' ? 'accent' : 'default'}
@@ -183,13 +182,10 @@ function FamilyCard({
             </div>
           </div>
         ) : (
-          <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-            <span>
-              No fee wallet registered. Pool addresses must self-fund gas until
-              one is configured.
-            </span>
-          </div>
+          <Callout tone="warn" className="gap-2 px-3 py-2.5 text-xs">
+            No fee wallet registered. Pool addresses must self-fund gas until
+            one is configured.
+          </Callout>
         )}
       </div>
 
@@ -263,7 +259,7 @@ function CapabilityBadge({ capability }: { capability: FeeWalletCapability }) {
     return (
       <Badge
         variant="default"
-        title="Fee wallet sits in the gas top-up sponsor pool — funds the sourceâ€™s native top-up tx; the source still burns native for the payout"
+        title="Fee wallet sits in the gas top-up sponsor pool — funds the source’s native top-up tx; the source still burns native for the payout"
       >
         top-up
       </Badge>
@@ -594,14 +590,11 @@ function DeleteDialog({
           </DialogDescription>
         </DialogHeader>
         {family === 'tron' && (
-          <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-            <span>
-              Removing does <strong>not</strong> unfreeze staked TRX or unsend
-              delegations. Call undelegate + unfreeze first or funds stay locked
-              on-chain.
-            </span>
-          </div>
+          <Callout tone="warn">
+            Removing does <strong>not</strong> unfreeze staked TRX or unsend
+            delegations. Call undelegate + unfreeze first or funds stay locked
+            on-chain.
+          </Callout>
         )}
         <DialogFooter>
           <Button
@@ -644,7 +637,8 @@ function TronSection({ tronEntry }: { tronEntry: FeeWalletEntry | null }) {
       <CardHeader className="border-b">
         <div className="flex items-center gap-2">
           <span
-            className="size-2.5 rounded-sm"
+            aria-hidden
+            className="size-2 shrink-0 rounded-full"
             style={{ background: FAMILY_COLOR.tron }}
           />
           <CardTitle>Tron Stake 2.0</CardTitle>
@@ -658,8 +652,8 @@ function TronSection({ tronEntry }: { tronEntry: FeeWalletEntry | null }) {
       </CardHeader>
       <CardContent className="pt-5">
         {!configured ? (
-          <div className="flex items-start gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-xs text-[var(--fg-2)]">
-            <Info className="mt-0.5 size-3.5 shrink-0" />
+          <div className="flex items-start gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-sm text-[var(--fg-2)]">
+            <Info className="mt-0.5 size-4 shrink-0" />
             <span>
               Register a Tron fee wallet above to unlock staking + delegation
               operations.
@@ -668,7 +662,7 @@ function TronSection({ tronEntry }: { tronEntry: FeeWalletEntry | null }) {
         ) : (
           <div className="space-y-5">
             <TronResources />
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <TronStakeForms onDone={invalidateResources} />
               <TronDelegationForms onDone={invalidateResources} />
             </div>
@@ -698,14 +692,13 @@ function TronResources() {
   if (q.isError) {
     const err = q.error as ApiError
     return (
-      <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-        <AlertTriangle className="size-3.5" />
+      <Callout tone="danger">
         {err?.code === 'NO_FEE_WALLET'
           ? 'Tron fee wallet is not registered yet.'
           : err?.code === 'NO_TRON_ADAPTER'
             ? 'Tron adapter is not wired on this deployment.'
             : err?.message || 'Could not load Tron resource budget.'}
-      </div>
+      </Callout>
     )
   }
 
@@ -713,7 +706,7 @@ function TronResources() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex min-w-0 items-center gap-2 text-sm">
           <span className="text-[var(--fg-2)]">Fee wallet</span>
           <Addr value={res.feeWallet} />
         </div>
@@ -768,18 +761,18 @@ function ResourceBar({
           {icon}
           {label}
         </div>
-        <span className="font-mono text-xs text-[var(--fg-2)]">
+        <span className="font-mono text-xs tabular-nums text-[var(--fg-2)]">
           {available.toLocaleString()} / {limit.toLocaleString()}
         </span>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--bg-3,var(--bg-2))] ring-1 ring-border">
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--bg-active)]">
         <div
           className={`h-full ${tone} transition-[width]`}
           style={{ width: `${pct}%` }}
         />
       </div>
-      <div className="mt-1 text-2xs uppercase tracking-wider text-[var(--fg-3)]">
-        {pct.toFixed(0)}% available
+      <div className="mt-1.5 text-xs text-[var(--fg-2)]">
+        <span className="font-mono tabular-nums">{pct.toFixed(0)}%</span> available
       </div>
     </div>
   )
@@ -850,9 +843,9 @@ function TronStakeForms({ onDone }: { onDone: () => void }) {
   })
 
   return (
-    <div className="rounded-md border border-border bg-card">
-      <div className="border-b border-border px-4 py-2.5">
-        <div className="flex items-center justify-between gap-2">
+    <div className="rounded-lg border border-border bg-card">
+      <div className="border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-semibold">
             {mode === 'freeze' ? (
               <Snowflake className="size-4 text-primary" />
@@ -865,14 +858,14 @@ function TronStakeForms({ onDone }: { onDone: () => void }) {
             <button
               type="button"
               onClick={() => setMode('freeze')}
-              className={`cursor-pointer rounded px-2.5 py-1 ${mode === 'freeze' ? 'bg-card font-medium shadow-xs' : 'text-[var(--fg-2)]'}`}
+              className={`cursor-pointer rounded-sm px-2.5 py-1 ${mode === 'freeze' ? 'bg-card font-medium text-foreground ring-1 ring-border' : 'text-[var(--fg-2)] hover:text-foreground'}`}
             >
               Freeze
             </button>
             <button
               type="button"
               onClick={() => setMode('unfreeze')}
-              className={`cursor-pointer rounded px-2.5 py-1 ${mode === 'unfreeze' ? 'bg-card font-medium shadow-xs' : 'text-[var(--fg-2)]'}`}
+              className={`cursor-pointer rounded-sm px-2.5 py-1 ${mode === 'unfreeze' ? 'bg-card font-medium text-foreground ring-1 ring-border' : 'text-[var(--fg-2)] hover:text-foreground'}`}
             >
               Unfreeze
             </button>
@@ -891,7 +884,7 @@ function TronStakeForms({ onDone }: { onDone: () => void }) {
           mut.mutate()
         }}
       >
-        <div className="grid grid-cols-[1fr_140px] gap-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_140px]">
           <Field
             label="Amount (TRX)"
             hint={
@@ -1008,9 +1001,9 @@ function TronDelegationForms({ onDone }: { onDone: () => void }) {
   })
 
   return (
-    <div className="rounded-md border border-border bg-card">
-      <div className="border-b border-border px-4 py-2.5">
-        <div className="flex items-center justify-between gap-2">
+    <div className="rounded-lg border border-border bg-card">
+      <div className="border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-semibold">
             {mode === 'delegate' ? (
               <Share2 className="size-4 text-primary" />
@@ -1023,14 +1016,14 @@ function TronDelegationForms({ onDone }: { onDone: () => void }) {
             <button
               type="button"
               onClick={() => setMode('delegate')}
-              className={`cursor-pointer rounded px-2.5 py-1 ${mode === 'delegate' ? 'bg-card font-medium shadow-xs' : 'text-[var(--fg-2)]'}`}
+              className={`cursor-pointer rounded-sm px-2.5 py-1 ${mode === 'delegate' ? 'bg-card font-medium text-foreground ring-1 ring-border' : 'text-[var(--fg-2)] hover:text-foreground'}`}
             >
               Delegate
             </button>
             <button
               type="button"
               onClick={() => setMode('undelegate')}
-              className={`cursor-pointer rounded px-2.5 py-1 ${mode === 'undelegate' ? 'bg-card font-medium shadow-xs' : 'text-[var(--fg-2)]'}`}
+              className={`cursor-pointer rounded-sm px-2.5 py-1 ${mode === 'undelegate' ? 'bg-card font-medium text-foreground ring-1 ring-border' : 'text-[var(--fg-2)] hover:text-foreground'}`}
             >
               Undelegate
             </button>
@@ -1065,7 +1058,7 @@ function TronDelegationForms({ onDone }: { onDone: () => void }) {
             required
           />
         </Field>
-        <div className="grid grid-cols-[1fr_140px] gap-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_140px]">
           <Field label="Stake amount (TRX)">
             <Input
               value={trxAmount}
@@ -1133,7 +1126,7 @@ function TronDelegationForms({ onDone }: { onDone: () => void }) {
 
 function FamilyCardsSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {Array.from({ length: 3 }).map((_, i) => (
         <Card key={i} className="p-5">
           <Skeleton className="h-4 w-24" />
@@ -1144,4 +1137,3 @@ function FamilyCardsSkeleton() {
     </div>
   )
 }
-

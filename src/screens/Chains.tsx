@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   CircleDashed,
   Loader2,
+  Network,
   Radio,
   RefreshCw,
   Rocket,
@@ -29,7 +30,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableWrap, TBody, Td, Th, THead, Tr } from '@/components/ui/table'
 import { CopyButton } from '@/components/CopyButton'
+import { PageHeader } from '@/components/PageHeader'
+import { EmptyState, ErrorState, ListSkeleton, Stat } from '@/components/States'
 
 const CHAINS_Q = ['gw', 'chains'] as const
 
@@ -92,59 +96,60 @@ export function ChainsPage() {
 
   return (
     <div className="fade-in space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow">Admin</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Chains</h1>
-          <p className="mt-1 text-sm text-[var(--fg-2)]">
-            Every chain the gateway knows about, with adapter, webhook, and
-            fee-wallet readiness.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => chains.refetch()}
-            disabled={chains.isFetching}
-          >
-            <RefreshCw
-              className={`size-3.5 ${chains.isFetching ? 'animate-spin' : ''}`}
-            />
-            Refresh
-          </Button>
-          {bootstrapableChains.length > 0 && (
+      <PageHeader
+        eyebrow="Infrastructure"
+        title="Chains"
+        description="Every chain the gateway knows about, with adapter, webhook, and fee-wallet readiness."
+        actions={
+          <>
             <Button
               size="sm"
-              onClick={() => setPickerOpen(true)}
-              disabled={bootstrapWebhooks.isPending}
+              variant="outline"
+              onClick={() => chains.refetch()}
+              disabled={chains.isFetching}
             >
-              <Rocket className="size-3.5" />
-              Bootstrap webhooks
-              <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 py-0.5 font-mono text-2xs">
-                {bootstrapableChains.length}
-              </span>
+              <RefreshCw
+                className={`size-3.5 ${chains.isFetching ? 'animate-spin' : ''}`}
+              />
+              Refresh
             </Button>
-          )}
-        </div>
-      </div>
+            {bootstrapableChains.length > 0 && (
+              <Button
+                size="sm"
+                onClick={() => setPickerOpen(true)}
+                disabled={bootstrapWebhooks.isPending}
+              >
+                <Rocket className="size-3.5" />
+                Bootstrap webhooks
+                <span className="ml-0.5 rounded-sm bg-primary-foreground/20 px-1.5 font-mono text-2xs tabular-nums">
+                  {bootstrapableChains.length}
+                </span>
+              </Button>
+            )}
+          </>
+        }
+      />
 
       <StatsGrid stats={stats} loading={chains.isLoading} />
 
       {chains.isError && (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          <AlertTriangle className="size-3.5" />
-          {(chains.error as ApiError)?.message ||
-            'Could not load chains. Check admin key / base URL in settings.'}
-        </div>
+        <ErrorState
+          title="Could not load chains"
+          message={
+            (chains.error as ApiError)?.message ||
+            'Could not load chains. Check admin key / base URL in settings.'
+          }
+        />
       )}
 
       {chains.isLoading ? (
-        <MatrixSkeleton />
+        <ListSkeleton rows={5} />
       ) : rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-card px-6 py-12 text-center text-sm text-[var(--fg-2)]">
-          No chains reported by the gateway.
-        </div>
+        <EmptyState
+          framed
+          icon={Network}
+          title="No chains reported by the gateway."
+        />
       ) : (
         <ChainMatrix
           rows={rows}
@@ -194,26 +199,26 @@ function StatsGrid({
 }) {
   const allReady = !loading && stats.total > 0 && stats.ready === stats.total
   return (
-    <div className="grid grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3">
       <StatCard
-        icon={<CheckCircle2 className="size-4" />}
+        icon={<CheckCircle2 className="size-3.5" />}
         tone={allReady ? 'success' : 'neutral'}
         label="Ready"
-        value={loading ? '…' : `${stats.ready}/${stats.total}`}
+        value={loading ? null : `${stats.ready}/${stats.total}`}
         sub="bootstrapReady"
       />
       <StatCard
-        icon={<Radio className="size-4" />}
+        icon={<Radio className="size-3.5" />}
         tone={stats.webhookGaps > 0 ? 'warn' : 'success'}
         label="Webhook gaps"
-        value={loading ? '…' : String(stats.webhookGaps)}
+        value={loading ? null : String(stats.webhookGaps)}
         sub="wired, no webhook"
       />
       <StatCard
-        icon={<CircleDashed className="size-4" />}
+        icon={<CircleDashed className="size-3.5" />}
         tone="neutral"
         label="Not deployed"
-        value={loading ? '…' : String(stats.notDeployed)}
+        value={loading ? null : String(stats.notDeployed)}
         sub="adapter not loaded"
       />
     </div>
@@ -230,7 +235,8 @@ function StatCard({
   icon: React.ReactNode
   tone: 'success' | 'warn' | 'neutral'
   label: string
-  value: string
+  /** null while loading */
+  value: string | null
   sub: string
 }) {
   const toneClass =
@@ -240,15 +246,17 @@ function StatCard({
         ? 'text-warn'
         : 'text-[var(--fg-2)]'
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center gap-2">
-        <span className={toneClass}>{icon}</span>
-        <div className="eyebrow">{label}</div>
-      </div>
-      <div className="mt-2 font-mono text-2xl font-semibold tabular-nums">
-        {value}
-      </div>
-      <div className="mt-0.5 text-xs text-[var(--fg-2)]">{sub}</div>
+    <div className="bg-card px-5 py-4">
+      <Stat
+        label={
+          <span className="inline-flex items-center gap-1.5">
+            <span className={toneClass}>{icon}</span>
+            {label}
+          </span>
+        }
+        value={value ?? <Skeleton className="h-7 w-14" />}
+        sub={sub}
+      />
     </div>
   )
 }
@@ -266,22 +274,30 @@ function ChainMatrix({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden grid-cols-[1.7fr_90px_1fr_190px] gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-2xs font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
-        <div>Chain</div>
-        <div>Family</div>
-        <div>Status</div>
-        <div className="text-right">Actions</div>
-      </div>
-      <ul>
-        {rows.map((c) => (
-          <ChainRow
-            key={c.chainId}
-            chain={c}
-            onBootstrapWebhook={() => onBootstrapWebhook(c.chainId)}
-            bootstrapping={bootstrappingId === c.chainId}
-          />
-        ))}
-      </ul>
+      <TableWrap>
+        <Table className="min-w-[760px]">
+          <THead>
+            <tr>
+              <Th>Chain</Th>
+              <Th className="w-[96px]">Family</Th>
+              <Th>Status</Th>
+              <Th align="right" className="w-[160px]">
+                Actions
+              </Th>
+            </tr>
+          </THead>
+          <TBody>
+            {rows.map((c) => (
+              <ChainRow
+                key={c.chainId}
+                chain={c}
+                onBootstrapWebhook={() => onBootstrapWebhook(c.chainId)}
+                bootstrapping={bootstrappingId === c.chainId}
+              />
+            ))}
+          </TBody>
+        </Table>
+      </TableWrap>
     </div>
   )
 }
@@ -299,35 +315,38 @@ function ChainRow({
     chain.wired && chain.webhooksSupported && !chain.webhooks
 
   return (
-    <li className="border-b border-border last:border-0">
-      <div className="grid grid-cols-1 items-center gap-3 px-5 py-3 sm:grid-cols-[1.7fr_90px_1fr_190px] sm:gap-4">
+    <Tr>
+      <Td className="py-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="truncate text-sm font-medium">
               {chain.displayName}
             </span>
-            <span className="rounded bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-2xs text-[var(--fg-2)]">
+            <span className="rounded-sm bg-[var(--bg-2)] px-1.5 font-mono text-2xs text-[var(--fg-2)]">
               {chain.chainId}
             </span>
             <ReadyBadge chain={chain} />
             <DetectionBadge detection={chain.detection} />
           </div>
-          <div className="mt-0.5 flex items-center gap-2 text-2xs text-[var(--fg-3)]">
+          <div className="mt-0.5 flex items-center gap-2 text-xs text-[var(--fg-3)]">
             <span className="font-mono">{chain.slug}</span>
             <span>·</span>
             <span>
-              {chain.confirmationsRequired} conf · {chain.tokens.length} token
+              <span className="font-mono tabular-nums">{chain.confirmationsRequired}</span> conf ·{' '}
+              <span className="font-mono tabular-nums">{chain.tokens.length}</span> token
               {chain.tokens.length === 1 ? '' : 's'}
             </span>
           </div>
         </div>
+      </Td>
 
-        <div className="text-xs">
-          <Badge variant="outline" className="uppercase">
-            {chain.family}
-          </Badge>
-        </div>
+      <Td className="py-3">
+        <Badge variant="outline" className="uppercase">
+          {chain.family}
+        </Badge>
+      </Td>
 
+      <Td className="py-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
           <Flag label="wired" ok={chain.wired} />
           {chain.webhooksSupported && (
@@ -341,7 +360,9 @@ function ChainRow({
             </>
           )}
         </div>
+      </Td>
 
+      <Td className="py-3 text-right">
         <div className="flex flex-wrap justify-end gap-1.5">
           {!chain.wired ? (
             <span className="text-xs text-[var(--fg-3)]" title="Adapter not loaded — requires backend deploy">
@@ -367,8 +388,8 @@ function ChainRow({
             <span className="text-xs text-[var(--fg-3)]">—</span>
           )}
         </div>
-      </div>
-    </li>
+      </Td>
+    </Tr>
   )
 }
 
@@ -379,43 +400,33 @@ function DetectionBadge({
 }) {
   if (detection === 'alchemy') {
     return (
-      <span
-        className="inline-flex items-center gap-1 rounded border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-2xs uppercase tracking-wider text-[var(--fg-2)]"
-        title="Transactions received via Alchemy webhook"
-      >
-        <Radio className="size-3" /> webhook
-      </span>
+      <Badge title="Transactions received via Alchemy webhook">
+        <Radio /> webhook
+      </Badge>
     )
   }
   return (
-    <span
-      className="inline-flex items-center gap-1 rounded border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-2xs uppercase tracking-wider text-[var(--fg-2)]"
-      title="Transactions detected via RPC polling (no webhook)"
-    >
-      <RefreshCw className="size-3" /> polling
-    </span>
+    <Badge title="Transactions detected via RPC polling (no webhook)">
+      <RefreshCw /> polling
+    </Badge>
   )
 }
 
 function ReadyBadge({ chain }: { chain: ChainInventoryEntry }) {
   if (!chain.wired) {
-    return (
-      <span className="rounded border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-2xs uppercase tracking-wider text-[var(--fg-3)]">
-        not deployed
-      </span>
-    )
+    return <Badge>not deployed</Badge>
   }
   if (chain.bootstrapReady) {
     return (
-      <span className="inline-flex items-center gap-1 rounded border border-[var(--success-border)] bg-[var(--success-bg)] px-1.5 py-0.5 text-2xs uppercase tracking-wider text-success">
-        <CheckCircle2 className="size-3" /> ready
-      </span>
+      <Badge variant="success">
+        <CheckCircle2 /> ready
+      </Badge>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-warn">
-      <AlertTriangle className="size-3" /> incomplete
-    </span>
+    <Badge variant="warn">
+      <AlertTriangle /> incomplete
+    </Badge>
   )
 }
 
@@ -495,14 +506,14 @@ function BootstrapPickerDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center justify-between border-b border-border pb-2 text-xs text-[var(--fg-2)]">
+        <div className="flex items-center justify-between gap-2 border-b border-border pb-2 text-xs text-[var(--fg-2)]">
           <span>
             <span className="font-mono">{selected.size}</span> /{' '}
             <span className="font-mono">{candidates.length}</span> selected
           </span>
           <button
             type="button"
-            className="text-xs font-medium text-primary hover:underline"
+            className="cursor-pointer text-xs font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50"
             onClick={() =>
               setSelected(
                 allChecked
@@ -525,8 +536,8 @@ function BootstrapPickerDialog({
                   className={
                     'flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors ' +
                     (checked
-                      ? 'border-primary/40 bg-primary/5'
-                      : 'border-border hover:bg-[var(--bg-2)]')
+                      ? 'border-[var(--accent-border)] bg-[var(--accent-bg)]'
+                      : 'border-border hover:bg-[var(--bg-hover)]')
                   }
                 >
                   <input
@@ -541,11 +552,11 @@ function BootstrapPickerDialog({
                       <span className="truncate font-medium">
                         {c.displayName}
                       </span>
-                      <span className="rounded bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-2xs text-[var(--fg-2)]">
+                      <span className="rounded-sm bg-[var(--bg-2)] px-1.5 font-mono text-2xs text-[var(--fg-2)]">
                         {c.chainId}
                       </span>
                     </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-2xs text-[var(--fg-3)]">
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-[var(--fg-3)]">
                       <span className="font-mono">{c.slug}</span>
                       {!c.alchemyConfigured && (
                         <>
@@ -616,14 +627,14 @@ function SigningKeysDialog({
           {withKey.map((r) => (
             <div
               key={r.chainId}
-              className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2 text-sm"
+              className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-sm"
             >
               <Badge variant={r.status === 'created' ? 'success' : 'default'}>
                 {r.status}
               </Badge>
               <span className="font-mono text-xs">chain {r.chainId}</span>
               {r.webhookId && (
-                <span className="font-mono text-2xs text-[var(--fg-2)]">
+                <span className="break-all font-mono text-2xs text-[var(--fg-2)]">
                   {r.webhookId}
                 </span>
               )}
@@ -640,30 +651,5 @@ function SigningKeysDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-/* ── skeleton ────────────────────────────────────────────── */
-
-function MatrixSkeleton() {
-  return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div
-          key={i}
-          className="grid grid-cols-[1.7fr_90px_1fr_190px] items-center gap-4 border-b border-border px-5 py-3 last:border-0"
-        >
-          <div className="space-y-1.5">
-            <Skeleton className="h-3.5 w-36" />
-            <Skeleton className="h-3 w-48" />
-          </div>
-          <Skeleton className="h-5 w-12" />
-          <Skeleton className="h-3.5 w-40" />
-          <div className="justify-self-end">
-            <Skeleton className="h-7 w-24" />
-          </div>
-        </div>
-      ))}
-    </div>
   )
 }

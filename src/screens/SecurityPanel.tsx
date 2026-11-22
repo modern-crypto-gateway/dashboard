@@ -8,6 +8,7 @@ import {
   EyeOff,
   KeyRound,
   LogOut,
+  MonitorSmartphone,
   RefreshCw,
   ShieldCheck,
   Smartphone,
@@ -26,6 +27,7 @@ import {
   scorePassword,
 } from '@/components/PasswordField'
 import { QrCode } from '@/components/QrCode'
+import { EmptyState } from '@/components/States'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -44,6 +46,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
 interface SessionRow {
@@ -274,9 +277,9 @@ function RotateTotpDialogContent({ onDone }: { onDone: () => void }) {
             commit.mutate()
           }}
         >
-          <div className="flex items-start gap-4">
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
             <QrCode value={newSecret.otpauthUrl} />
-            <div className="flex-1 space-y-2.5">
+            <div className="w-full min-w-0 flex-1 space-y-3">
               <div>
                 <div className="eyebrow mb-1.5">Scan with your app</div>
                 <div className="text-xs text-[var(--fg-2)]">
@@ -287,11 +290,13 @@ function RotateTotpDialogContent({ onDone }: { onDone: () => void }) {
               <div>
                 <div className="eyebrow mb-1.5">Or enter the setup key</div>
                 <div className="flex items-center gap-1.5 rounded-md border border-border bg-secondary px-2.5 py-1.5">
-                  <span className="font-mono text-xs">
+                  <span className="min-w-0 break-all font-mono text-xs">
                     {newSecret.secret.match(/.{1,4}/g)?.join(' ')}
                   </span>
                   <div className="flex-1" />
-                  <CopyButton value={newSecret.secret} />
+                  <span className="shrink-0">
+                    <CopyButton value={newSecret.secret} />
+                  </span>
                 </div>
               </div>
             </div>
@@ -432,8 +437,8 @@ function RegenerateRecoveryDialog({ onDone }: { onDone: () => void }) {
         </form>
       ) : (
         <div className="space-y-4">
-          <div className="rounded-md border border-border bg-card p-4">
-            <div className="mb-2.5 flex items-center justify-between">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
               <div className="text-sm font-semibold">New recovery codes</div>
               <Button
                 variant="outline"
@@ -461,7 +466,7 @@ function RegenerateRecoveryDialog({ onDone }: { onDone: () => void }) {
                 </div>
               ))}
             </div>
-            <div className="mt-2.5 flex gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={copyAll}>
                 <Copy className="size-3" /> Copy all
               </Button>
@@ -501,14 +506,14 @@ function SessionsCard() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Active sessions</CardTitle>
-        <CardDescription>
-          Devices signed in as you. Revoking ends a session immediately.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="mb-3 flex items-center gap-2">
+      <CardHeader className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <CardTitle>Active sessions</CardTitle>
+          <CardDescription>
+            Devices signed in as you. Revoking ends a session immediately.
+          </CardDescription>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -528,12 +533,22 @@ function SessionsCard() {
             {revokeAll.isPending ? 'Revoking…' : 'Revoke all others'}
           </Button>
         </div>
+      </CardHeader>
+      <CardContent className="pt-4">
         {list.isLoading ? (
-          <div className="py-6 text-center text-sm text-[var(--fg-2)]">Loading…</div>
-        ) : (list.data?.sessions.length ?? 0) === 0 ? (
-          <div className="py-6 text-center text-sm text-[var(--fg-2)]">
-            No active sessions.
+          <div className="space-y-2">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div
+                key={i}
+                className="space-y-1.5 rounded-md border border-border px-3 py-2.5"
+              >
+                <Skeleton className="h-3.5 w-56 max-w-full" />
+                <Skeleton className="h-3 w-40 max-w-full" />
+              </div>
+            ))}
           </div>
+        ) : (list.data?.sessions.length ?? 0) === 0 ? (
+          <EmptyState compact icon={MonitorSmartphone} title="No active sessions." />
         ) : (
           <div className="space-y-2">
             {list.data!.sessions.map((s) => (
@@ -569,16 +584,16 @@ function SessionRowView({ row }: { row: SessionRow }) {
   return (
     <div
       className={cn(
-        'flex flex-wrap items-center gap-3 rounded-md border border-border bg-card px-3 py-2.5',
-        row.current && 'ring-1 ring-[var(--accent-border)]',
+        'flex flex-wrap items-center gap-3 rounded-md border bg-card px-3 py-2.5',
+        row.current ? 'border-[var(--accent-border)]' : 'border-border',
       )}
     >
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           {row.current && <Badge variant="accent">this device</Badge>}
-          <span className="text-sm font-medium">{label}</span>
+          <span className="min-w-0 break-words text-sm font-medium">{label}</span>
         </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-2xs text-[var(--fg-2)]">
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[var(--fg-2)]">
           {row.ip && <span className="font-mono">{row.ip}</span>}
           <span>idle {humanSecs(row.idleSeconds)}</span>
           <span>·</span>
