@@ -27,6 +27,7 @@ import {
   Timer,
 } from '@/components/icons'
 
+import { useUrlParam } from '@/lib/useUrlParam'
 import { api, ApiError } from '@/lib/api'
 import {
   fmtCountdown,
@@ -345,7 +346,7 @@ export function InvoicesPage() {
 
   const [filters, setFilters] = React.useState<FilterValues>({})
   const [createOpen, setCreateOpen] = React.useState(false)
-  const [detailId, setDetailId] = React.useState<string | null>(null)
+  const [detailId, setDetailId] = useUrlParam('invoice')
 
   const canList =
     !!active && active.source !== 'gateway-only' && active.apiKeyFingerprint !== null

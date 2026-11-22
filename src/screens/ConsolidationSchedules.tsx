@@ -25,6 +25,7 @@ import {
   Trash2,
 } from '@/components/icons'
 
+import { useUrlParam } from '@/lib/useUrlParam'
 import { api, ApiError } from '@/lib/api'
 import { chainInfo } from '@/lib/chains'
 import { fmtLocal, formatUnits, useNow } from '@/lib/format'
@@ -176,7 +177,7 @@ export function ConsolidationSchedulesPage() {
   )
   const [createOpen, setCreateOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState<AutoConsolidationSchedule | null>(null)
-  const [detailId, setDetailId] = React.useState<string | null>(null)
+  const [detailId, setDetailId] = useUrlParam('schedule')
   const now = useNow(15_000)
 
   const refresh = () =>

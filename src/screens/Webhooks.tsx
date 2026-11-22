@@ -29,6 +29,7 @@ import {
   XCircle,
 } from '@/components/icons'
 
+import { useUrlParam } from '@/lib/useUrlParam'
 import { api, ApiError } from '@/lib/api'
 import { fmtLocal, fmtRel, truncateAddr, useNow } from '@/lib/format'
 import { useMerchants } from '@/lib/merchants'
@@ -289,7 +290,7 @@ function useReplay(onDone: () => void) {
 export function WebhooksPage() {
   const [status, setStatus] = React.useState<DeliveryStatus>('dead')
   const [query, setQuery] = React.useState('')
-  const [detailId, setDetailId] = React.useState<string | null>(null)
+  const [detailId, setDetailId] = useUrlParam('delivery')
   const qc = useQueryClient()
   const now = useNow()
   const merchants = useMerchants()

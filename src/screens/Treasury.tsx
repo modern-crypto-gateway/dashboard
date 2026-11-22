@@ -34,6 +34,7 @@ import {
   Wallet,
 } from '@/components/icons'
 
+import { useUrlSheet } from '@/lib/useUrlParam'
 import { api, ApiError } from '@/lib/api'
 import { chainInfo } from '@/lib/chains'
 import {
@@ -401,8 +402,10 @@ export function TreasuryPage() {
   const [transferFilter, setTransferFilter] = React.useState<string>('all')
   const [search, setSearch] = React.useState('')
   const [action, setAction] = React.useState<{ kind: ActionKind; id: string } | null>(null)
-  const [sheet, setSheet] = React.useState<{ id: string; open: boolean } | null>(null)
-  const [transferSheet, setTransferSheet] = React.useState<{ id: string; open: boolean } | null>(null)
+  const destUrl = useUrlSheet('destination')
+  const transferUrl = useUrlSheet('transfer')
+  const sheet = destUrl.id ? { id: destUrl.id, open: destUrl.open } : null
+  const transferSheet = transferUrl.id ? { id: transferUrl.id, open: transferUrl.open } : null
   const transfersRef = React.useRef<HTMLDivElement>(null)
 
   const transfersQ = useQuery({
@@ -473,12 +476,12 @@ export function TreasuryPage() {
     : undefined
 
   const handlers: RowHandlers = {
-    onOpen: (d) => setSheet({ id: d.id, open: true }),
+    onOpen: (d) => destUrl.show(d.id),
     onAction: (kind, d) => setAction({ kind, id: d.id }),
     onEdit: (d) => setEditing(d),
     onShowTransfers: (d) => {
       setTransferFilter(d.id)
-      setSheet((s) => (s ? { ...s, open: false } : s))
+      destUrl.close()
       transfersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     },
   }
@@ -575,7 +578,7 @@ export function TreasuryPage() {
           chains={chains}
           filter={transferFilter}
           onFilterChange={setTransferFilter}
-          onOpen={(t) => setTransferSheet({ id: t.id, open: true })}
+          onOpen={(t) => transferUrl.show(t.id)}
         />
       </div>
 
@@ -629,7 +632,7 @@ export function TreasuryPage() {
 
       <Sheet
         open={!!sheet?.open && !!sheetDest}
-        onOpenChange={(v) => !v && setSheet((s) => (s ? { ...s, open: false } : s))}
+        onOpenChange={(v) => !v && destUrl.close()}
       >
         {sheetDest && (
           <DestinationSheet
@@ -647,7 +650,7 @@ export function TreasuryPage() {
       <Sheet
         open={!!transferSheet?.open && !!sheetTransfer}
         onOpenChange={(v) =>
-          !v && setTransferSheet((s) => (s ? { ...s, open: false } : s))
+          !v && transferUrl.close()
         }
       >
         {sheetTransfer && (

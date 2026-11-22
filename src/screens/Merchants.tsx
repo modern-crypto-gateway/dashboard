@@ -35,6 +35,7 @@ import {
   X,
 } from '@/components/icons'
 
+import { useUrlParam } from '@/lib/useUrlParam'
 import { api, ApiError } from '@/lib/api'
 import { chainInfo } from '@/lib/chains'
 import { merchantsQuery, useMerchants } from '@/lib/merchants'
@@ -118,7 +119,7 @@ export function MerchantsPage() {
 
   const [query, setQuery] = React.useState('')
   const [filter, setFilter] = React.useState<Filter>('all')
-  const [openId, setOpenId] = React.useState<string | null>(null)
+  const [openId, setOpenId] = useUrlParam('store')
   const [createOpen, setCreateOpen] = React.useState(false)
   const [importOpen, setImportOpen] = React.useState(false)
 
