@@ -76,6 +76,7 @@ import {
 } from './routes/payouts'
 import { getAvatar } from './routes/avatar'
 import { assistantPost, getAssistantState } from './assistant/routes'
+import { requireMoneyStepUp } from './lib/stepup'
 
 const router = new Router()
 
@@ -86,6 +87,11 @@ async function guardAuthAndCsrf(req: Request, env: Bindings) {
   if (!(await verifyCsrf(env, req, sess.hash))) {
     throw new HttpError(403, 'BAD_CSRF', 'CSRF token mismatch')
   }
+  // Money moves need a fresh authenticator code as well, so a stolen session
+  // cookie (or an XSS riding the session) can't send funds on its own. Every
+  // state-changing route passes through here, so the check can't be skipped
+  // by a handler that forgets it.
+  await requireMoneyStepUp(req, env, sess.record.username)
   return sess
 }
 

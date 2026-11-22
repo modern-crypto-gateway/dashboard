@@ -1,4 +1,6 @@
 import { recordRateLimit } from '@/lib/rateLimit'
+import { requestStepUpCode, STEPUP_RETRY_CODES } from '@/lib/stepup'
+import { isDryRunBody, moneyActionFor, STEPUP_HEADER } from '../../shared/moneyRoutes'
 
 export class ApiError extends Error {
   status: number
@@ -34,7 +36,41 @@ export async function api<T = unknown>(
     headers.set('X-CSRF-Token', csrf)
   }
 
-  const res = await fetch(path, { ...init, headers, credentials: 'same-origin' })
+  // Money moves need a fresh authenticator code (shared/moneyRoutes.ts). Ask
+  // before sending; if the Worker still refuses (wrong / already-used code,
+  // or a route this copy of the list doesn't know), ask again and resend.
+  // A refused request did nothing on the server, so resending is safe.
+  const match = moneyActionFor(init.method ?? 'GET', path)
+  let action =
+    match && !(match.dryRunOk && typeof init.body === 'string' && isDryRunBody(init.body))
+      ? match.label
+      : null
+  let stepUpError: string | undefined
+  let res: Response
+  for (;;) {
+    if (action) {
+      const code = await requestStepUpCode(action, stepUpError)
+      if (code === null) {
+        throw new ApiError('Cancelled — no authenticator code entered', 0, 'STEPUP_CANCELLED')
+      }
+      headers.set(STEPUP_HEADER, code)
+    }
+    res = await fetch(path, { ...init, headers, credentials: 'same-origin' })
+    if (res.status !== 401) break
+    const peek = (await res
+      .clone()
+      .json()
+      .catch(() => null)) as { error?: { code?: string; message?: string; details?: { action?: string } } } | null
+    const code = peek?.error?.code
+    if (!code || !STEPUP_RETRY_CODES.has(code)) break
+    // Only the money-route gate's refusals (they name the action). Routes
+    // that take the code in their body (settings, assistant approve) show
+    // their own error instead of this prompt.
+    const gateAction = peek?.error?.details?.action
+    if (!action && !gateAction) break
+    action = action ?? gateAction ?? 'This action'
+    stepUpError = code === 'TOTP_REQUIRED' ? undefined : peek?.error?.message
+  }
   // Record merchant-scoped rate-limit headers on success AND failure — the
   // batch page uses these for a pre-submit quota warning and a 429 response
   // is exactly when the numbers are most useful.

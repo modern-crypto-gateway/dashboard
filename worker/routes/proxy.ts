@@ -16,6 +16,8 @@ import { kek, type Bindings } from '../lib/env'
 import { HttpError, error } from '../lib/http'
 import { kvGet, K } from '../lib/kv'
 
+// Allowlist on purpose: the dashboard's own headers (cookies, X-CSRF-Token,
+// X-TOTP-Code step-up codes) must never reach the gateway.
 const ALLOWED_UPSTREAM_REQ_HEADERS = new Set([
   'content-type',
   'accept',

@@ -12,6 +12,7 @@ import {
 import { ThemeProvider } from '@/lib/theme'
 import { useSession, useSetupStatus } from '@/lib/session'
 import { Toaster } from '@/components/ui/sonner'
+import { StepUpDialog } from '@/components/StepUpDialog'
 
 // Auth screens — always needed on first paint, keep in-bundle.
 import { LoginScreen } from '@/screens/Login'
@@ -320,6 +321,7 @@ export default function App() {
           </Suspense>
         </BrowserRouter>
         <Toaster position="bottom-right" />
+        <StepUpDialog />
       </QueryClientProvider>
     </ThemeProvider>
   )

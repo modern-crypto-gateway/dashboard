@@ -17,6 +17,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { Bindings } from '../lib/env'
 import { guardHit } from '../lib/guard'
+import { markStepUpVerified } from '../lib/stepup'
 import { kvPut } from '../lib/kv'
 import { catalogText, matchEndpoint, type Endpoint, type Method } from './catalog'
 import { MODELS, type ModelId } from './config'
@@ -185,7 +186,11 @@ function redact(v: unknown, depth = 0): unknown {
   return v
 }
 
-async function execute(ctx: TurnCtx, call: Pick<Call, 'method' | 'path' | 'query' | 'body'>): Promise<{ status: number; content: string }> {
+async function execute(
+  ctx: TurnCtx,
+  call: Pick<Call, 'method' | 'path' | 'query' | 'body'>,
+  opts: { stepUpVerified?: boolean } = {},
+): Promise<{ status: number; content: string }> {
   const url = new URL(call.path, ctx.origin)
   for (const [k, v] of Object.entries(call.query ?? {})) url.searchParams.set(k, v)
   const headers = new Headers({ Accept: 'application/json', Cookie: ctx.cookie })
@@ -199,7 +204,11 @@ async function execute(ctx: TurnCtx, call: Pick<Call, 'method' | 'path' | 'query
   let status = 0
   let text = ''
   try {
-    const res = await ctx.dispatch(new Request(url.toString(), { method: call.method, headers, body: bodyText }))
+    const internal = new Request(url.toString(), { method: call.method, headers, body: bodyText })
+    // The operator's code was already checked for this approved batch
+    // (postApprove); let the money-route gate accept this exact request.
+    if (opts.stepUpVerified) markStepUpVerified(internal)
+    const res = await ctx.dispatch(internal)
     status = res.status
     text = await res.text()
   } catch (e) {
@@ -471,6 +480,8 @@ export async function executeBatch(
   batch: PendingBatch,
   decisions: Decisions,
   expired: boolean,
+  /** True only when postApprove verified a fresh authenticator code for this batch. */
+  stepUpVerified = false,
 ): Promise<void> {
   const results: ReadyResult[] = [...batch.ready]
   for (const a of batch.actions) {
@@ -493,7 +504,7 @@ export async function executeBatch(
       addUi(conv, { kind: 'action', ...base, status: 'declined' })
       continue
     }
-    const r = await execute(ctx, a)
+    const r = await execute(ctx, a, { stepUpVerified })
     const ok = r.status < 400
     results.push({ toolUseId: a.toolUseId, content: r.content, isError: !ok })
     addUi(conv, {

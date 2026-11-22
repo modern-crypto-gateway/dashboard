@@ -19,7 +19,8 @@ import { unseal } from './crypto'
 import { kek, type Bindings } from './env'
 import { guardClaim, guardClear, guardHit } from './guard'
 import { HttpError } from './http'
-import type { UserRecord } from './kv'
+import { kvGet, K, type UserRecord } from './kv'
+import { isDryRunBody, moneyActionFor, STEPUP_HEADER } from '../../shared/moneyRoutes'
 import { matchTotpStep } from './totp'
 
 export const TOTP_FAIL_LIMIT = 10
@@ -75,4 +76,52 @@ export async function claimRecoveryCode(
   hash: string,
 ): Promise<boolean> {
   return guardClaim(env, userScope(username), `recovery:${hash}`, 365 * 24 * 60 * 60)
+}
+
+/**
+ * Requests the Worker built itself after checking a code for them (assistant
+ * batches approved with a verified code in postApprove). Membership is by
+ * object identity: a client request is a fresh object the runtime creates, so
+ * nothing a client sends (header, body, cookie) can put it in this set.
+ */
+const stepUpVerified = new WeakSet<Request>()
+
+/** Mark an internally built request as already step-up verified. Use only
+ * after verifyUserTotpOnce succeeded for the action this request performs. */
+export function markStepUpVerified(req: Request): Request {
+  stepUpVerified.add(req)
+  return req
+}
+
+/**
+ * Refuse a money-moving request unless it carries a fresh authenticator code
+ * in the `X-TOTP-Code` header (see shared/moneyRoutes.ts for the list). The
+ * code is single-use and counts toward the same per-user attempt limit as
+ * login. Throws 401 TOTP_REQUIRED / BAD_TOTP (or TOTP_REUSED, 429 over limit).
+ */
+export async function requireMoneyStepUp(
+  req: Request,
+  env: Bindings,
+  username: string,
+): Promise<void> {
+  const match = moneyActionFor(req.method, new URL(req.url).pathname)
+  if (!match) return
+  // Single use: a marked request object passes once.
+  if (stepUpVerified.delete(req)) return
+  // A `{ "dryRun": true }` preview on a route whose gateway handler treats it
+  // as side-effect free needs no code. The same bytes go upstream (the proxy
+  // forwards req.clone()'s body), so the gateway reads the same flag.
+  if (match.dryRunOk && isDryRunBody(await req.clone().text())) return
+  const action = match.label
+  const code = (req.headers.get(STEPUP_HEADER) ?? '').trim()
+  const user = await kvGet<UserRecord>(env, K.user(username), 'json')
+  if (!user || !code) {
+    throw new HttpError(401, 'TOTP_REQUIRED', 'Enter the 6-digit code from your authenticator', {
+      action,
+    })
+  }
+  // Counts the attempt (malformed codes included) before checking it.
+  if (!(await verifyUserTotpOnce(env, user, code.slice(0, 16)))) {
+    throw new HttpError(401, 'BAD_TOTP', 'Authenticator code is invalid', { action })
+  }
 }

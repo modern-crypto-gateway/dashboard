@@ -18,6 +18,7 @@ import { error, HttpError, json, readJson } from '../lib/http'
 import { kvGet, K, type SessionRecord, type UserRecord } from '../lib/kv'
 import { clientId } from '../lib/ratelimit'
 import { verifyUserTotpOnce } from '../lib/stepup'
+import { moneyActionFor } from '../../shared/moneyRoutes'
 import {
   appendUserText,
   executeBatch,
@@ -262,7 +263,14 @@ async function postApprove(req: Request, env: Bindings, sess: Sess, dispatch: Di
   // claimed so a wrong code leaves it waiting. Required whatever the expiry:
   // expiry is decided again inside the store, and two clocks must never be
   // the only thing between a money move and its 2FA check.
-  const approvedMoney = batch.actions.some((a) => a.risk === 'money' && decisions[a.toolUseId] === 'approve')
+  // A money action is one the catalog marks as such or one the dashboard's
+  // own money-route gate would ask a code for (shared/moneyRoutes.ts), so the
+  // two lists can't drift into a batch that skips the code.
+  const approvedMoney = batch.actions.some(
+    (a) =>
+      decisions[a.toolUseId] === 'approve' &&
+      (a.risk === 'money' || moneyActionFor(a.method, a.path) !== null),
+  )
   if (approvedMoney) {
     const user = await kvGet<UserRecord>(env, K.user(sess.record.username), 'json')
     const code = typeof body.totp === 'string' ? body.totp.trim() : ''
@@ -298,7 +306,8 @@ async function postApprove(req: Request, env: Bindings, sess: Sess, dispatch: Di
     }),
   )
   try {
-    await executeBatch(ctx, conv, claimed.batch, decisions, claimed.expired)
+    // approvedMoney implies the code was verified above (else we returned 401).
+    await executeBatch(ctx, conv, claimed.batch, decisions, claimed.expired, approvedMoney)
     await runModel(ctx, conv)
   } catch (e) {
     repairDangling(conv)

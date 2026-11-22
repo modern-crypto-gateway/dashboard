@@ -14,6 +14,9 @@
  *   error        every GET /api/gw/* answers 500 upstream_error
  *   loggedout    session is unauthenticated → login screen
  *   setup        setupComplete=false → setup wizard
+ *
+ * Money moves (shared/moneyRoutes.ts) ask for an authenticator code like the
+ * real Worker: any 6 digits work, 000000 previews the "wrong code" error.
  */
 import type {
   AutoConsolidationSchedule,
@@ -38,6 +41,7 @@ import {
   type MockDb,
 } from './mockData'
 import { DAY, HOUR, MIN, fromRaw, gen, iso, sec, toRaw, usd } from './mockUtil'
+import { isDryRunBody, moneyActionFor, STEPUP_HEADER } from '../../shared/moneyRoutes'
 
 /* ── preview flags ─────────────────────────────────────────── */
 
@@ -1064,6 +1068,7 @@ export function installMockApi() {
   const auth = { authenticated: !flags.has('loggedout'), setupComplete: !flags.has('setup') }
   const routes = buildRoutes(db, flags, auth)
   const realFetch = window.fetch.bind(window)
+  const usedCodes = new Set<string>()
 
   console.info(
     `%c[mock api]%c serving /api/* from fixtures. Flags: ${[...flags].join(', ') || 'none'} — switch with ?mock=empty|nomerchants|error|loggedout|setup|default`,
@@ -1098,8 +1103,38 @@ export function installMockApi() {
       }
     }
 
+    // Same step-up rule as the Worker: money moves need a 6-digit code in
+    // X-TOTP-Code. Any code works here except 000000 (to preview the
+    // "wrong code" state); a code can't be reused within its 30 s step.
+    const money = moneyActionFor(method, url.pathname)
+    const needsCode =
+      money != null &&
+      !(money.dryRunOk && typeof init?.body === 'string' && isDryRunBody(init.body))
+    const totp = new Headers(init?.headers).get(STEPUP_HEADER)?.trim() ?? ''
+    const step = Math.floor(Date.now() / 30_000)
+
     let result: Reply
-    if (flags.has('error') && method === 'GET' && url.pathname.startsWith('/api/gw/')) {
+    if (needsCode && !totp) {
+      result = reply(401, {
+        error: {
+          code: 'TOTP_REQUIRED',
+          message: 'Enter the 6-digit code from your authenticator',
+          details: { action: money.label },
+        },
+      })
+    } else if (needsCode && (!/^\d{6}$/.test(totp) || totp === '000000')) {
+      result = reply(401, {
+        error: { code: 'BAD_TOTP', message: 'Authenticator code is invalid', details: { action: money.label } },
+      })
+    } else if (needsCode && usedCodes.has(`${step}:${totp}`)) {
+      result = reply(401, {
+        error: {
+          code: 'TOTP_REUSED',
+          message: 'That code was already used. Wait for the next code in your authenticator.',
+          details: { action: money.label },
+        },
+      })
+    } else if (flags.has('error') && method === 'GET' && url.pathname.startsWith('/api/gw/')) {
       result = reply(500, { error: { code: 'upstream_error', message: 'Gateway unreachable' } })
     } else {
       const match = routes
@@ -1112,6 +1147,7 @@ export function installMockApi() {
       } else {
         const params: Record<string, string> = {}
         match.rt.keys.forEach((k, i) => (params[k] = decodeURIComponent(match.m![i + 1])))
+        if (needsCode) usedCodes.add(`${step}:${totp}`)
         try {
           const out = match.rt.handler({ method, path: url.pathname, params, query: url.searchParams, body })
           result = isReply(out) ? out : reply(200, out)
