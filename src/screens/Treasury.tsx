@@ -3,20 +3,35 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  ArrowsLeftRight,
   BadgeCheck,
-  ChevronDown,
-  ChevronRight,
+  Calendar,
+  CalendarClock,
+  CheckCircle2,
   Clock,
+  Coins,
   FlaskConical,
+  Gauge,
+  Hash,
+  Info,
   Landmark,
+  Layers,
+  ListBullets,
   Loader2,
+  MoreHorizontal,
   Pause,
   Pencil,
   Play,
   Plus,
   RefreshCw,
+  Scale,
   Send,
+  Tag,
+  Timer,
   Trash2,
+  Wallet,
 } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
@@ -24,9 +39,11 @@ import { chainInfo } from '@/lib/chains'
 import {
   fmtLocal,
   fmtNum,
+  fmtRel,
   fmtUsd,
   formatUnits,
   parseUnits,
+  toDate,
   useNow,
 } from '@/lib/format'
 import type {
@@ -38,6 +55,10 @@ import type {
 } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
+import { ChainPill } from '@/components/ChainPill'
+import { CopyButton } from '@/components/CopyButton'
+import { TokenIcon, TokenOnChain } from '@/components/CryptoIcon'
+import { Pager, TableCard, TableSearch, TableToolbar, usePaged } from '@/components/DataTable'
 import { Field } from '@/components/Field'
 import { PageHeader } from '@/components/PageHeader'
 import {
@@ -46,14 +67,11 @@ import {
   ErrorState,
   ListSkeleton,
 } from '@/components/States'
+import { StatusPill, type StatusTone } from '@/components/StatusPill'
+import { SegmentedBar, SparkBars } from '@/components/charts'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import {
   Table,
   TableWrap,
@@ -70,8 +88,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -80,6 +104,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetFooter,
+  SheetHero,
+  SheetSection,
+  SheetTabs,
+} from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 /* ── Queries, constants ─────────────────────────────────────── */
@@ -110,6 +145,8 @@ const DEFAULTS = {
   maxDailyUsd: '6000',
   keepFloat: '0',
 }
+
+const PAGE_SIZE = 25
 
 /**
  * Operator-facing text per API error code. Codes whose server message
@@ -219,252 +256,97 @@ function fmtRelDelta(deltaMs: number): string {
   return future ? `in ${body}` : `${body} ago`
 }
 
-/* ── Page ───────────────────────────────────────────────────── */
-
-export function TreasuryPage() {
-  const qc = useQueryClient()
-  const destQ = useQuery(DESTINATIONS_Q)
-  const chainsQ = useQuery(CHAINS_Q)
-  const [createOpen, setCreateOpen] = React.useState(false)
-  const [editing, setEditing] = React.useState<TreasuryDestination | null>(null)
-  const [transferFilter, setTransferFilter] = React.useState<string>('all')
-
-  const transfersQ = useQuery({
-    queryKey: [...TREASURY_KEY, 'transfers', transferFilter] as const,
-    queryFn: () => {
-      const qs = new URLSearchParams({ limit: '50' })
-      if (transferFilter !== 'all') qs.set('destinationId', transferFilter)
-      return api<{ transfers: TreasuryTransfer[] }>(
-        `${BASE}/transfers?${qs.toString()}`,
-      )
-    },
-    refetchInterval: 30_000,
-  })
-
-  const chains = chainsQ.data?.chains
-  const destinations = React.useMemo(
-    () => destQ.data?.destinations ?? [],
-    [destQ.data],
-  )
-  const transfers = React.useMemo(
-    () => transfersQ.data?.transfers ?? [],
-    [transfersQ.data],
-  )
-
-  // Destinations grouped by chain (sorted by display name), then token, label.
-  const groups = React.useMemo(() => {
-    const m = new Map<number, TreasuryDestination[]>()
-    for (const d of destinations) {
-      const arr = m.get(d.chainId) ?? []
-      arr.push(d)
-      m.set(d.chainId, arr)
-    }
-    return [...m.entries()]
-      .map(([chainId, rows]) => ({
-        chainId,
-        name: chainName(chains, chainId),
-        rows: rows
-          .slice()
-          .sort(
-            (a, b) =>
-              a.token.localeCompare(b.token) || a.label.localeCompare(b.label),
-          ),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [destinations, chains])
-
-  // Destinations that already have transfers cannot be deleted (409
-  // TREASURY_IN_USE); `lastTransferId` is the server's signal, the current
-  // transfer list is a belt-and-braces check.
-  const destsWithTransfers = React.useMemo(() => {
-    const s = new Set<string>()
-    for (const d of destinations) if (d.lastTransferId) s.add(d.id)
-    for (const t of transfers) s.add(t.destinationId)
-    return s
-  }, [destinations, transfers])
-
-  const invalidate = () => qc.invalidateQueries({ queryKey: TREASURY_KEY })
-
-  return (
-    <div className="fade-in space-y-6">
-      <PageHeader
-        eyebrow="Treasury"
-        title="Treasury"
-        description={
-          <>
-            Allow-listed external addresses (Kraken deposit addresses) that
-            receive pool balances through the gateway's own payout rails, one
-            per (chain, token). Stablecoin credits younger than the refund hold
-            stay on their receiving address; a{' '}
-            <span className="font-mono">float</span> of each token is always
-            kept for store payouts; per-transfer and rolling 24 h USD caps
-            bound every run. A new destination starts disabled and unverified:
-            send a small verification transfer, confirm it arrived at the
-            exchange, mark it verified, then enable it.
-          </>
-        }
-        actions={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                destQ.refetch()
-                transfersQ.refetch()
-              }}
-              disabled={destQ.isFetching}
-            >
-              <RefreshCw
-                className={'size-3.5' + (destQ.isFetching ? ' animate-spin' : '')}
-              />
-              Refresh
-            </Button>
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              <Plus className="size-3.5" /> Add destination
-            </Button>
-          </>
-        }
-      />
-
-      <DestinationFormDialog
-        mode="create"
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        chains={chains}
-        onSaved={invalidate}
-      />
-      {editing && (
-        <DestinationFormDialog
-          key={editing.id}
-          mode="edit"
-          open
-          onOpenChange={(v) => !v && setEditing(null)}
-          destination={editing}
-          chains={chains}
-          onSaved={() => {
-            invalidate()
-            setEditing(null)
-          }}
-        />
-      )}
-
-      {destQ.isLoading ? (
-        <ListSkeleton rows={4} />
-      ) : destQ.isError ? (
-        <ErrorState
-          title="Could not load treasury destinations"
-          message={destQ.error instanceof Error ? destQ.error.message : 'Error'}
-        />
-      ) : destinations.length === 0 ? (
-        <NoDestinations onCreate={() => setCreateOpen(true)} />
-      ) : (
-        <div className="space-y-5">
-          {groups.map((g) => (
-            <Card key={g.chainId} className="overflow-hidden">
-              <CardHeader className="border-b">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <CardTitle className="inline-flex items-center gap-2">
-                    <span
-                      aria-hidden
-                      className="size-2 shrink-0 rounded-full"
-                      style={{ background: chainInfo(g.chainId).color }}
-                    />
-                    {g.name}
-                  </CardTitle>
-                  <span className="font-mono text-xs tabular-nums text-[var(--fg-2)]">
-                    {g.chainId} · {g.rows.length}
-                  </span>
-                </div>
-              </CardHeader>
-              <TableWrap>
-                <Table className="min-w-[1080px]">
-                  <THead>
-                    <tr>
-                      <Th className="w-8 px-0 pl-4" aria-label="Details" />
-                      <Th>Destination</Th>
-                      <Th>Status</Th>
-                      <Th align="right">Caps (USD)</Th>
-                      <Th>Schedule</Th>
-                      <Th align="right">Actions</Th>
-                    </tr>
-                  </THead>
-                  <TBody>
-                    {g.rows.map((d) => (
-                      <DestinationRow
-                        key={d.id}
-                        d={d}
-                        chains={chains}
-                        hasTransfers={destsWithTransfers.has(d.id)}
-                        onEdit={() => setEditing(d)}
-                        onChanged={invalidate}
-                      />
-                    ))}
-                  </TBody>
-                </Table>
-              </TableWrap>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      <TransfersSection
-        transfers={transfers}
-        isLoading={transfersQ.isLoading}
-        isFetching={transfersQ.isFetching}
-        error={transfersQ.error}
-        onRefresh={() => transfersQ.refetch()}
-        destinations={destinations}
-        chains={chains}
-        filter={transferFilter}
-        onFilterChange={setTransferFilter}
-      />
-    </div>
-  )
+/** Relative "5m ago" for any date-ish value (ms or s). */
+function rel(x: number | string | null | undefined): string {
+  const d = toDate(x)
+  return d ? fmtRel(Math.floor(d.getTime() / 1000)) : '—'
 }
 
-function NoDestinations({ onCreate }: { onCreate: () => void }) {
-  return (
-    <EmptyState
-      framed
-      icon={Landmark}
-      title="No treasury destinations yet."
-      description="Add one per (chain, token) route you want to sweep to the exchange. It starts disabled; verify it with a small test transfer before enabling."
-      action={
-        <Button size="sm" onClick={onCreate}>
-          <Plus className="size-3.5" /> Add destination
-        </Button>
-      }
-    />
-  )
+const num = (s: string | null | undefined): number => {
+  const n = parseFloat(s ?? '')
+  return Number.isFinite(n) ? n : 0
 }
 
-/* ── Destination row ────────────────────────────────────────── */
+/** Values bucketed per local day, oldest first, ending today. */
+function dailyBuckets<T>(
+  rows: T[],
+  at: (r: T) => number,
+  value: (r: T) => number,
+  days: number,
+): number[] {
+  const out = new Array<number>(days).fill(0)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const start = today.getTime() - (days - 1) * 86_400_000
+  for (const r of rows) {
+    const d = toDate(at(r))
+    if (!d) continue
+    const day = new Date(d)
+    day.setHours(0, 0, 0, 0)
+    const i = Math.round((day.getTime() - start) / 86_400_000)
+    if (i >= 0 && i < days) out[i] += value(r)
+  }
+  return out
+}
 
-function DestinationRow({
-  d,
-  chains,
-  hasTransfers,
-  onEdit,
-  onChanged,
-}: {
-  d: TreasuryDestination
-  chains: ChainInventoryEntry[] | undefined
-  hasTransfers: boolean
-  onEdit: () => void
-  onChanged: () => void
-}) {
-  const name = chainName(chains, d.chainId)
-  const dec = findToken(chains, d.chainId, d.token)?.decimals ?? null
-  const now = useNow(15_000)
+/** Gating shared by the row menu and the detail sheet. */
+function gatingOf(d: TreasuryDestination) {
   const verified = d.verifiedAt != null
-  const auto = d.autoIntervalHours != null
-  const overdue =
-    d.enabled && auto && d.nextRunDue != null && d.nextRunDue < now
+  const canTransfer = d.enabled && verified
+  const transferTitle = !verified
+    ? 'Verify the destination first'
+    : !d.enabled
+      ? 'Enable the destination first'
+      : 'Dry-run preview first, then confirm'
+  const toggleTitle =
+    !verified && !d.enabled
+      ? 'Only verified destinations can be enabled'
+      : d.enabled
+        ? 'Stops manual and scheduled transfers'
+        : 'Allows transfers'
+  return {
+    verified,
+    canTransfer,
+    transferTitle,
+    toggleTitle,
+    toggleBlocked: !verified && !d.enabled,
+  }
+}
 
-  const [expanded, setExpanded] = React.useState(false)
-  const [verifyOpen, setVerifyOpen] = React.useState(false)
-  const [transferOpen, setTransferOpen] = React.useState(false)
+function destinationTone(d: TreasuryDestination): { tone: StatusTone; label: string } {
+  if (d.verifiedAt == null) return { tone: 'warn', label: 'Unverified' }
+  if (!d.enabled) return { tone: 'off', label: 'Disabled' }
+  return { tone: 'ok', label: 'Enabled' }
+}
 
+function transferTone(s: TreasuryTransfer['status']): { tone: StatusTone; label: string } {
+  const pending = pendingLegs(s)
+  const total = pending + s.confirmed + s.failed + s.canceled
+  if (total === 0) return { tone: 'wait', label: 'No legs' }
+  if (pending > 0) return { tone: 'run', label: `${pending} pending` }
+  if (s.failed > 0) return { tone: 'bad', label: `${s.failed} failed` }
+  if (s.confirmed > 0) return { tone: 'ok', label: 'Confirmed' }
+  return { tone: 'off', label: 'Canceled' }
+}
+
+const MODE_META: Record<
+  TreasuryTransfer['mode'],
+  { label: string; icon: React.ComponentType<{ className?: string }> }
+> = {
+  verification: { label: 'Verification', icon: FlaskConical },
+  scheduled: { label: 'Scheduled', icon: Clock },
+  manual: { label: 'Manual', icon: Send },
+}
+
+/** Stops row click / Enter from firing when the event starts inside a control. */
+const stop = {
+  onClick: (e: React.SyntheticEvent) => e.stopPropagation(),
+  onKeyDown: (e: React.SyntheticEvent) => e.stopPropagation(),
+}
+
+/* ── Mutations shared by row + sheet ────────────────────────── */
+
+function useDestinationMutations(d: TreasuryDestination, onChanged: () => void) {
   const toggle = useMutation({
     mutationFn: () =>
       api<{ destination: TreasuryDestination }>(
@@ -491,141 +373,952 @@ function DestinationRow({
     onError: (e) => toast.error(errText(e, 'Could not mark verified')),
   })
 
-  const canTransfer = d.enabled && verified
-  const transferTitle = !verified
-    ? 'Verify the destination first'
-    : !d.enabled
-      ? 'Enable the destination first'
-      : 'Dry-run preview first, then confirm'
-  const toggleTitle =
-    !verified && !d.enabled
-      ? 'Only verified destinations can be enabled'
-      : d.enabled
-        ? 'Stops manual and scheduled transfers'
-        : 'Allows transfers'
+  return { toggle, markVerified }
+}
+
+function eligibilityQuery(destinationId: string) {
+  return {
+    queryKey: [...TREASURY_KEY, 'destinations', destinationId] as const,
+    queryFn: () =>
+      api<{ destination: TreasuryDestination; eligibility: TreasuryEligibility }>(
+        `${BASE}/destinations/${encodeURIComponent(destinationId)}`,
+      ),
+    refetchInterval: 30_000,
+  }
+}
+
+/* ── Page ───────────────────────────────────────────────────── */
+
+type ActionKind = 'verify' | 'transfer' | 'delete'
+
+export function TreasuryPage() {
+  const qc = useQueryClient()
+  const destQ = useQuery(DESTINATIONS_Q)
+  const chainsQ = useQuery(CHAINS_Q)
+  const now = useNow(15_000)
+  const [createOpen, setCreateOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<TreasuryDestination | null>(null)
+  const [transferFilter, setTransferFilter] = React.useState<string>('all')
+  const [search, setSearch] = React.useState('')
+  const [action, setAction] = React.useState<{ kind: ActionKind; id: string } | null>(null)
+  const [sheet, setSheet] = React.useState<{ id: string; open: boolean } | null>(null)
+  const [transferSheet, setTransferSheet] = React.useState<{ id: string; open: boolean } | null>(null)
+  const transfersRef = React.useRef<HTMLDivElement>(null)
+
+  const transfersQ = useQuery({
+    queryKey: [...TREASURY_KEY, 'transfers', transferFilter] as const,
+    queryFn: () => {
+      const qs = new URLSearchParams({ limit: '50' })
+      if (transferFilter !== 'all') qs.set('destinationId', transferFilter)
+      return api<{ transfers: TreasuryTransfer[] }>(
+        `${BASE}/transfers?${qs.toString()}`,
+      )
+    },
+    refetchInterval: 30_000,
+  })
+
+  const chains = chainsQ.data?.chains
+  const destinations = React.useMemo(
+    () => destQ.data?.destinations ?? [],
+    [destQ.data],
+  )
+  const transfers = React.useMemo(
+    () => transfersQ.data?.transfers ?? [],
+    [transfersQ.data],
+  )
+
+  // Destinations ordered by chain (display name), then token, label.
+  const ordered = React.useMemo(
+    () =>
+      destinations
+        .slice()
+        .sort(
+          (a, b) =>
+            chainName(chains, a.chainId).localeCompare(chainName(chains, b.chainId)) ||
+            a.token.localeCompare(b.token) ||
+            a.label.localeCompare(b.label),
+        ),
+    [destinations, chains],
+  )
+
+  const visible = React.useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return ordered
+    return ordered.filter((d) =>
+      [d.label, d.token, d.address, d.exchange, chainName(chains, d.chainId)]
+        .join(' ')
+        .toLowerCase()
+        .includes(q),
+    )
+  }, [ordered, search, chains])
+
+  // Destinations that already have transfers cannot be deleted (409
+  // TREASURY_IN_USE); `lastTransferId` is the server's signal, the current
+  // transfer list is a belt-and-braces check.
+  const destsWithTransfers = React.useMemo(() => {
+    const s = new Set<string>()
+    for (const d of destinations) if (d.lastTransferId) s.add(d.id)
+    for (const t of transfers) s.add(t.destinationId)
+    return s
+  }, [destinations, transfers])
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: TREASURY_KEY })
+  const decOf = (d: TreasuryDestination) =>
+    findToken(chains, d.chainId, d.token)?.decimals ?? null
+
+  const actionDest = action ? destinations.find((d) => d.id === action.id) : undefined
+  const sheetDest = sheet ? destinations.find((d) => d.id === sheet.id) : undefined
+  const sheetTransfer = transferSheet
+    ? transfers.find((t) => t.id === transferSheet.id)
+    : undefined
+
+  const handlers: RowHandlers = {
+    onOpen: (d) => setSheet({ id: d.id, open: true }),
+    onAction: (kind, d) => setAction({ kind, id: d.id }),
+    onEdit: (d) => setEditing(d),
+    onShowTransfers: (d) => {
+      setTransferFilter(d.id)
+      setSheet((s) => (s ? { ...s, open: false } : s))
+      transfersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    },
+  }
 
   return (
-    <>
-      <Tr>
-        <Td className="w-8 px-0 pl-4 align-top">
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            aria-expanded={expanded}
-            aria-label={`${expanded ? 'Hide' : 'Show'} details and eligibility`}
-            title={`${expanded ? 'Hide' : 'Show'} eligibility`}
-            className="mt-0.5 grid size-6 cursor-pointer place-items-center rounded-md text-[var(--fg-2)] hover:bg-[var(--bg-hover)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          >
-            {expanded ? (
-              <ChevronDown className="size-3.5" />
-            ) : (
-              <ChevronRight className="size-3.5" />
-            )}
-          </button>
-        </Td>
-        <Td className="align-top">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{d.label}</span>
-            <Badge variant="outline">{d.exchange}</Badge>
-            <Badge variant="outline" className="font-mono">
-              {d.token}
-            </Badge>
-          </div>
-          <div className="mt-1 text-xs text-[var(--fg-2)]">{name}</div>
-          <div className="mt-1 text-[var(--fg-2)]">
-            <Addr value={d.address} />
-          </div>
-        </Td>
-        <Td className="align-top">
-          <div className="flex max-w-[220px] flex-wrap items-center gap-1.5">
-            {verified ? (
-              <Badge variant="success">
-                <BadgeCheck className="size-3" /> Verified
-              </Badge>
-            ) : (
-              <Badge variant="warn">
-                <AlertTriangle className="size-3" /> Awaiting verification
-              </Badge>
-            )}
-            {d.enabled ? (
-              <Badge variant="success">
-                <Play className="size-3" /> Enabled
-              </Badge>
-            ) : (
-              <Badge variant="default">
-                <Pause className="size-3" /> Disabled
-              </Badge>
-            )}
-            {auto && (
-              <Badge variant="accent" title={`next ${fmtLocal(d.nextRunDue)}`}>
-                <Clock className="size-3" /> Auto every {d.autoIntervalHours} h
-              </Badge>
-            )}
-            {overdue && (
-              <Badge variant="warn">
-                <AlertTriangle className="size-3" /> overdue
-              </Badge>
-            )}
-          </div>
-        </Td>
-        <Td align="right" className="align-top whitespace-nowrap">
-          <div>
-            {fmtUsd(d.maxPerTransferUsd)}{' '}
-            <span className="font-sans text-xs text-[var(--fg-2)]">
-              per transfer
-            </span>
-          </div>
-          <div className="text-xs text-[var(--fg-2)]">
-            {fmtUsd(d.maxDailyUsd)} <span className="font-sans">daily</span>
-          </div>
-          <div className="text-xs text-[var(--fg-2)]">
-            <span className="font-sans">min</span> {fmtUsd(d.minTransferUsd)}
-          </div>
-        </Td>
-        <Td className="align-top whitespace-nowrap">
-          <div>
-            {auto ? (
-              <span className="font-mono">every {d.autoIntervalHours}h</span>
-            ) : (
-              <span className="text-[var(--fg-2)]">manual only</span>
-            )}
-          </div>
-          {auto && d.nextRunDue != null && (
-            <div
-              className={cn(
-                'font-mono text-xs tabular-nums',
-                overdue ? 'text-warn' : 'text-[var(--fg-2)]',
-              )}
+    <div className="space-y-8">
+      <PageHeader
+        title={
+          <>
+            Treasury
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="How treasury works"
+                  className="grid size-6 cursor-help place-items-center rounded-full text-[var(--fg-3)] hover:text-foreground"
+                >
+                  <Info className="size-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs text-pretty font-normal">
+                One allow-listed exchange address per chain and token. Refund-held
+                credits and the float stay put; per-transfer and 24 h caps bound
+                every run. New destinations start disabled: send a test transfer,
+                confirm it arrived, mark verified, then enable.
+              </TooltipContent>
+            </Tooltip>
+          </>
+        }
+        description="Sweeps pool balances to exchanges."
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Refresh"
+              title="Refresh"
+              onClick={() => {
+                destQ.refetch()
+                transfersQ.refetch()
+              }}
+              disabled={destQ.isFetching}
             >
-              next {fmtLocal(d.nextRunDue)} ({fmtRelDelta(d.nextRunDue - now)})
+              <RefreshCw className={cn('size-4', destQ.isFetching && 'animate-spin')} />
+            </Button>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" /> Add destination
+            </Button>
+          </>
+        }
+      />
+
+      <SummaryTiles
+        destinations={destinations}
+        transfers={transfers}
+        loading={destQ.isLoading}
+        transfersLoading={transfersQ.isLoading}
+        filtered={transferFilter !== 'all'}
+        now={now}
+      />
+
+      {destQ.isLoading ? (
+        <ListSkeleton rows={4} />
+      ) : destQ.isError ? (
+        <ErrorState
+          title="Could not load treasury destinations"
+          message={destQ.error instanceof Error ? destQ.error.message : 'Error'}
+        />
+      ) : destinations.length === 0 ? (
+        <NoDestinations onCreate={() => setCreateOpen(true)} />
+      ) : (
+        <DestinationsTable
+          rows={visible}
+          total={destinations.length}
+          search={search}
+          onSearch={setSearch}
+          chains={chains}
+          now={now}
+          hasTransfers={destsWithTransfers}
+          onChanged={invalidate}
+          handlers={handlers}
+        />
+      )}
+
+      <div ref={transfersRef} className="scroll-mt-6">
+        <TransfersSection
+          key={transferFilter}
+          transfers={transfers}
+          isLoading={transfersQ.isLoading}
+          isFetching={transfersQ.isFetching}
+          error={transfersQ.error}
+          onRefresh={() => transfersQ.refetch()}
+          destinations={destinations}
+          chains={chains}
+          filter={transferFilter}
+          onFilterChange={setTransferFilter}
+          onOpen={(t) => setTransferSheet({ id: t.id, open: true })}
+        />
+      </div>
+
+      {/* ── Dialogs + sheets ─────────────────────────────── */}
+
+      <DestinationFormDialog
+        mode="create"
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        chains={chains}
+        onSaved={invalidate}
+      />
+      {editing && (
+        <DestinationFormDialog
+          key={editing.id}
+          mode="edit"
+          open
+          onOpenChange={(v) => !v && setEditing(null)}
+          destination={editing}
+          chains={chains}
+          onSaved={() => {
+            invalidate()
+            setEditing(null)
+          }}
+        />
+      )}
+
+      {action?.kind === 'verify' && actionDest && (
+        <VerifyDialog
+          d={actionDest}
+          dec={decOf(actionDest)}
+          onClose={() => setAction(null)}
+          onChanged={invalidate}
+        />
+      )}
+      {action?.kind === 'transfer' && actionDest && (
+        <TransferDialog
+          d={actionDest}
+          dec={decOf(actionDest)}
+          onClose={() => setAction(null)}
+          onChanged={invalidate}
+        />
+      )}
+      {action?.kind === 'delete' && actionDest && (
+        <DeleteDestinationDialog
+          d={actionDest}
+          onClose={() => setAction(null)}
+          onChanged={invalidate}
+        />
+      )}
+
+      <Sheet
+        open={!!sheet?.open && !!sheetDest}
+        onOpenChange={(v) => !v && setSheet((s) => (s ? { ...s, open: false } : s))}
+      >
+        {sheetDest && (
+          <DestinationSheet
+            key={sheetDest.id}
+            d={sheetDest}
+            chains={chains}
+            now={now}
+            hasTransfers={destsWithTransfers.has(sheetDest.id)}
+            onChanged={invalidate}
+            handlers={handlers}
+          />
+        )}
+      </Sheet>
+
+      <Sheet
+        open={!!transferSheet?.open && !!sheetTransfer}
+        onOpenChange={(v) =>
+          !v && setTransferSheet((s) => (s ? { ...s, open: false } : s))
+        }
+      >
+        {sheetTransfer && (
+          <TransferSheet
+            key={sheetTransfer.id}
+            t={sheetTransfer}
+            dest={destinations.find((d) => d.id === sheetTransfer.destinationId)}
+            chains={chains}
+          />
+        )}
+      </Sheet>
+    </div>
+  )
+}
+
+type RowHandlers = {
+  onOpen: (d: TreasuryDestination) => void
+  onAction: (kind: ActionKind, d: TreasuryDestination) => void
+  onEdit: (d: TreasuryDestination) => void
+  onShowTransfers: (d: TreasuryDestination) => void
+}
+
+function NoDestinations({ onCreate }: { onCreate: () => void }) {
+  return (
+    <EmptyState
+      framed
+      icon={Landmark}
+      title="No destinations yet"
+      description="Add one per chain and token. It starts disabled until verified."
+      action={
+        <Button size="sm" onClick={onCreate}>
+          <Plus className="size-4" /> Add destination
+        </Button>
+      }
+    />
+  )
+}
+
+/* ── Summary tiles ──────────────────────────────────────────── */
+
+function StatTile({
+  label,
+  icon: Icon,
+  value,
+  sub,
+  footer,
+  loading,
+}: {
+  label: string
+  icon?: React.ComponentType<{ className?: string }>
+  value: React.ReactNode
+  sub?: React.ReactNode
+  footer?: React.ReactNode
+  loading?: boolean
+}) {
+  return (
+    <Card className="flex flex-col p-5">
+      <div className="flex items-center justify-between gap-2 text-sm text-[var(--fg-2)]">
+        {label}
+        {Icon && <Icon className="size-4 text-[var(--fg-3)]" />}
+      </div>
+      <div className="figure mt-2 text-xl font-semibold">
+        {loading ? <Skeleton className="h-7 w-24" /> : value}
+      </div>
+      <div className="mt-1 min-h-4 truncate text-xs text-[var(--fg-2)]">
+        {loading ? <Skeleton className="h-3 w-20" /> : sub}
+      </div>
+      {footer && <div className="mt-auto pt-4">{footer}</div>}
+    </Card>
+  )
+}
+
+function SummaryTiles({
+  destinations,
+  transfers,
+  loading,
+  transfersLoading,
+  filtered,
+  now,
+}: {
+  destinations: TreasuryDestination[]
+  transfers: TreasuryTransfer[]
+  loading: boolean
+  transfersLoading: boolean
+  filtered: boolean
+  now: number
+}) {
+  const s = React.useMemo(() => {
+    const byChain = new Map<number, number>()
+    for (const d of destinations) byChain.set(d.chainId, (byChain.get(d.chainId) ?? 0) + 1)
+    const verified = destinations.filter((d) => d.verifiedAt != null).length
+    const enabled = destinations.filter((d) => d.enabled).length
+    const auto = destinations.filter((d) => d.autoIntervalHours != null).length
+    const overdue = destinations.filter(
+      (d) => d.enabled && d.autoIntervalHours != null && d.nextRunDue != null && d.nextRunDue < now,
+    ).length
+    const volume = transfers.reduce((a, t) => a + num(t.plannedUsd), 0)
+    const inFlight = transfers.filter((t) => pendingLegs(t.status) > 0).length
+    const days = dailyBuckets(transfers, (t) => t.createdAt, (t) => num(t.plannedUsd), 14)
+    return { byChain, verified, enabled, auto, overdue, volume, inFlight, days }
+  }, [destinations, transfers, now])
+  const total = destinations.length
+
+  return (
+    <div className="stagger grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <StatTile
+        label="Destinations"
+        icon={Landmark}
+        loading={loading}
+        value={total}
+        sub={`${s.byChain.size} chain${s.byChain.size === 1 ? '' : 's'}`}
+        footer={
+          <SegmentedBar
+            parts={[...s.byChain.entries()].map(([chainId, n]) => ({
+              key: String(chainId),
+              name: chainInfo(chainId).name,
+              value: n,
+              color: chainInfo(chainId).color,
+            }))}
+          />
+        }
+      />
+      <StatTile
+        label="Verified"
+        icon={BadgeCheck}
+        loading={loading}
+        value={
+          <>
+            {s.verified}
+            <span className="text-base font-medium text-[var(--fg-3)]"> / {total}</span>
+          </>
+        }
+        sub={total - s.verified > 0 ? `${total - s.verified} awaiting` : 'All verified'}
+        footer={
+          <SegmentedBar
+            parts={[
+              { key: 'ok', name: 'Verified', value: s.verified, color: 'var(--st-ok-dot)' },
+              { key: 'wait', name: 'Awaiting', value: total - s.verified, color: 'var(--st-warn-dot)' },
+            ]}
+          />
+        }
+      />
+      <StatTile
+        label="Enabled"
+        icon={Play}
+        loading={loading}
+        value={s.enabled}
+        sub={
+          s.overdue > 0 ? (
+            <span className="text-[var(--st-warn)]">{s.overdue} overdue</span>
+          ) : (
+            `${s.auto} scheduled`
+          )
+        }
+        footer={
+          <SegmentedBar
+            parts={[
+              { key: 'on', name: 'Enabled', value: s.enabled, color: 'var(--chart-1-fill)' },
+              { key: 'off', name: 'Disabled', value: total - s.enabled, color: 'var(--chart-muted)' },
+            ]}
+          />
+        }
+      />
+      <StatTile
+        label={filtered ? 'Volume · filtered' : 'Transfer volume'}
+        icon={ArrowsLeftRight}
+        loading={transfersLoading}
+        value={fmtUsd(s.volume)}
+        sub={`${transfers.length} transfer${transfers.length === 1 ? '' : 's'}${s.inFlight ? ` · ${s.inFlight} in flight` : ''}`}
+        footer={<SparkBars values={s.days} height={32} />}
+      />
+    </div>
+  )
+}
+
+/* ── Destinations table ─────────────────────────────────────── */
+
+function DestinationsTable({
+  rows,
+  total,
+  search,
+  onSearch,
+  chains,
+  now,
+  hasTransfers,
+  onChanged,
+  handlers,
+}: {
+  rows: TreasuryDestination[]
+  total: number
+  search: string
+  onSearch: (v: string) => void
+  chains: ChainInventoryEntry[] | undefined
+  now: number
+  hasTransfers: Set<string>
+  onChanged: () => void
+  handlers: RowHandlers
+}) {
+  const paged = usePaged(rows, PAGE_SIZE)
+  return (
+    <TableCard
+      toolbar={
+        <TableToolbar title="Destinations" count={total}>
+          <TableSearch value={search} onChange={onSearch} placeholder="Search destinations" />
+        </TableToolbar>
+      }
+      footer={
+        <Pager
+          page={paged.page}
+          pageSize={PAGE_SIZE}
+          total={paged.total}
+          hasNext={paged.page < paged.pageCount - 1}
+          onPage={paged.setPage}
+          noun="destinations"
+        />
+      }
+    >
+      {rows.length === 0 ? (
+        <EmptyState compact title="No matches" action={
+          <Button size="sm" variant="outline" onClick={() => onSearch('')}>Clear search</Button>
+        } />
+      ) : (
+        <TableWrap>
+          <Table className="min-w-[940px]">
+            <THead>
+              <tr>
+                <Th>Destination</Th>
+                <Th>Network</Th>
+                <Th>Status</Th>
+                <Th align="right">Caps</Th>
+                <Th>Schedule</Th>
+                <Th align="right">Last run</Th>
+                <Th className="w-0" aria-label="Actions" />
+              </tr>
+            </THead>
+            <TBody>
+              {paged.rows.map((d) => (
+                <DestinationRow
+                  key={d.id}
+                  d={d}
+                  chains={chains}
+                  now={now}
+                  hasTransfers={hasTransfers.has(d.id)}
+                  onChanged={onChanged}
+                  handlers={handlers}
+                />
+              ))}
+            </TBody>
+          </Table>
+        </TableWrap>
+      )}
+    </TableCard>
+  )
+}
+
+function DestinationRow({
+  d,
+  chains,
+  now,
+  hasTransfers,
+  onChanged,
+  handlers,
+}: {
+  d: TreasuryDestination
+  chains: ChainInventoryEntry[] | undefined
+  now: number
+  hasTransfers: boolean
+  onChanged: () => void
+  handlers: RowHandlers
+}) {
+  const g = gatingOf(d)
+  const auto = d.autoIntervalHours != null
+  const overdue = d.enabled && auto && d.nextRunDue != null && d.nextRunDue < now
+  const st = destinationTone(d)
+  const open = () => handlers.onOpen(d)
+
+  return (
+    <Tr
+      interactive
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          open()
+        }
+      }}
+      className="focus-visible:bg-[var(--bg-hover)] focus-visible:outline-none"
+    >
+      <Td>
+        <div className="flex min-w-0 items-center gap-3">
+          <TokenOnChain symbol={d.token} chainId={d.chainId} size={32} />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 font-medium">
+              <span className="truncate">{d.label}</span>
+              <Badge variant="outline" className="capitalize">
+                {d.exchange}
+              </Badge>
             </div>
-          )}
-          <div className="font-mono text-xs tabular-nums text-[var(--fg-2)]">
-            {d.lastRunAt != null
-              ? `last ${fmtLocal(d.lastRunAt)} (${fmtRelDelta(d.lastRunAt - now)})`
-              : 'last never'}
+            <div className="flex items-center gap-1 text-xs text-[var(--fg-3)]" {...stop}>
+              <span className="font-mono">{d.token}</span>
+              <span>·</span>
+              <Addr value={d.address} chainId={d.chainId} />
+            </div>
           </div>
-        </Td>
-        <Td className="align-top">
-          <div className="ml-auto flex max-w-[380px] flex-wrap items-center justify-end gap-2">
-            <span title={transferTitle}>
-              <Button
-                size="sm"
-                disabled={!canTransfer}
-                onClick={() => setTransferOpen(true)}
+        </div>
+      </Td>
+      <Td>
+        <ChainPill chainId={d.chainId} className="max-w-[160px]" />
+        <span className="sr-only">{chainName(chains, d.chainId)}</span>
+      </Td>
+      <Td>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span title={st.tone === 'warn' ? 'Awaiting verification' : undefined}>
+            <StatusPill tone={st.tone}>{st.label}</StatusPill>
+          </span>
+          {overdue && <StatusPill tone="warn">Overdue</StatusPill>}
+        </div>
+      </Td>
+      <Td align="right" className="whitespace-nowrap" title={`min ${fmtUsd(d.minTransferUsd)}`}>
+        <div className="font-medium">{fmtUsd(d.maxPerTransferUsd)}</div>
+        <div className="text-xs text-[var(--fg-2)]">{fmtUsd(d.maxDailyUsd)} / day</div>
+      </Td>
+      <Td className="whitespace-nowrap">
+        {auto ? (
+          <>
+            <div className="flex items-center gap-1.5 text-sm">
+              <Timer className="size-4 text-[var(--fg-3)]" />
+              Every {d.autoIntervalHours}h
+            </div>
+            {d.nextRunDue != null && (
+              <div
+                className={cn('text-xs', overdue ? 'text-[var(--st-warn)]' : 'text-[var(--fg-2)]')}
+                title={fmtLocal(d.nextRunDue)}
               >
-                <Send className="size-3.5" /> Transfer now
-              </Button>
-            </span>
+                next {fmtRelDelta(d.nextRunDue - now)}
+              </div>
+            )}
+          </>
+        ) : (
+          <span className="text-sm text-[var(--fg-2)]">Manual</span>
+        )}
+      </Td>
+      <Td
+        align="right"
+        className="text-sm whitespace-nowrap text-[var(--fg-2)]"
+        title={d.lastRunAt != null ? fmtLocal(d.lastRunAt) : undefined}
+      >
+        {d.lastRunAt != null ? fmtRelDelta(d.lastRunAt - now) : 'Never'}
+      </Td>
+      <Td className="w-0">
+        <div className="flex items-center justify-end gap-1" {...stop}>
+          <span title={g.transferTitle}>
             <Button
               size="sm"
-              variant="outline"
-              onClick={() => setVerifyOpen(true)}
-              title="Send a small test transfer to this address"
+              disabled={!g.canTransfer}
+              onClick={() => handlers.onAction('transfer', d)}
             >
-              <FlaskConical className="size-3.5" /> Verify
+              <Send className="size-4" /> Transfer now
             </Button>
-            {!verified && (
+          </span>
+          <DestinationMenu
+            d={d}
+            hasTransfers={hasTransfers}
+            onChanged={onChanged}
+            handlers={handlers}
+          />
+        </div>
+      </Td>
+    </Tr>
+  )
+}
+
+/** Menu item with a second muted line (used to explain a disabled item). */
+function MenuText({ label, hint }: { label: string; hint?: string }) {
+  return (
+    <span className="flex min-w-0 flex-col">
+      <span>{label}</span>
+      {hint && <span className="text-xs text-[var(--fg-3)]">{hint}</span>}
+    </span>
+  )
+}
+
+function DestinationMenu({
+  d,
+  hasTransfers,
+  onChanged,
+  handlers,
+  align = 'end',
+  trigger = 'ghost',
+}: {
+  d: TreasuryDestination
+  hasTransfers: boolean
+  onChanged: () => void
+  handlers: RowHandlers
+  align?: 'start' | 'end'
+  trigger?: 'ghost' | 'outline'
+}) {
+  const g = gatingOf(d)
+  const { toggle, markVerified } = useDestinationMutations(d, onChanged)
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="icon-sm" variant={trigger} aria-label="Destination actions" title="More">
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={align} className="w-64">
+        <DropdownMenuItem
+          title="Send a small test transfer to this address"
+          onSelect={() => handlers.onAction('verify', d)}
+        >
+          <FlaskConical /> Send test transfer
+        </DropdownMenuItem>
+        {!g.verified && (
+          <DropdownMenuItem
+            disabled={markVerified.isPending}
+            title="After the test transfer confirmed on-chain and arrived at the exchange"
+            onSelect={() => markVerified.mutate()}
+          >
+            {markVerified.isPending ? <Loader2 className="animate-spin" /> : <BadgeCheck />}
+            Mark verified
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          disabled={g.toggleBlocked || toggle.isPending}
+          title={g.toggleTitle}
+          onSelect={() => toggle.mutate()}
+        >
+          {d.enabled ? <Pause /> : <Play />}
+          <MenuText
+            label={d.enabled ? 'Disable' : 'Enable'}
+            hint={g.toggleBlocked ? g.toggleTitle : undefined}
+          />
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => handlers.onEdit(d)}>
+          <Pencil /> Edit
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => handlers.onShowTransfers(d)}>
+          <ArrowsLeftRight /> Show transfers
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          disabled={hasTransfers}
+          onSelect={() => handlers.onAction('delete', d)}
+          className="text-destructive focus:text-destructive"
+        >
+          <Trash2 />
+          <MenuText
+            label="Delete"
+            hint={hasTransfers ? 'Has transfers — disable it instead' : undefined}
+          />
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+/* ── Destination detail sheet ───────────────────────────────── */
+
+/** One row of a details list: icon · label on the left, value on the right. */
+function Fact({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex min-h-11 items-center gap-3 px-4 py-2.5 text-sm">
+      <dt className="flex w-32 shrink-0 items-center gap-2 text-[var(--fg-2)]">
+        <Icon className="size-4 shrink-0" />
+        {label}
+      </dt>
+      <dd className="min-w-0 flex-1 text-right">{children}</dd>
+    </div>
+  )
+}
+
+const Muted = ({ children }: { children: React.ReactNode }) => (
+  <span className="text-[var(--fg-3)]">{children}</span>
+)
+
+type DestTab = 'overview' | 'eligibility'
+
+function DestinationSheet({
+  d,
+  chains,
+  now,
+  hasTransfers,
+  onChanged,
+  handlers,
+}: {
+  d: TreasuryDestination
+  chains: ChainInventoryEntry[] | undefined
+  now: number
+  hasTransfers: boolean
+  onChanged: () => void
+  handlers: RowHandlers
+}) {
+  const [tab, setTab] = React.useState<DestTab>('overview')
+  const q = useQuery(eligibilityQuery(d.id))
+  const { toggle, markVerified } = useDestinationMutations(d, onChanged)
+  const g = gatingOf(d)
+  const st = destinationTone(d)
+  const dec = findToken(chains, d.chainId, d.token)?.decimals ?? null
+  const auto = d.autoIntervalHours != null
+  const overdue = d.enabled && auto && d.nextRunDue != null && d.nextRunDue < now
+  const elig = q.data?.eligibility
+
+  return (
+    <SheetContent>
+      <SheetHero
+        icon={Landmark}
+        title={d.label}
+        meta={
+          <>
+            <StatusPill tone={st.tone}>
+              {st.tone === 'warn' ? 'Awaiting verification' : st.label}
+            </StatusPill>
+            {overdue && <StatusPill tone="warn">Overdue</StatusPill>}
+            <ChainPill chainId={d.chainId} />
+            <span className="inline-flex items-center gap-1.5">
+              <TokenIcon symbol={d.token} size={16} />
+              {d.token}
+            </span>
+          </>
+        }
+        actions={<CopyButton value={d.address} label="Copy address" />}
+      >
+        <DestinationHero d={d} elig={elig} loading={q.isLoading} dec={dec} />
+      </SheetHero>
+
+      <SheetTabs<DestTab>
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { value: 'overview', label: 'Overview', icon: ListBullets },
+          {
+            value: 'eligibility',
+            label: 'Eligibility',
+            icon: Scale,
+            count: elig?.sources.length,
+          },
+        ]}
+      />
+
+      <SheetBody key={tab} className="fade-in">
+        {tab === 'overview' ? (
+          <div className="space-y-6">
+            <SheetSection title="Route">
+              <dl className="divide-y divide-border rounded-xl border border-border">
+                <Fact icon={Wallet} label="Address">
+                  <Addr
+                    value={d.address}
+                    chainId={d.chainId}
+                    truncated={false}
+                    className="max-w-full justify-end"
+                  />
+                </Fact>
+                {d.memo && (
+                  <Fact icon={Tag} label="Memo">
+                    <span className="font-mono text-xs">{d.memo}</span>
+                  </Fact>
+                )}
+                <Fact icon={Landmark} label="Exchange">
+                  <span className="capitalize">{d.exchange}</span>
+                </Fact>
+                <Fact icon={Coins} label="Exchange min">
+                  <span className="figure">{fmtAmt(d.exchangeMinRaw, dec, d.token)}</span>
+                </Fact>
+                <Fact icon={Layers} label="Float kept">
+                  <span className="figure" title="Always left for store payouts">
+                    {fmtAmt(d.keepFloatRaw, dec, d.token)}
+                  </span>
+                </Fact>
+              </dl>
+            </SheetSection>
+
+            <SheetSection title="Caps" icon={Gauge}>
+              <div className="grid grid-cols-3 divide-x divide-border overflow-hidden rounded-xl border border-border">
+                {[
+                  ['Min', d.minTransferUsd],
+                  ['Per transfer', d.maxPerTransferUsd],
+                  ['Daily', d.maxDailyUsd],
+                ].map(([label, v]) => (
+                  <div key={label} className="px-4 py-3">
+                    <div className="text-xs text-[var(--fg-2)]">{label}</div>
+                    <div className="figure mt-0.5 text-base font-semibold">{fmtUsd(v)}</div>
+                  </div>
+                ))}
+              </div>
+            </SheetSection>
+
+            <SheetSection title="Schedule" icon={CalendarClock}>
+              <dl className="divide-y divide-border rounded-xl border border-border">
+                <Fact icon={Timer} label="Interval">
+                  {auto ? `Every ${d.autoIntervalHours}h` : <Muted>Manual only</Muted>}
+                </Fact>
+                <Fact icon={Clock} label="Next run">
+                  {auto && d.nextRunDue != null ? (
+                    <span className={cn('figure', overdue && 'text-[var(--st-warn)]')}>
+                      {fmtLocal(d.nextRunDue)}{' '}
+                      <Muted>({fmtRelDelta(d.nextRunDue - now)})</Muted>
+                    </span>
+                  ) : (
+                    <Muted>—</Muted>
+                  )}
+                </Fact>
+                <Fact icon={Clock} label="Last run">
+                  {d.lastRunAt != null ? (
+                    <span className="figure">
+                      {fmtLocal(d.lastRunAt)} <Muted>({fmtRelDelta(d.lastRunAt - now)})</Muted>
+                    </span>
+                  ) : (
+                    <Muted>Never</Muted>
+                  )}
+                </Fact>
+                <Fact icon={ArrowsLeftRight} label="Last transfer">
+                  {d.lastTransferId ? <Addr value={d.lastTransferId} /> : <Muted>—</Muted>}
+                </Fact>
+                <Fact icon={BadgeCheck} label="Verified">
+                  {g.verified ? (
+                    <span className="figure">{fmtLocal(d.verifiedAt)}</span>
+                  ) : (
+                    <Muted>Not yet</Muted>
+                  )}
+                </Fact>
+                <Fact icon={Calendar} label="Created">
+                  <span className="figure">{fmtLocal(d.createdAt)}</span>
+                </Fact>
+              </dl>
+            </SheetSection>
+          </div>
+        ) : q.isLoading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-24 w-full rounded-xl" />
+            <Skeleton className="h-40 w-full rounded-xl" />
+          </div>
+        ) : q.isError ? (
+          <ErrorState
+            title="Could not load eligibility"
+            message={errText(q.error, 'Could not load eligibility')}
+          />
+        ) : elig ? (
+          <EligibilityView e={elig} token={d.token} sources="open" />
+        ) : null}
+      </SheetBody>
+
+      <SheetFooter className="flex-wrap justify-between">
+        <DestinationMenu
+          d={d}
+          hasTransfers={hasTransfers}
+          onChanged={onChanged}
+          handlers={handlers}
+          align="start"
+          trigger="outline"
+        />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {!g.verified ? (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handlers.onAction('verify', d)}
+                title="Send a small test transfer to this address"
+              >
+                <FlaskConical className="size-4" /> Verify
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
@@ -634,200 +1327,122 @@ function DestinationRow({
                 title="After the test transfer confirmed on-chain and arrived at the exchange"
               >
                 {markVerified.isPending ? (
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <BadgeCheck className="size-3.5" />
+                  <BadgeCheck className="size-4" />
                 )}
                 Mark verified
               </Button>
-            )}
-            <span title={toggleTitle}>
+            </>
+          ) : (
+            <span title={g.toggleTitle}>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => toggle.mutate()}
-                disabled={(!verified && !d.enabled) || toggle.isPending}
+                disabled={g.toggleBlocked || toggle.isPending}
               >
-                {d.enabled ? (
-                  <Pause className="size-3.5" />
-                ) : (
-                  <Play className="size-3.5" />
-                )}
+                {d.enabled ? <Pause className="size-4" /> : <Play className="size-4" />}
                 {d.enabled ? 'Disable' : 'Enable'}
               </Button>
             </span>
-            <Button size="sm" variant="outline" onClick={onEdit}>
-              <Pencil className="size-3.5" /> Edit
+          )}
+          <span title={g.transferTitle}>
+            <Button
+              size="sm"
+              disabled={!g.canTransfer}
+              onClick={() => handlers.onAction('transfer', d)}
+            >
+              <Send className="size-4" /> Transfer now
             </Button>
-            <DeleteDestinationButton
-              d={d}
-              hasTransfers={hasTransfers}
-              onChanged={onChanged}
-            />
-          </div>
-
-          {verifyOpen && (
-            <VerifyDialog
-              d={d}
-              dec={dec}
-              onClose={() => setVerifyOpen(false)}
-              onChanged={onChanged}
-            />
-          )}
-          {transferOpen && (
-            <TransferDialog
-              d={d}
-              dec={dec}
-              onClose={() => setTransferOpen(false)}
-              onChanged={onChanged}
-            />
-          )}
-        </Td>
-      </Tr>
-
-      {expanded && (
-        <Tr className="bg-[var(--bg-2)] hover:bg-[var(--bg-2)]">
-          <Td colSpan={6} className="px-5 py-4">
-            <div className="grid grid-cols-1 gap-x-8 gap-y-3 md:grid-cols-2">
-              <div className="space-y-3">
-                <KeyVal label="Address">
-                  <Addr value={d.address} truncated={false} />
-                </KeyVal>
-                {d.memo && (
-                  <KeyVal label="Memo">
-                    <span className="font-mono">{d.memo}</span>
-                  </KeyVal>
-                )}
-                <KeyVal label="Exchange minimum">
-                  <span className="font-mono tabular-nums">
-                    {fmtAmt(d.exchangeMinRaw, dec, d.token)}
-                  </span>
-                </KeyVal>
-                <KeyVal label="Float kept">
-                  <span className="font-mono tabular-nums">
-                    {fmtAmt(d.keepFloatRaw, dec, d.token)}
-                    <span className="ml-1.5 font-sans text-xs text-[var(--fg-2)]">
-                      always left for store payouts
-                    </span>
-                  </span>
-                </KeyVal>
-                <KeyVal label="Caps (USD)">
-                  <span className="font-mono tabular-nums">
-                    min {fmtUsd(d.minTransferUsd)} · per transfer{' '}
-                    {fmtUsd(d.maxPerTransferUsd)} · daily {fmtUsd(d.maxDailyUsd)}
-                  </span>
-                </KeyVal>
-              </div>
-              <div className="space-y-3">
-                <KeyVal label="Schedule">
-                  {auto ? (
-                    <span className="font-mono">every {d.autoIntervalHours}h</span>
-                  ) : (
-                    <span className="text-[var(--fg-2)]">manual only</span>
-                  )}
-                </KeyVal>
-                <KeyVal label="Next run">
-                  {auto && d.nextRunDue != null ? (
-                    <span
-                      className={cn(
-                        'font-mono tabular-nums',
-                        overdue ? 'text-warn' : 'text-foreground',
-                      )}
-                    >
-                      {fmtLocal(d.nextRunDue)}
-                      <span className="ml-1.5 text-[var(--fg-3)]">
-                        ({fmtRelDelta(d.nextRunDue - now)})
-                      </span>
-                    </span>
-                  ) : (
-                    <span className="text-[var(--fg-3)]">—</span>
-                  )}
-                </KeyVal>
-                <KeyVal label="Last run">
-                  {d.lastRunAt != null ? (
-                    <span className="font-mono tabular-nums">
-                      {fmtLocal(d.lastRunAt)}
-                      <span className="ml-1.5 text-[var(--fg-3)]">
-                        ({fmtRelDelta(d.lastRunAt - now)})
-                      </span>
-                    </span>
-                  ) : (
-                    <span className="text-[var(--fg-3)]">never</span>
-                  )}
-                </KeyVal>
-                <KeyVal label="Last transfer">
-                  {d.lastTransferId ? (
-                    <Addr value={d.lastTransferId} />
-                  ) : (
-                    <span className="text-[var(--fg-3)]">—</span>
-                  )}
-                </KeyVal>
-                <KeyVal label="Verified at">
-                  {verified ? (
-                    <span className="font-mono tabular-nums">
-                      {fmtLocal(d.verifiedAt)}
-                    </span>
-                  ) : (
-                    <span className="text-[var(--fg-3)]">not yet</span>
-                  )}
-                </KeyVal>
-              </div>
-            </div>
-            <div className="mt-4 border-t border-border pt-4">
-              <div className="eyebrow mb-2">Eligibility</div>
-              <EligibilityPanel destinationId={d.id} token={d.token} />
-            </div>
-          </Td>
-        </Tr>
-      )}
-    </>
+          </span>
+        </div>
+      </SheetFooter>
+    </SheetContent>
   )
 }
 
-function KeyVal({ label, children }: { label: string; children: React.ReactNode }) {
+/** Budget now + setup lifecycle under the sheet title. */
+function DestinationHero({
+  d,
+  elig,
+  loading,
+  dec,
+}: {
+  d: TreasuryDestination
+  elig: TreasuryEligibility | undefined
+  loading: boolean
+  dec: number | null
+}) {
+  const verified = d.verifiedAt != null
+  const steps = [
+    { key: 'added', label: 'Added', done: true },
+    { key: 'test', label: 'Test sent', done: verified || d.lastTransferId != null },
+    { key: 'verified', label: 'Verified', done: verified },
+    { key: 'enabled', label: 'Enabled', done: d.enabled },
+  ]
+  const nextIdx = steps.findIndex((s) => !s.done)
   return (
-    <div className="grid grid-cols-1 items-start gap-1 text-sm sm:grid-cols-[140px_1fr] sm:gap-3">
-      <span className="text-xs text-[var(--fg-2)] sm:pt-px">{label}</span>
-      <div className="min-w-0 break-words">{children}</div>
+    <div className="mt-5 rounded-2xl border border-border bg-[var(--bg-2)] p-4">
+      <div className="flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-xs text-[var(--fg-2)]">Budget now</div>
+          {loading ? (
+            <Skeleton className="mt-1 h-8 w-40" />
+          ) : elig ? (
+            <div className="figure mt-0.5 flex items-center gap-2 truncate text-2xl font-semibold">
+              <TokenIcon symbol={d.token} size={22} />
+              {fmtAmt(elig.budgetRaw, elig.decimals ?? dec, d.token)}
+            </div>
+          ) : (
+            <div className="figure mt-0.5 text-2xl font-semibold text-[var(--fg-3)]">—</div>
+          )}
+          {elig && <div className="figure text-xs text-[var(--fg-2)]">{fmtUsd(elig.budgetUsd)}</div>}
+        </div>
+        <div className="shrink-0 text-right text-xs text-[var(--fg-2)]">
+          {elig?.blocked ? (
+            <span title={BLOCKED_TEXT[elig.blocked]}>
+              <StatusPill tone="warn">Blocked</StatusPill>
+            </span>
+          ) : (
+            <>
+              <div>Daily left</div>
+              <div className="figure text-base font-semibold text-foreground">
+                {elig ? fmtUsd(elig.dailyRemainingUsd) : '—'}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+      <ol className="mt-4 grid grid-cols-4 gap-2">
+        {steps.map((s, i) => (
+          <li key={s.key} className="min-w-0">
+            <div
+              className={cn(
+                'h-1.5 rounded-full',
+                s.done
+                  ? 'bg-[var(--st-ok-dot)]'
+                  : i === nextIdx
+                    ? 'bg-[var(--st-warn-dot)]'
+                    : 'bg-[var(--chart-muted)]',
+              )}
+            />
+            <div
+              className={cn(
+                'mt-1.5 truncate text-xs',
+                s.done || i === nextIdx ? 'font-medium text-foreground' : 'text-[var(--fg-3)]',
+              )}
+            >
+              {s.label}
+            </div>
+          </li>
+        ))}
+      </ol>
     </div>
   )
 }
 
 /* ── Eligibility ────────────────────────────────────────────── */
-
-function EligibilityPanel({
-  destinationId,
-  token,
-}: {
-  destinationId: string
-  token: string
-}) {
-  const q = useQuery({
-    queryKey: [...TREASURY_KEY, 'destinations', destinationId] as const,
-    queryFn: () =>
-      api<{ destination: TreasuryDestination; eligibility: TreasuryEligibility }>(
-        `${BASE}/destinations/${encodeURIComponent(destinationId)}`,
-      ),
-    refetchInterval: 30_000,
-  })
-  if (q.isLoading)
-    return (
-      <div className="flex items-center gap-2 text-sm text-[var(--fg-2)]">
-        <Loader2 className="size-3.5 animate-spin" /> Computing eligibility…
-      </div>
-    )
-  if (q.isError)
-    return (
-      <ErrorState
-        title="Could not load eligibility"
-        message={errText(q.error, 'Could not load eligibility')}
-      />
-    )
-  if (!q.data) return null
-  return (
-    <EligibilityView e={q.data.eligibility} token={token} sources="open" />
-  )
-}
 
 function EligibilityView({
   e,
@@ -840,41 +1455,45 @@ function EligibilityView({
 }) {
   const dec = e.decimals
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {e.blocked && (
         <Callout tone="warn">
           Blocked — <span className="font-mono">{e.blocked}</span>:{' '}
           {BLOCKED_TEXT[e.blocked]}
         </Callout>
       )}
-      <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-4">
         <Metric label="Spendable" value={fmtAmt(e.spendableRaw, dec, token)} />
         <Metric
-          label={`Held for refunds · ${e.holdHours} h hold`}
+          label={`Held · ${e.holdHours} h`}
+          title={`Held for refunds · ${e.holdHours} h hold`}
           value={fmtAmt(e.heldForRefundsRaw, dec, token)}
         />
         <Metric label="Float kept" value={fmtAmt(e.keepFloatRaw, dec, token)} />
+        <Metric label="Rate" value={`1 ${token} = $${fmtNum(e.usdRate, 4)}`} />
         <Metric label="Per-transfer cap" value={fmtUsd(e.perTransferCapUsd)} />
         <Metric label="Daily remaining" value={fmtUsd(e.dailyRemainingUsd)} />
+        <Metric
+          label="Sources"
+          value={String(e.sources.length)}
+          sub={`${e.sources.filter((s) => s.eligibleRaw !== '0').length} eligible`}
+        />
         <Metric
           label="Budget now"
           value={fmtAmt(e.budgetRaw, dec, token)}
           sub={fmtUsd(e.budgetUsd)}
           accent={e.blocked == null && e.budgetRaw !== '0'}
         />
-        <Metric label="Rate" value={`1 ${token} = $${fmtNum(e.usdRate, 4)}`} />
-        <Metric
-          label="Sources"
-          value={String(e.sources.length)}
-          sub={`${e.sources.filter((s) => s.eligibleRaw !== '0').length} eligible`}
-        />
       </div>
       {sources === 'open' ? (
-        <SourcesTable e={e} token={token} />
+        <SheetSection title="Sources" icon={Wallet}>
+          <SourcesTable e={e} token={token} />
+        </SheetSection>
       ) : (
-        <details className="text-sm">
-          <summary className="cursor-pointer text-xs text-primary select-none hover:underline">
-            Show {e.sources.length} source{e.sources.length === 1 ? '' : 's'}
+        <details className="group text-sm">
+          <summary className="inline-flex cursor-pointer items-center gap-1.5 text-sm text-[var(--fg-2)] select-none hover:text-foreground">
+            <Wallet className="size-4" />
+            {e.sources.length} source{e.sources.length === 1 ? '' : 's'}
           </summary>
           <div className="mt-2">
             <SourcesTable e={e} token={token} />
@@ -885,41 +1504,29 @@ function EligibilityView({
   )
 }
 
-/** Small boxed figure for the eligibility breakdown. */
+/** One cell of the eligibility grid. */
 function Metric({
   label,
+  title,
   value,
   sub,
   accent,
 }: {
   label: string
+  title?: string
   value: string
   sub?: string
   accent?: boolean
 }) {
   return (
-    <div
-      className={cn(
-        'rounded-md border px-3 py-2',
-        accent
-          ? 'border-[var(--accent-border)] bg-[var(--accent-bg)]'
-          : 'border-border bg-[var(--bg-2)]',
-      )}
-    >
-      <div className="truncate text-xs text-[var(--fg-2)]" title={label}>
+    <div className={cn('min-w-0 px-3 py-2.5', accent ? 'bg-[var(--accent-bg)]' : 'bg-card')}>
+      <div className="truncate text-xs text-[var(--fg-2)]" title={title ?? label}>
         {label}
       </div>
-      <div
-        className="mt-0.5 truncate font-mono text-sm font-medium tabular-nums"
-        title={value}
-      >
+      <div className="figure mt-0.5 truncate text-sm font-semibold" title={value}>
         {value}
       </div>
-      {sub && (
-        <div className="font-mono text-xs tabular-nums text-[var(--fg-2)]">
-          {sub}
-        </div>
-      )}
+      {sub && <div className="figure truncate text-xs text-[var(--fg-2)]">{sub}</div>}
     </div>
   )
 }
@@ -928,13 +1535,13 @@ function SourcesTable({ e, token }: { e: TreasuryEligibility; token: string }) {
   const dec = e.decimals
   if (e.sources.length === 0)
     return (
-      <div className="text-sm text-[var(--fg-2)]">
+      <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-[var(--fg-2)]">
         No pool source holds this token.
       </div>
     )
   return (
-    <TableWrap className="rounded-md border border-border bg-card">
-      <Table className="min-w-[480px] text-xs">
+    <TableWrap className="rounded-xl border border-border bg-card">
+      <Table className="min-w-[460px] text-sm">
         <THead>
           <tr>
             <Th>Source</Th>
@@ -946,20 +1553,20 @@ function SourcesTable({ e, token }: { e: TreasuryEligibility; token: string }) {
         <TBody>
           {e.sources.map((s) => (
             <Tr key={s.address}>
-              <Td className="py-2">
-                <Addr value={s.address} />
+              <Td className="h-11">
+                <Addr value={s.address} chainId={e.chainId} />
               </Td>
-              <Td align="right" className="py-2">
+              <Td align="right" className="h-11">
                 {formatUnits(s.spendableRaw, dec)}
               </Td>
-              <Td align="right" className="py-2 text-[var(--fg-2)]">
+              <Td align="right" className="h-11 text-[var(--fg-2)]">
                 {formatUnits(s.heldRaw, dec)}
               </Td>
               <Td
                 align="right"
                 className={cn(
-                  'py-2',
-                  s.eligibleRaw !== '0' ? 'text-success' : 'text-[var(--fg-3)]',
+                  'h-11 font-medium',
+                  s.eligibleRaw !== '0' ? 'text-[var(--st-ok)]' : 'text-[var(--fg-3)]',
                 )}
               >
                 {formatUnits(s.eligibleRaw, dec)} {token}
@@ -1025,11 +1632,11 @@ function VerifyDialog({
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FlaskConical className="size-4" /> Verify {d.label}
+            <FlaskConical className="size-5" /> Verify {d.label}
           </DialogTitle>
           <DialogDescription>
             Sends one small test payout from the pool to{' '}
-            <span className="font-mono">{d.address}</span> on{' '}
+            <Addr value={d.address} chainId={d.chainId} truncated={false} className="align-middle" /> on{' '}
             {chainInfo(d.chainId).name} ({d.token}). Once the leg is confirmed
             on-chain and you have seen it arrive at the exchange, come back and
             click <span className="font-medium">Mark verified</span>.
@@ -1038,14 +1645,14 @@ function VerifyDialog({
 
         {result ? (
           <>
-            <TransferSummary t={result} dec={dec} token={d.token} />
+            <TransferSummary t={result} dec={dec} token={d.token} chainId={d.chainId} />
             <DialogFooter>
               <Button onClick={onClose}>Close</Button>
             </DialogFooter>
           </>
         ) : (
           <form
-            className="space-y-3"
+            className="space-y-5"
             onSubmit={(e) => {
               e.preventDefault()
               verify.mutate()
@@ -1069,13 +1676,18 @@ function VerifyDialog({
                 </>
               }
             >
-              <Input
-                inputMode="decimal"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="font-mono"
-                placeholder={dec != null ? 'e.g. 10' : 'raw smallest unit'}
-              />
+              <div className="relative">
+                <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2">
+                  <TokenIcon symbol={d.token} size={16} />
+                </span>
+                <Input
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="pl-8 font-mono"
+                  placeholder={dec != null ? 'e.g. 10' : 'raw smallest unit'}
+                />
+              </div>
             </Field>
             <DialogFooter>
               <Button
@@ -1088,9 +1700,9 @@ function VerifyDialog({
               </Button>
               <Button type="submit" disabled={verify.isPending}>
                 {verify.isPending ? (
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <Send className="size-3.5" />
+                  <Send className="size-4" />
                 )}
                 {verify.isPending ? 'Sending…' : 'Send test transfer'}
               </Button>
@@ -1102,7 +1714,7 @@ function VerifyDialog({
   )
 }
 
-/* ── Transfer-now dialog (dry run → confirm) ────────────────── */
+/* ── Transfer-now dialog (limit → dry run → confirm) ────────── */
 
 function TransferDialog({
   d,
@@ -1115,6 +1727,7 @@ function TransferDialog({
   onClose: () => void
   onChanged: () => void
 }) {
+  const [step, setStep] = React.useState<'limit' | 'review'>('limit')
   const [maxUsdInput, setMaxUsdInput] = React.useState('')
   // The value the preview was computed with; applied explicitly so typing
   // does not fire a dry-run per keystroke.
@@ -1160,13 +1773,18 @@ function TransferDialog({
     onError: (e) => toast.error(errText(e, 'Transfer failed')),
   })
 
-  const applyMax = () => {
+  /** Validates and applies the limit; false when the input is not a USD decimal. */
+  const applyMax = (): boolean => {
     const s = maxUsdInput.trim()
     if (s && !isUsd(s)) {
       toast.error('Max USD must be a decimal (e.g. 1500.00)')
-      return
+      return false
     }
     setMaxUsd(s)
+    return true
+  }
+  const toReview = () => {
+    if (applyMax()) setStep('review')
   }
 
   const elig = preview.data?.eligibility
@@ -1177,96 +1795,128 @@ function TransferDialog({
     !preview.isFetching &&
     !send.isPending
 
+  const stage = result ? 2 : step === 'review' ? 1 : 0
+
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Send className="size-4" /> Transfer to {d.label}
+            <Send className="size-5" /> Transfer to {d.label}
           </DialogTitle>
           <DialogDescription>
             The preview is a dry run against the live ledger — nothing moves
             until you confirm. Legs are planned as payouts from the pool
-            sources below to <span className="font-mono">{d.address}</span>.
+            sources below to{' '}
+            <Addr value={d.address} chainId={d.chainId} truncated={false} className="align-middle" />.
           </DialogDescription>
         </DialogHeader>
 
+        <StepBar steps={['Limit', 'Review dry run', 'Planned']} current={stage} />
+
         {result ? (
           <>
-            <TransferSummary t={result.transfer} dec={dec} token={d.token} />
+            <TransferSummary t={result.transfer} dec={dec} token={d.token} chainId={d.chainId} />
             <DialogFooter>
               <Button onClick={onClose}>Close</Button>
             </DialogFooter>
           </>
-        ) : (
-          <div className="space-y-4">
-            <StepLabel n={1}>Set a limit for this run</StepLabel>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        ) : step === 'limit' ? (
+          <form
+            key="limit"
+            className="fade-in space-y-5"
+            onSubmit={(e) => {
+              e.preventDefault()
+              toReview()
+            }}
+          >
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-[var(--bg-2)] px-4 py-3">
+              <TokenOnChain symbol={d.token} chainId={d.chainId} size={32} />
               <div className="min-w-0 flex-1">
-                <Field
-                  label="Max USD this run (optional)"
-                  hint="Lower than the per-transfer cap only; empty = use the destination's cap."
-                >
-                  <div className="relative">
-                    <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-xs text-[var(--fg-3)]">
-                      $
-                    </span>
-                    <Input
-                      inputMode="decimal"
-                      value={maxUsdInput}
-                      onChange={(e) => setMaxUsdInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          applyMax()
-                        }
-                      }}
-                      className="pl-6 font-mono"
-                      placeholder={`e.g. 1500 — cap ${fmtUsd(d.maxPerTransferUsd)}`}
-                    />
-                  </div>
-                </Field>
+                <div className="truncate text-sm font-medium">{d.label}</div>
+                <div className="text-[var(--fg-2)]">
+                  <Addr value={d.address} chainId={d.chainId} />
+                </div>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="self-start sm:mb-[22px] sm:self-auto"
-                onClick={applyMax}
-                disabled={preview.isFetching || maxUsdInput.trim() === maxUsd}
-              >
-                <RefreshCw
-                  className={
-                    'size-3.5' + (preview.isFetching ? ' animate-spin' : '')
-                  }
+              <div className="shrink-0 text-right text-xs text-[var(--fg-2)]">
+                <div className="figure text-sm font-semibold text-foreground">
+                  {fmtUsd(d.maxPerTransferUsd)}
+                </div>
+                cap / transfer
+              </div>
+            </div>
+            <Field
+              label="Max USD this run (optional)"
+              hint="Lower than the per-transfer cap only; empty = use the destination's cap."
+            >
+              <div className="relative">
+                <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-[var(--fg-3)]">
+                  $
+                </span>
+                <Input
+                  autoFocus
+                  inputMode="decimal"
+                  value={maxUsdInput}
+                  onChange={(e) => setMaxUsdInput(e.target.value)}
+                  className="pl-6 font-mono"
+                  placeholder={`e.g. 1500 — cap ${fmtUsd(d.maxPerTransferUsd)}`}
                 />
-                Update preview
+              </div>
+            </Field>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose}>
+                Cancel
               </Button>
-            </div>
-
-            <div className="border-t border-border pt-4">
-              <StepLabel n={2}>Review the dry run, then confirm</StepLabel>
-            </div>
-            {preview.isLoading ? (
-              <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-6 text-sm text-[var(--fg-2)]">
-                <Loader2 className="size-3.5 animate-spin" /> Running dry run…
+              <Button type="submit">
+                Review dry run <ArrowRight className="size-4" />
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : (
+          <div key="review" className="fade-in space-y-5">
+            {preview.isLoading || (preview.isFetching && !elig) ? (
+              <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-[var(--bg-2)] px-3 py-8 text-sm text-[var(--fg-2)]">
+                <Loader2 className="size-4 animate-spin" /> Running dry run…
               </div>
             ) : preview.isError ? (
               <Callout tone="danger">
                 {errText(preview.error, 'Dry run failed')}
               </Callout>
             ) : elig ? (
-              <EligibilityView e={elig} token={d.token} sources="collapsed" />
+              <>
+                <div
+                  className={cn(
+                    'flex items-end justify-between gap-4 rounded-xl border border-border bg-[var(--bg-2)] px-4 py-3.5 transition-opacity',
+                    preview.isFetching && 'opacity-60',
+                  )}
+                >
+                  <div className="min-w-0">
+                    <div className="text-xs text-[var(--fg-2)]">Would send now</div>
+                    <div className="figure mt-0.5 flex items-center gap-2 truncate text-2xl font-semibold">
+                      <TokenIcon symbol={d.token} size={22} />
+                      {fmtAmt(elig.budgetRaw, dec, d.token)}
+                    </div>
+                    <div className="figure text-xs text-[var(--fg-2)]">{fmtUsd(elig.budgetUsd)}</div>
+                  </div>
+                  <div className="shrink-0 text-right text-xs text-[var(--fg-2)]">
+                    <div>{maxUsd ? 'Run limit' : 'Cap'}</div>
+                    <div className="figure text-base font-semibold text-foreground">
+                      {fmtUsd(maxUsd || d.maxPerTransferUsd)}
+                    </div>
+                  </div>
+                </div>
+                <EligibilityView e={elig} token={d.token} sources="collapsed" />
+              </>
             ) : null}
 
-            <DialogFooter>
+            <DialogFooter className="sm:justify-between">
               <Button
                 type="button"
                 variant="outline"
-                onClick={onClose}
+                onClick={() => setStep('limit')}
                 disabled={send.isPending}
               >
-                Cancel
+                <ArrowLeft className="size-4" /> Back
               </Button>
               <Button
                 type="button"
@@ -1281,9 +1931,9 @@ function TransferDialog({
                 }
               >
                 {send.isPending ? (
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <Send className="size-3.5" />
+                  <Send className="size-4" />
                 )}
                 {send.isPending
                   ? 'Sending…'
@@ -1299,66 +1949,70 @@ function TransferDialog({
   )
 }
 
-/** Numbered step heading inside the money dialogs (configure → confirm). */
-function StepLabel({
-  n,
-  children,
-}: {
-  n: number
-  children: React.ReactNode
-}) {
+/** Horizontal progress for multi-step money dialogs. */
+function StepBar({ steps, current }: { steps: string[]; current: number }) {
   return (
-    <div className="flex items-center gap-2 text-sm font-medium">
-      <span className="grid size-5 shrink-0 place-items-center rounded-full border border-border bg-[var(--bg-2)] font-mono text-2xs tabular-nums text-[var(--fg-2)]">
-        {n}
-      </span>
-      {children}
-    </div>
+    <ol className="grid gap-2" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
+      {steps.map((s, i) => (
+        <li key={s} className="min-w-0">
+          <div
+            className={cn(
+              'h-1.5 rounded-full transition-colors',
+              i < current || (i === current && i === steps.length - 1)
+                ? 'bg-[var(--st-ok-dot)]'
+                : i === current
+                  ? 'bg-foreground'
+                  : 'bg-[var(--chart-muted)]',
+            )}
+          />
+          <div
+            className={cn(
+              'mt-1.5 flex items-center gap-1.5 truncate text-xs',
+              i <= current ? 'font-medium text-foreground' : 'text-[var(--fg-3)]',
+            )}
+          >
+            <span className="figure text-[var(--fg-3)]">{i + 1}</span>
+            {s}
+          </div>
+        </li>
+      ))}
+    </ol>
   )
 }
 
 /* ── Transfer rendering (shared) ───────────────────────────── */
 
-function ModeBadge({ mode }: { mode: TreasuryTransfer['mode'] }) {
-  if (mode === 'verification')
-    return (
-      <Badge variant="accent">
-        <FlaskConical className="size-3" /> verification
-      </Badge>
-    )
-  if (mode === 'scheduled')
-    return (
-      <Badge variant="default">
-        <Clock className="size-3" /> scheduled
-      </Badge>
-    )
-  return <Badge variant="outline">manual</Badge>
+function ModeLabel({ mode }: { mode: TreasuryTransfer['mode'] }) {
+  const m = MODE_META[mode]
+  const Icon = m.icon
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm text-[var(--fg-1)]">
+      <Icon className="size-4 text-[var(--fg-3)]" />
+      {m.label}
+    </span>
+  )
 }
 
-function TransferStatusBadges({ status }: { status: TreasuryTransfer['status'] }) {
+function legParts(s: TreasuryTransfer['status']) {
+  return [
+    { key: 'confirmed', name: 'Confirmed', value: s.confirmed, color: 'var(--st-ok-dot)' },
+    { key: 'pending', name: 'Pending', value: pendingLegs(s), color: 'var(--st-run-dot)' },
+    { key: 'failed', name: 'Failed', value: s.failed, color: 'var(--st-bad-dot)' },
+    { key: 'canceled', name: 'Canceled', value: s.canceled, color: 'var(--st-wait-dot)' },
+  ]
+}
+
+/** Every non-zero leg count as a pill (the full breakdown). */
+function LegPills({ status }: { status: TreasuryTransfer['status'] }) {
   const pending = pendingLegs(status)
   const total = pending + status.confirmed + status.failed + status.canceled
-  if (total === 0) return <Badge variant="default">no legs</Badge>
+  if (total === 0) return <StatusPill tone="wait">No legs</StatusPill>
   return (
     <span className="flex flex-wrap items-center gap-1.5">
-      {pending > 0 && (
-        <Badge variant="warn">
-          <Loader2 className="size-3 animate-spin" /> {pending} pending
-        </Badge>
-      )}
-      {status.confirmed > 0 && (
-        <Badge variant="success">
-          <BadgeCheck className="size-3" /> {status.confirmed} confirmed
-        </Badge>
-      )}
-      {status.failed > 0 && (
-        <Badge variant="danger">
-          <AlertTriangle className="size-3" /> {status.failed} failed
-        </Badge>
-      )}
-      {status.canceled > 0 && (
-        <Badge variant="default">{status.canceled} canceled</Badge>
-      )}
+      {pending > 0 && <StatusPill tone="run">{pending} pending</StatusPill>}
+      {status.confirmed > 0 && <StatusPill tone="ok">{status.confirmed} confirmed</StatusPill>}
+      {status.failed > 0 && <StatusPill tone="bad">{status.failed} failed</StatusPill>}
+      {status.canceled > 0 && <StatusPill tone="off">{status.canceled} canceled</StatusPill>}
     </span>
   )
 }
@@ -1367,35 +2021,45 @@ function TransferSummary({
   t,
   dec,
   token,
+  chainId,
 }: {
   t: TreasuryTransfer
   dec: number | null
   token: string
+  chainId?: number
 }) {
   return (
-    <div className="space-y-2 rounded-md border border-border bg-secondary px-4 py-3 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <ModeBadge mode={t.mode} />
-        <TransferStatusBadges status={t.status} />
+    <div className="fade-in space-y-4 rounded-xl border border-border bg-[var(--bg-2)] p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-xs text-[var(--fg-2)]">
+            <CheckCircle2 className="size-4 text-[var(--st-ok)]" /> Planned
+          </div>
+          <div className="figure mt-1 flex items-center gap-2 truncate text-2xl font-semibold">
+            {token && <TokenIcon symbol={token} size={22} />}
+            {fmtAmt(t.plannedAmountRaw, dec, token)}
+          </div>
+          <div className="figure text-xs text-[var(--fg-2)]">
+            {fmtUsd(t.plannedUsd)} · {t.legCount} leg{t.legCount === 1 ? '' : 's'}
+            {t.skippedCount > 0 && ` · ${t.skippedCount} skipped`}
+            {t.status.confirmedAmountRaw !== '0' &&
+              ` · confirmed ${fmtAmt(t.status.confirmedAmountRaw, dec, token)}`}
+          </div>
+        </div>
+        <ModeLabel mode={t.mode} />
       </div>
-      <div className="font-mono text-xs tabular-nums">
-        planned {fmtAmt(t.plannedAmountRaw, dec, token)} · {fmtUsd(t.plannedUsd)}{' '}
-        · {t.legCount} leg{t.legCount === 1 ? '' : 's'}
-        {t.skippedCount > 0 && ` · ${t.skippedCount} skipped`}
-        {t.status.confirmedAmountRaw !== '0' &&
-          ` · confirmed ${fmtAmt(t.status.confirmedAmountRaw, dec, token)}`}
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--fg-2)]">
-        <span>
-          transfer <Addr value={t.id} />
+      <LegPills status={t.status} />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--fg-2)]">
+        <span className="inline-flex items-center gap-1">
+          <Hash className="size-3.5" /> transfer <Addr value={t.id} />
         </span>
-        <span>
-          batch <Addr value={t.batchId} />
+        <span className="inline-flex items-center gap-1">
+          <Layers className="size-3.5" /> batch <Addr value={t.batchId} />
         </span>
-        <span className="font-mono tabular-nums">{fmtLocal(t.createdAt)}</span>
+        <span className="figure">{fmtLocal(t.createdAt)}</span>
       </div>
       {t.skippedReasons.length > 0 && (
-        <SkippedReasonsList reasons={t.skippedReasons} dec={dec} token={token} />
+        <SkippedReasonsList reasons={t.skippedReasons} dec={dec} token={token} chainId={chainId} />
       )}
     </div>
   )
@@ -1405,10 +2069,12 @@ function SkippedReasonsList({
   reasons,
   dec,
   token,
+  chainId,
 }: {
   reasons: TreasuryTransfer['skippedReasons']
   dec: number | null
   token: string
+  chainId?: number
 }) {
   const [open, setOpen] = React.useState(false)
   return (
@@ -1416,33 +2082,48 @@ function SkippedReasonsList({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex cursor-pointer items-center gap-1 text-xs text-warn hover:underline"
+        className="inline-flex cursor-pointer items-center gap-1 text-xs text-[var(--st-warn)] hover:underline"
       >
-        <AlertTriangle className="size-3" />
+        <AlertTriangle className="size-3.5" />
         {open ? 'Hide' : 'Show'} skipped sources · {reasons.length}
       </button>
-      {open && (
-        <ul className="mt-2 divide-y divide-[var(--warn-border)] overflow-hidden rounded-md border border-[var(--warn-border)] bg-[var(--warn-bg)]">
-          {reasons.slice(0, 50).map((r) => (
-            <li
-              key={r.sourceAddress + r.amountRaw + r.reason}
-              className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-xs"
-            >
-              <Addr value={r.sourceAddress} />
-              <span className="font-mono text-xs tabular-nums text-[var(--fg-2)]">
-                {fmtAmt(r.amountRaw, dec, token)}
-              </span>
-              <span
-                className="ml-auto max-w-full truncate font-mono text-2xs text-[var(--fg-2)] sm:max-w-[280px]"
-                title={r.reason}
-              >
-                {r.reason}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      {open && <SkippedList reasons={reasons} dec={dec} token={token} chainId={chainId} className="mt-2" />}
     </div>
+  )
+}
+
+function SkippedList({
+  reasons,
+  dec,
+  token,
+  chainId,
+  className,
+}: {
+  reasons: TreasuryTransfer['skippedReasons']
+  dec: number | null
+  token: string
+  chainId?: number
+  className?: string
+}) {
+  return (
+    <ul className={cn('divide-y divide-border overflow-hidden rounded-xl border border-border bg-card', className)}>
+      {reasons.slice(0, 50).map((r) => (
+        <li
+          key={r.sourceAddress + r.amountRaw + r.reason}
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm"
+        >
+          <AlertTriangle className="size-4 shrink-0 text-[var(--st-warn)]" />
+          <Addr value={r.sourceAddress} chainId={chainId} />
+          <span className="figure text-[var(--fg-1)]">{fmtAmt(r.amountRaw, dec, token)}</span>
+          <span
+            className="ml-auto max-w-full truncate font-mono text-xs text-[var(--fg-2)] sm:max-w-[260px]"
+            title={r.reason}
+          >
+            {r.reason}
+          </span>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -1458,6 +2139,7 @@ function TransfersSection({
   chains,
   filter,
   onFilterChange,
+  onOpen,
 }: {
   transfers: TreasuryTransfer[]
   isLoading: boolean
@@ -1468,52 +2150,58 @@ function TransfersSection({
   chains: ChainInventoryEntry[] | undefined
   filter: string
   onFilterChange: (v: string) => void
+  onOpen: (t: TreasuryTransfer) => void
 }) {
   const byId = React.useMemo(
     () => new Map(destinations.map((d) => [d.id, d])),
     [destinations],
   )
+  const paged = usePaged(transfers, PAGE_SIZE)
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="border-b">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <div className="min-w-0">
-            <CardTitle>Recent transfers</CardTitle>
-            <CardDescription>newest first · last 50</CardDescription>
-          </div>
-          <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
-            <Select value={filter} onValueChange={onFilterChange}>
-              <SelectTrigger className="w-full min-w-0 sm:w-[260px]">
-                <SelectValue placeholder="All destinations" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All destinations</SelectItem>
-                {destinations.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    <span className="flex items-center gap-2">
-                      <span>{d.label}</span>
-                      <span className="font-mono text-2xs text-[var(--fg-3)]">
-                        {chainName(chains, d.chainId)} · {d.token}
-                      </span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onRefresh}
-              disabled={isFetching}
-              aria-label="Refresh transfers"
-            >
-              <RefreshCw
-                className={'size-3.5' + (isFetching ? ' animate-spin' : '')}
-              />
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
+    <TableCard
+      toolbar={
+        <TableToolbar title="Recent transfers" count={transfers.length}>
+          <Select value={filter} onValueChange={onFilterChange}>
+            <SelectTrigger className="h-8 w-full min-w-0 sm:w-[240px]">
+              <SelectValue placeholder="All destinations" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All destinations</SelectItem>
+              {destinations.map((d) => (
+                <SelectItem key={d.id} value={d.id}>
+                  <span className="flex items-center gap-2">
+                    <TokenOnChain symbol={d.token} chainId={d.chainId} size={18} />
+                    <span>{d.label}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            onClick={onRefresh}
+            disabled={isFetching}
+            aria-label="Refresh transfers"
+            title="Refresh"
+          >
+            <RefreshCw className={cn('size-4', isFetching && 'animate-spin')} />
+          </Button>
+        </TableToolbar>
+      }
+      footer={
+        transfers.length > 0 && (
+          <Pager
+            page={paged.page}
+            pageSize={PAGE_SIZE}
+            total={paged.total}
+            hasNext={paged.page < paged.pageCount - 1}
+            onPage={paged.setPage}
+            noun="transfers"
+          />
+        )
+      }
+    >
       {isLoading ? (
         <ListSkeleton rows={5} className="rounded-none border-0" />
       ) : error ? (
@@ -1524,23 +2212,22 @@ function TransfersSection({
           />
         </div>
       ) : transfers.length === 0 ? (
-        <EmptyState compact title="No transfers yet." />
+        <EmptyState compact icon={ArrowsLeftRight} title="No transfers yet" />
       ) : (
         <TableWrap>
-          <Table className="min-w-[1040px] text-xs">
+          <Table className="min-w-[860px]">
             <THead>
               <tr>
-                <Th>Created</Th>
-                <Th>Mode</Th>
                 <Th>Destination</Th>
-                <Th align="right">Planned</Th>
-                <Th align="right">Legs</Th>
+                <Th>Mode</Th>
                 <Th>Status</Th>
-                <Th>Ids</Th>
+                <Th align="right">Legs</Th>
+                <Th align="right">Planned</Th>
+                <Th align="right">Created</Th>
               </tr>
             </THead>
             <TBody>
-              {transfers.map((t) => {
+              {paged.rows.map((t) => {
                 const dest = byId.get(t.destinationId)
                 const dec = dest
                   ? (findToken(chains, dest.chainId, dest.token)?.decimals ?? null)
@@ -1551,7 +2238,7 @@ function TransfersSection({
                     t={t}
                     dest={dest}
                     dec={dec}
-                    chains={chains}
+                    onOpen={() => onOpen(t)}
                   />
                 )
               })}
@@ -1559,7 +2246,7 @@ function TransfersSection({
           </Table>
         </TableWrap>
       )}
-    </Card>
+    </TableCard>
   )
 }
 
@@ -1567,130 +2254,235 @@ function TransferRow({
   t,
   dest,
   dec,
-  chains,
+  onOpen,
 }: {
   t: TreasuryTransfer
   dest: TreasuryDestination | undefined
   dec: number | null
+  onOpen: () => void
+}) {
+  const token = dest?.token ?? ''
+  const st = transferTone(t.status)
+  return (
+    <Tr
+      interactive
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen()
+        }
+      }}
+      className="focus-visible:bg-[var(--bg-hover)] focus-visible:outline-none"
+    >
+      <Td>
+        {dest ? (
+          <div className="flex min-w-0 items-center gap-3">
+            <TokenOnChain symbol={dest.token} chainId={dest.chainId} size={32} />
+            <div className="min-w-0">
+              <div className="truncate font-medium">{dest.label}</div>
+              <div className="font-mono text-xs text-[var(--fg-3)]">{t.id.slice(0, 8)}…</div>
+            </div>
+          </div>
+        ) : (
+          <span className="font-mono text-sm text-[var(--fg-3)]" title={t.destinationId}>
+            {t.destinationId.slice(0, 8)}… (unknown destination)
+          </span>
+        )}
+      </Td>
+      <Td>
+        <ModeLabel mode={t.mode} />
+      </Td>
+      <Td>
+        <StatusPill tone={st.tone}>{st.label}</StatusPill>
+      </Td>
+      <Td align="right" className="whitespace-nowrap">
+        <div className="ml-auto w-16">
+          <div className="text-sm">
+            {t.status.confirmed}/{t.legCount}
+            {t.skippedCount > 0 && (
+              <span
+                className="ml-1 text-xs text-[var(--st-warn)]"
+                title={`${t.skippedCount} skipped`}
+              >
+                +{t.skippedCount}
+              </span>
+            )}
+          </div>
+          <SegmentedBar className="mt-1 h-1" parts={legParts(t.status)} />
+        </div>
+      </Td>
+      <Td align="right" className="whitespace-nowrap">
+        <div className="font-medium">{fmtAmt(t.plannedAmountRaw, dec, token)}</div>
+        <div className="text-xs text-[var(--fg-2)]">{fmtUsd(t.plannedUsd)}</div>
+      </Td>
+      <Td
+        align="right"
+        className="text-sm whitespace-nowrap text-[var(--fg-2)]"
+        title={fmtLocal(t.createdAt)}
+      >
+        {rel(t.createdAt)}
+      </Td>
+    </Tr>
+  )
+}
+
+/* ── Transfer detail sheet ──────────────────────────────────── */
+
+type TransferTab = 'overview' | 'skipped'
+
+function TransferSheet({
+  t,
+  dest,
+  chains,
+}: {
+  t: TreasuryTransfer
+  dest: TreasuryDestination | undefined
   chains: ChainInventoryEntry[] | undefined
 }) {
-  const [open, setOpen] = React.useState(false)
+  const [tab, setTab] = React.useState<TransferTab>('overview')
   const token = dest?.token ?? ''
+  const dec = dest ? (findToken(chains, dest.chainId, dest.token)?.decimals ?? null) : null
+  const st = transferTone(t.status)
+  const s = t.status
+  const lifecycle = [
+    { key: 'planned', label: 'Planned', value: s.planned },
+    { key: 'reserved', label: 'Reserved', value: s.reserved },
+    { key: 'toppingUp', label: 'Topping up', value: s.toppingUp },
+    { key: 'submitted', label: 'Submitted', value: s.submitted },
+    { key: 'confirmed', label: 'Confirmed', value: s.confirmed },
+    { key: 'failed', label: 'Failed', value: s.failed },
+    { key: 'canceled', label: 'Canceled', value: s.canceled },
+  ]
   return (
-    <>
-      <Tr>
-        <Td className="align-top font-mono whitespace-nowrap tabular-nums">
-          {fmtLocal(t.createdAt)}
-        </Td>
-        <Td className="align-top">
-          <ModeBadge mode={t.mode} />
-        </Td>
-        <Td className="align-top">
-          {dest ? (
-            <div>
-              <div className="font-medium">{dest.label}</div>
-              <div className="font-mono text-2xs text-[var(--fg-2)]">
-                {chainName(chains, dest.chainId)} · {dest.token}
+    <SheetContent>
+      <SheetHero
+        icon={MODE_META[t.mode].icon}
+        title={dest?.label ?? 'Unknown destination'}
+        meta={
+          <>
+            <StatusPill tone={st.tone}>{st.label}</StatusPill>
+            <ModeLabel mode={t.mode} />
+            {dest && <ChainPill chainId={dest.chainId} />}
+            <span className="text-[var(--fg-3)]" title={fmtLocal(t.createdAt)}>
+              · {rel(t.createdAt)}
+            </span>
+          </>
+        }
+        actions={<CopyButton value={t.id} label="Copy id" />}
+      >
+        <div className="mt-5 rounded-2xl border border-border bg-[var(--bg-2)] p-4">
+          <div className="flex items-end justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs text-[var(--fg-2)]">Planned</div>
+              <div className="figure mt-0.5 flex items-center gap-2 truncate text-2xl font-semibold">
+                {token && <TokenIcon symbol={token} size={22} />}
+                {fmtAmt(t.plannedAmountRaw, dec, token)}
+              </div>
+              <div className="figure text-xs text-[var(--fg-2)]">{fmtUsd(t.plannedUsd)}</div>
+            </div>
+            <div className="shrink-0 text-right text-xs text-[var(--fg-2)]">
+              <div>Confirmed</div>
+              <div className="figure text-base font-semibold text-foreground">
+                {t.status.confirmedAmountRaw !== '0'
+                  ? fmtAmt(t.status.confirmedAmountRaw, dec, token)
+                  : '—'}
               </div>
             </div>
-          ) : (
-            <span className="font-mono text-[var(--fg-3)]" title={t.destinationId}>
-              {t.destinationId.slice(0, 8)}… (unknown destination)
-            </span>
-          )}
-        </Td>
-        <Td align="right" className="align-top whitespace-nowrap">
-          <div className="font-medium">{fmtAmt(t.plannedAmountRaw, dec, token)}</div>
-          <div className="text-2xs text-[var(--fg-2)]">
-            {fmtUsd(t.plannedUsd)}
           </div>
-          {t.status.confirmedAmountRaw !== '0' &&
-            t.status.confirmedAmountRaw !== t.plannedAmountRaw && (
-              <div className="text-2xs text-success">
-                confirmed {fmtAmt(t.status.confirmedAmountRaw, dec, token)}
-              </div>
+          <SegmentedBar className="mt-4" parts={legParts(t.status)} />
+          <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            {lifecycle
+              .filter((l) => l.value > 0)
+              .map((l) => (
+                <span key={l.key} className="text-[var(--fg-2)]">
+                  {l.label} <span className="figure font-medium text-foreground">{l.value}</span>
+                </span>
+              ))}
+            {lifecycle.every((l) => l.value === 0) && (
+              <span className="text-[var(--fg-3)]">No legs</span>
             )}
-        </Td>
-        <Td align="right" className="align-top whitespace-nowrap">
-          <div>{t.legCount}</div>
-          {t.skippedCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setOpen((v) => !v)}
-              className="inline-flex cursor-pointer items-center gap-0.5 text-2xs text-warn hover:underline"
-            >
-              {open ? (
-                <ChevronDown className="size-3" />
-              ) : (
-                <ChevronRight className="size-3" />
-              )}
-              {t.skippedCount} skipped
-            </button>
-          )}
-        </Td>
-        <Td className="align-top">
-          <TransferStatusBadges status={t.status} />
-        </Td>
-        <Td className="align-top text-[var(--fg-2)]">
-          <div className="flex flex-col gap-0.5">
-            <span>
-              <span className="text-2xs uppercase tracking-[0.06em] text-[var(--fg-3)]">tx </span>
-              <Addr value={t.id} />
-            </span>
-            <span>
-              <span className="text-2xs uppercase tracking-[0.06em] text-[var(--fg-3)]">batch </span>
-              <Addr value={t.batchId} />
-            </span>
           </div>
-        </Td>
-      </Tr>
-      {open && (
-        <Tr className="bg-[var(--bg-2)] hover:bg-[var(--bg-2)]">
-          <Td colSpan={7} className="py-3">
-            {t.skippedReasons.length === 0 ? (
-              <span className="text-[var(--fg-2)]">
-                {t.skippedCount} skipped — reasons not recorded.
-              </span>
-            ) : (
-              <ul className="space-y-1">
-                {t.skippedReasons.slice(0, 50).map((r) => (
-                  <li
-                    key={r.sourceAddress + r.amountRaw + r.reason}
-                    className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--warn-border)] bg-card px-3 py-1.5"
-                  >
-                    <Addr value={r.sourceAddress} />
-                    <span className="font-mono text-xs tabular-nums text-[var(--fg-2)]">
-                      {fmtAmt(r.amountRaw, dec, token)}
+        </div>
+      </SheetHero>
+
+      <SheetTabs<TransferTab>
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { value: 'overview', label: 'Overview', icon: ListBullets },
+          { value: 'skipped', label: 'Skipped', icon: AlertTriangle, count: t.skippedCount },
+        ]}
+      />
+
+      <SheetBody key={tab} className="fade-in">
+        {tab === 'overview' ? (
+          <div className="space-y-6">
+            <SheetSection title="Details">
+              <dl className="divide-y divide-border rounded-xl border border-border">
+                <Fact icon={Landmark} label="Destination">
+                  {dest ? (
+                    <span className="inline-flex items-center gap-2">
+                      <TokenOnChain symbol={dest.token} chainId={dest.chainId} size={20} />
+                      {dest.label}
                     </span>
-                    <span
-                      className="ml-auto max-w-full truncate font-mono text-2xs text-[var(--fg-2)] sm:max-w-[360px]"
-                      title={r.reason}
-                    >
-                      {r.reason}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Td>
-        </Tr>
-      )}
-    </>
+                  ) : (
+                    <span className="font-mono text-xs">{t.destinationId}</span>
+                  )}
+                </Fact>
+                {dest && (
+                  <Fact icon={Wallet} label="Address">
+                    <Addr value={dest.address} chainId={dest.chainId} />
+                  </Fact>
+                )}
+                <Fact icon={MODE_META[t.mode].icon} label="Mode">
+                  {MODE_META[t.mode].label}
+                </Fact>
+                <Fact icon={Calendar} label="Created">
+                  <span className="figure">{fmtLocal(t.createdAt)}</span>
+                </Fact>
+                <Fact icon={Hash} label="Transfer id">
+                  <Addr value={t.id} />
+                </Fact>
+                <Fact icon={Layers} label="Batch id">
+                  <Addr value={t.batchId} />
+                </Fact>
+                <Fact icon={ArrowsLeftRight} label="Legs">
+                  <span className="figure">
+                    {t.legCount}
+                    {t.skippedCount > 0 && <Muted> · {t.skippedCount} skipped</Muted>}
+                  </span>
+                </Fact>
+              </dl>
+            </SheetSection>
+            <SheetSection title="Leg status">
+              <LegPills status={t.status} />
+            </SheetSection>
+          </div>
+        ) : t.skippedCount === 0 ? (
+          <EmptyState compact icon={CheckCircle2} title="Nothing skipped" />
+        ) : t.skippedReasons.length === 0 ? (
+          <Callout>{t.skippedCount} skipped — reasons not recorded.</Callout>
+        ) : (
+          <SkippedList reasons={t.skippedReasons} dec={dec} token={token} chainId={dest?.chainId} />
+        )}
+      </SheetBody>
+    </SheetContent>
   )
 }
 
 /* ── Delete ─────────────────────────────────────────────────── */
 
-function DeleteDestinationButton({
+function DeleteDestinationDialog({
   d,
-  hasTransfers,
+  onClose,
   onChanged,
 }: {
   d: TreasuryDestination
-  hasTransfers: boolean
+  onClose: () => void
   onChanged: () => void
 }) {
-  const [open, setOpen] = React.useState(false)
   const del = useMutation({
     mutationFn: () =>
       api<unknown>(`${BASE}/destinations/${encodeURIComponent(d.id)}`, {
@@ -1698,31 +2490,17 @@ function DeleteDestinationButton({
       }),
     onSuccess: () => {
       toast.success('Destination deleted')
-      setOpen(false)
+      onClose()
       onChanged()
     },
     onError: (e) => toast.error(errText(e, 'Delete failed')),
   })
-  if (hasTransfers) {
-    return (
-      <span title="This destination has transfers and cannot be deleted — disable it instead">
-        <Button size="sm" variant="outline" className="text-destructive" disabled>
-          <Trash2 className="size-3.5" /> Delete
-        </Button>
-      </span>
-    )
-  }
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant="outline" className="text-destructive">
-          <Trash2 className="size-3.5" /> Delete
-        </Button>
-      </DialogTrigger>
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Trash2 className="size-4" /> Delete destination
+            <Trash2 className="size-5" /> Delete destination
           </DialogTitle>
           <DialogDescription>
             Removes the allow-list entry. Only possible while the destination
@@ -1730,32 +2508,31 @@ function DeleteDestinationButton({
             <span className="font-medium">Disable</span>.
           </DialogDescription>
         </DialogHeader>
-        <div className="rounded-md border border-border bg-secondary px-3 py-2 text-sm">
-          <div className="font-medium">{d.label}</div>
-          <div className="font-mono text-xs">
-            chain {d.chainId} · {d.token} · {d.exchange}
-          </div>
-          <div className="mt-1 text-xs text-[var(--fg-2)]">
-            address: <Addr value={d.address} />
+        <div className="flex items-center gap-3 rounded-xl border border-border bg-[var(--bg-2)] px-4 py-3">
+          <TokenOnChain symbol={d.token} chainId={d.chainId} size={32} />
+          <div className="min-w-0 text-sm">
+            <div className="font-medium">{d.label}</div>
+            <div className="font-mono text-xs text-[var(--fg-2)]">
+              chain {d.chainId} · {d.token} · {d.exchange}
+            </div>
+            <div className="mt-0.5 text-xs text-[var(--fg-2)]">
+              address: <Addr value={d.address} chainId={d.chainId} />
+            </div>
           </div>
         </div>
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => setOpen(false)}
-            disabled={del.isPending}
-          >
+          <Button variant="outline" onClick={onClose} disabled={del.isPending}>
             Cancel
           </Button>
           <Button
+            variant="destructive"
             onClick={() => del.mutate()}
             disabled={del.isPending}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
             {del.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
+              <Loader2 className="size-4 animate-spin" />
             ) : (
-              <Trash2 className="size-3.5" />
+              <Trash2 className="size-4" />
             )}
             Delete
           </Button>
@@ -1953,7 +2730,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Landmark className="size-4" />
+            <Landmark className="size-5" />
             {isEdit ? 'Edit destination' : 'New treasury destination'}
           </DialogTitle>
           <DialogDescription>
@@ -1964,13 +2741,13 @@ function DestinationFormDialog(props: DestinationFormProps) {
         </DialogHeader>
 
         <form
-          className="space-y-3"
+          className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault()
             save.mutate()
           }}
         >
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_150px] sm:gap-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_150px] sm:gap-3">
             <Field label="Label">
               <Input
                 value={label}
@@ -2001,23 +2778,27 @@ function DestinationFormDialog(props: DestinationFormProps) {
           </div>
 
           {isEdit ? (
-            <div className="rounded-md border border-border bg-secondary px-3 py-2 text-sm">
-              <div className="font-mono text-xs">
-                {chainName(chains, initial!.chainId)} ({initial!.chainId}) ·{' '}
-                {initial!.token}
-              </div>
-              <div className="mt-1 text-xs text-[var(--fg-2)]">
-                address: <Addr value={initial!.address} truncated={false} />
-              </div>
-              {initial!.memo && (
-                <div className="mt-1 font-mono text-xs text-[var(--fg-2)]">
-                  memo: {initial!.memo}
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-[var(--bg-2)] px-4 py-3 text-sm">
+              <TokenOnChain symbol={initial!.token} chainId={initial!.chainId} size={32} />
+              <div className="min-w-0">
+                <div className="font-mono text-xs">
+                  {chainName(chains, initial!.chainId)} ({initial!.chainId}) ·{' '}
+                  {initial!.token}
                 </div>
-              )}
+                <div className="mt-1 text-xs break-all text-[var(--fg-2)]">
+                  address:{' '}
+                  <Addr value={initial!.address} chainId={initial!.chainId} truncated={false} />
+                </div>
+                {initial!.memo && (
+                  <div className="mt-1 font-mono text-xs text-[var(--fg-2)]">
+                    memo: {initial!.memo}
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_140px] sm:gap-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_160px] sm:gap-3">
                 <Field label="Chain">
                   <Select
                     value={chainId}
@@ -2036,6 +2817,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
                       {chainOptions.map((c) => (
                         <SelectItem key={c.chainId} value={String(c.chainId)}>
                           <span className="flex items-center gap-2">
+                            <ChainPill chainId={c.chainId} iconOnly size={16} />
                             <span>{c.displayName}</span>
                             <span className="font-mono text-2xs text-[var(--fg-3)]">
                               {c.chainId}
@@ -2061,6 +2843,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
                       {tokenOptions.map((t) => (
                         <SelectItem key={t.symbol} value={t.symbol}>
                           <span className="flex items-center gap-2">
+                            <TokenIcon symbol={t.symbol} size={16} />
                             <span className="font-mono">{t.symbol}</span>
                             <span className="text-2xs text-[var(--fg-3)]">
                               {t.displayName}
@@ -2096,7 +2879,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
             </>
           )}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-3">
             <Field
               label={`Exchange minimum (${symbol || 'token'})`}
               hint={
@@ -2133,7 +2916,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
             </Field>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-3">
             <UsdField
               label="Min transfer"
               value={minTransferUsd}
@@ -2166,7 +2949,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
                 <button
                   type="button"
                   onClick={() => setAutoInterval('')}
-                  className="cursor-pointer text-2xs text-[var(--fg-3)] hover:text-foreground"
+                  className="cursor-pointer text-xs text-[var(--fg-3)] hover:text-foreground"
                 >
                   Clear
                 </button>
@@ -2195,11 +2978,11 @@ function DestinationFormDialog(props: DestinationFormProps) {
             </Button>
             <Button type="submit" disabled={save.isPending}>
               {save.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <Loader2 className="size-4 animate-spin" />
               ) : isEdit ? (
-                <Pencil className="size-3.5" />
+                <Pencil className="size-4" />
               ) : (
-                <Plus className="size-3.5" />
+                <Plus className="size-4" />
               )}
               {save.isPending
                 ? 'Saving…'
@@ -2228,7 +3011,7 @@ function UsdField({
   return (
     <Field label={label}>
       <div className="relative">
-        <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-xs text-[var(--fg-3)]">
+        <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-[var(--fg-3)]">
           $
         </span>
         <Input
