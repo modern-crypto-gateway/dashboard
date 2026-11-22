@@ -10,6 +10,7 @@ import {
 } from '@/components/icons'
 
 import { cn } from '@/lib/utils'
+import { DateRangePicker, formatRange } from './DateRangePicker'
 import {
   countActiveAdvanced,
   fieldKeys,
@@ -42,19 +43,6 @@ const parseCsv = (s?: string): string[] =>
   s ? s.split(',').map((x) => x.trim()).filter(Boolean) : []
 const toCsv = (a: string[]): string => a.join(',')
 
-function msToLocalInput(ms: string): string {
-  const n = Number(ms)
-  if (!Number.isFinite(n) || n <= 0) return ''
-  const d = new Date(n)
-  if (isNaN(+d)) return ''
-  const p = (x: number) => String(x).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
-}
-function localInputToMs(s: string): string {
-  if (!s) return ''
-  const t = Date.parse(s)
-  return Number.isFinite(t) ? String(t) : ''
-}
 function shortDate(ms: string): string {
   const n = Number(ms)
   if (!Number.isFinite(n) || n <= 0) return '…'
@@ -92,7 +80,9 @@ function chipsFor(
           chips.push({
             id: f.keyFrom,
             field: f.label,
-            value: `${from ? shortDate(from) : '…'} → ${to ? shortDate(to) : '…'}`,
+            value:
+              formatRange(from ? Number(from) : undefined, to ? Number(to) : undefined) ??
+              `${from ? shortDate(from) : '…'} → ${to ? shortDate(to) : '…'}`,
             clearKeys: [f.keyFrom, f.keyTo],
           })
         }
@@ -354,26 +344,22 @@ function DateRangeField({
   values: FilterValues
   setValue: (key: string, v: string) => void
 }) {
+  const toNum = (v?: string) => {
+    const n = v ? Number(v) : NaN
+    return isFinite(n) ? n : undefined
+  }
   return (
     <div className="space-y-2">
       <FieldLabel>{field.label}</FieldLabel>
-      <RangeShell>
-        <Input
-          type="datetime-local"
-          aria-label={`${field.label} from`}
-          value={msToLocalInput(values[field.keyFrom] ?? '')}
-          onChange={(e) => setValue(field.keyFrom, localInputToMs(e.target.value))}
-          className="h-9 rounded-[10px] text-sm"
-        />
-        <RangeDash />
-        <Input
-          type="datetime-local"
-          aria-label={`${field.label} to`}
-          value={msToLocalInput(values[field.keyTo] ?? '')}
-          onChange={(e) => setValue(field.keyTo, localInputToMs(e.target.value))}
-          className="h-9 rounded-[10px] text-sm"
-        />
-      </RangeShell>
+      <DateRangePicker
+        ariaLabel={`${field.label} range`}
+        from={toNum(values[field.keyFrom])}
+        to={toNum(values[field.keyTo])}
+        onChange={(f, t) => {
+          setValue(field.keyFrom, f != null ? String(f) : '')
+          setValue(field.keyTo, t != null ? String(t) : '')
+        }}
+      />
     </div>
   )
 }
