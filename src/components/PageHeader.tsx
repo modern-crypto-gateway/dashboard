@@ -21,16 +21,16 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        'flex flex-wrap items-end justify-between gap-x-6 gap-y-3 pb-1',
+        'flex flex-wrap items-end justify-between gap-x-8 gap-y-4',
         className,
       )}
     >
       <div className="min-w-0 max-w-2xl">
-        <h1 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.02em]">
+        <h1 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.025em]">
           {title}
         </h1>
         {description && (
-          <p className="mt-1 text-sm text-pretty text-[var(--fg-2)]">
+          <p className="mt-1.5 text-base text-pretty text-[var(--fg-2)]">
             {description}
           </p>
         )}

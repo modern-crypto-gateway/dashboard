@@ -25,7 +25,7 @@ export const CardHeader = React.forwardRef<
     ref={ref}
     data-slot="card-header"
     className={cn(
-      '@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1 px-5 pt-4 [.border-b]:pb-4',
+      '@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1 px-6 pt-5 [.border-b]:pb-5',
       className,
     )}
     {...props}
@@ -40,7 +40,7 @@ export const CardTitle = React.forwardRef<
   <div
     ref={ref}
     data-slot="card-title"
-    className={cn('text-base font-semibold tracking-[-0.005em]', className)}
+    className={cn('text-lg font-semibold tracking-[-0.01em]', className)}
     {...props}
   />
 ))
@@ -66,7 +66,7 @@ export const CardContent = React.forwardRef<
   <div
     ref={ref}
     data-slot="card-content"
-    className={cn('px-5 pb-5', className)}
+    className={cn('px-6 pb-6', className)}
     {...props}
   />
 ))
@@ -80,7 +80,7 @@ export const CardFooter = React.forwardRef<
     ref={ref}
     data-slot="card-footer"
     className={cn(
-      'flex items-center px-5 pb-4 [.border-t]:pt-4 border-border',
+      'flex items-center px-6 pb-5 [.border-t]:pt-5 border-border',
       className,
     )}
     {...props}

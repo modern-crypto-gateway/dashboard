@@ -19,22 +19,24 @@
   --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* Type scale (font-size / line-height) */
+  /* 12 meta · 14 body/UI (sm and base) · 16 card titles ·
+     24 page titles · 32 key figures · 40 hero */
   --text-2xs: 11px;
   --text-2xs--line-height: 16px;
   --text-xs: 12px;
   --text-xs--line-height: 16px;
-  --text-sm: 13px;
+  --text-sm: 14px;
   --text-sm--line-height: 20px;
   --text-base: 14px;
   --text-base--line-height: 22px;
   --text-lg: 16px;
   --text-lg--line-height: 24px;
-  --text-xl: 22px;
-  --text-xl--line-height: 28px;
-  --text-2xl: 30px;
-  --text-2xl--line-height: 36px;
+  --text-xl: 24px;
+  --text-xl--line-height: 30px;
+  --text-2xl: 32px;
+  --text-2xl--line-height: 38px;
   --text-3xl: 40px;
-  --text-3xl--line-height: 44px;
+  --text-3xl--line-height: 46px;
 
   /* Radii: controls 8, cards 14, panel 18 */
   --radius-xs: 4px;
@@ -96,8 +98,8 @@
 
   --fg-0: #111112;
   --fg-1: #3b3b3f;
-  --fg-2: #68686e;
-  --fg-3: #8d8d93;
+  --fg-2: #5e5e64;
+  --fg-3: #85858b;
 
   /* Signal (default: lime). Filled surfaces carry ink text. */
   --accent: #c8f04f;
@@ -273,7 +275,7 @@ body {
   background: var(--bg-0);
   color: var(--fg-0);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: 'ss01';

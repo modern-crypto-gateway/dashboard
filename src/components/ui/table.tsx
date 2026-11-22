@@ -21,7 +21,7 @@ export function Table({
 }: React.TableHTMLAttributes<HTMLTableElement>) {
   return (
     <table
-      className={cn('w-full border-separate border-spacing-0 text-sm', className)}
+      className={cn('w-full border-separate border-spacing-0 text-base', className)}
       {...props}
     />
   )
@@ -73,7 +73,7 @@ export function Th({
   return (
     <th
       className={cn(
-        'h-10 whitespace-nowrap border-b border-border px-4 text-xs font-medium text-[var(--fg-2)]',
+        'h-11 whitespace-nowrap border-b border-border px-4 first:pl-6 last:pr-6 text-xs font-medium text-[var(--fg-2)]',
         align === 'right' && 'text-right',
         align === 'center' && 'text-center',
         align === 'left' && 'text-left',
@@ -92,7 +92,7 @@ export function Td({
   return (
     <td
       className={cn(
-        'h-12 border-b border-border px-4 py-2 align-middle',
+        'h-14 border-b border-border px-4 py-2 first:pl-6 last:pr-6 align-middle',
         align === 'right' && 'figure text-right',
         align === 'center' && 'text-center',
         className,

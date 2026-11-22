@@ -73,7 +73,7 @@ export function AppShell() {
             onOpenCommandPalette={() => setPaletteOpen(true)}
           />
           <div
-            className="mx-auto w-full max-w-[1360px] flex-1 px-4 pt-7 pb-16 md:px-6 lg:px-8"
+            className="mx-auto w-full max-w-[1360px] flex-1 px-5 pt-8 pb-20 md:px-8 lg:px-10"
           >
             <Outlet />
           </div>

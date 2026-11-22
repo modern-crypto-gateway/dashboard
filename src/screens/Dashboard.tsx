@@ -262,7 +262,7 @@ export function DashboardPage() {
   const rangeLabel = `last ${n} days`
 
   return (
-    <div className="fade-in space-y-6">
+    <div className="fade-in space-y-8">
       <PageHeader
         title="Overview"
         description={
@@ -297,7 +297,7 @@ export function DashboardPage() {
       />
 
       {/* ── KPI tiles ───────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
           label="Total balance"
           loading={bal.isLoading}
@@ -351,12 +351,12 @@ export function DashboardPage() {
       </div>
 
       {/* ── Volume + balance mix ────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <Card className="p-5">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <Card className="p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold">Payment volume</h2>
-              <p className="mt-0.5 text-sm text-[var(--fg-2)]">
+              <h2 className="text-lg font-semibold tracking-[-0.01em]">Payment volume</h2>
+              <p className="mt-1 text-sm text-[var(--fg-2)]">
                 Daily USD, {rangeLabel}
                 {series.truncated && ` · from the latest ${STORE_PAGE} invoices`}
               </p>
@@ -368,7 +368,7 @@ export function DashboardPage() {
               ]}
             />
           </div>
-          <div className="mt-4">
+          <div className="mt-6">
             {!canList ? (
               <EmptyState
                 compact
@@ -403,10 +403,10 @@ export function DashboardPage() {
       </div>
 
       {/* ── Attention · outcomes · system ───────────────── */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="p-5">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <Card className="p-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold">Needs attention</h2>
+            <h2 className="text-lg font-semibold tracking-[-0.01em]">Needs attention</h2>
             {attention.every((a) => !a.loading) &&
               (openIssues === 0 ? (
                 <Badge variant="success">
@@ -423,17 +423,17 @@ export function DashboardPage() {
           </ul>
         </Card>
 
-        <Card className="p-5">
-          <h2 className="text-base font-semibold">Invoice outcomes</h2>
-          <p className="mt-0.5 text-sm text-[var(--fg-2)]">
+        <Card className="p-6">
+          <h2 className="text-lg font-semibold tracking-[-0.01em]">Invoice outcomes</h2>
+          <p className="mt-1 text-sm text-[var(--fg-2)]">
             {canList ? `${series.count} invoices, ${rangeLabel}` : 'Pick a store to see outcomes'}
           </p>
           <StatusMix counts={series.statusCounts} loading={storeLoading} />
         </Card>
 
-        <Card className="p-5">
+        <Card className="p-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold">System</h2>
+            <h2 className="text-lg font-semibold tracking-[-0.01em]">System</h2>
             <HealthBadge health={health.data} loading={health.isLoading} error={health.isError} />
           </div>
           <PoolMeters stats={pool.data?.stats} loading={pool.isLoading} />
@@ -443,8 +443,8 @@ export function DashboardPage() {
       {/* ── Recent invoices ─────────────────────────────── */}
       {canList && (
         <Card className="overflow-hidden">
-          <div className="flex items-center justify-between px-5 pt-5 pb-3">
-            <h2 className="text-base font-semibold">Recent invoices</h2>
+          <div className="flex items-center justify-between px-6 pt-6 pb-4">
+            <h2 className="text-lg font-semibold tracking-[-0.01em]">Recent invoices</h2>
             <Button asChild variant="ghost" size="sm">
               <Link to="/invoices">
                 View all <ArrowRight className="size-3.5" />
@@ -452,7 +452,7 @@ export function DashboardPage() {
             </Button>
           </div>
           {storeLoading ? (
-            <div className="space-y-3 px-5 pb-5">
+            <div className="space-y-3 px-6 pb-6">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton key={i} className="h-9 w-full" />
               ))}
@@ -488,15 +488,15 @@ function StatTile({
   loading?: boolean
 }) {
   return (
-    <Card className="flex flex-col p-5">
-      <div className="text-sm text-[var(--fg-2)]">{label}</div>
-      <div className="figure mt-2 text-2xl font-semibold">
+    <Card className="flex flex-col p-6">
+      <div className="text-sm font-medium text-[var(--fg-2)]">{label}</div>
+      <div className="figure mt-3 text-2xl font-semibold tracking-[-0.03em]">
         {loading ? <Skeleton className="h-9 w-32" /> : value}
       </div>
-      <div className="mt-1 min-h-4 truncate text-xs text-[var(--fg-2)]">
+      <div className="mt-1.5 min-h-4 truncate text-xs text-[var(--fg-2)]">
         {loading ? <Skeleton className="h-3 w-24" /> : sub}
       </div>
-      {footer && <div className="mt-auto pt-4">{footer}</div>}
+      {footer && <div className="mt-auto pt-5">{footer}</div>}
     </Card>
   )
 }
@@ -545,9 +545,9 @@ function BalanceMix({ snapshot, loading }: { snapshot?: BalancesSnapshot; loadin
   const slices = chainSlices(snapshot)
   const total = slices.reduce((a, s) => a + s.value, 0)
   return (
-    <Card className="p-5">
+    <Card className="p-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold">Balance by chain</h2>
+        <h2 className="text-lg font-semibold tracking-[-0.01em]">Balance by chain</h2>
         <Link to="/balances" className="text-sm text-[var(--fg-2)] hover:text-foreground">
           Details
         </Link>
@@ -751,7 +751,7 @@ function RecentInvoiceRow({ inv }: { inv: GatewayInvoice }) {
     <li>
       <Link
         to="/invoices"
-        className="flex items-center gap-4 px-5 py-3 text-sm outline-none transition-colors hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)]"
+        className="flex items-center gap-4 px-6 py-3.5 text-sm outline-none transition-colors hover:bg-[var(--bg-hover)] focus-visible:bg-[var(--bg-hover)]"
       >
         <span
           className="grid size-8 shrink-0 place-items-center rounded-full text-2xs font-semibold text-white"
@@ -766,9 +766,11 @@ function RecentInvoiceRow({ inv }: { inv: GatewayInvoice }) {
             {info.name} · {inv.token}
           </div>
         </div>
-        <Badge variant={STATUS_BADGE[inv.status] ?? 'default'} className="capitalize">
-          {inv.status}
-        </Badge>
+        <div className="hidden w-28 sm:block">
+          <Badge variant={STATUS_BADGE[inv.status] ?? 'default'} className="capitalize">
+            {inv.status}
+          </Badge>
+        </div>
         <div className="figure w-28 text-right font-medium">{amount}</div>
         <div className="hidden w-20 text-right text-xs text-[var(--fg-3)] sm:block">
           {fmtRel(when)}

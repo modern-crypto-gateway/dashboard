@@ -54,7 +54,7 @@ export function Topbar({ onMobileMenu, onOpenCommandPalette }: TopbarProps) {
   const crumbs = useCrumbs()
 
   return (
-    <div className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-[var(--bg-0)]/85 px-4 backdrop-blur-md md:px-6 lg:px-8">
+    <div className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-[var(--bg-0)]/85 px-5 backdrop-blur-md md:px-8 lg:px-10">
       <Button
         size="icon-sm"
         variant="ghost"
@@ -67,7 +67,7 @@ export function Topbar({ onMobileMenu, onOpenCommandPalette }: TopbarProps) {
       <LogoMark size={26} className="md:hidden" />
 
       {crumbs && (
-        <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1.5 text-sm md:flex">
+        <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1.5 text-base md:flex">
           <span className="text-[var(--fg-2)]">{crumbs[0]}</span>
           <ChevronRight className="size-3.5 text-[var(--fg-3)]" />
           <span className="truncate font-medium">{crumbs[1]}</span>

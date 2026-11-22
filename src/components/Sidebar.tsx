@@ -54,7 +54,7 @@ export function Sidebar({
         rail ? 'w-[64px]' : 'w-[232px]',
       )}
     >
-      <div className={cn('flex h-16 shrink-0 items-center', rail ? 'justify-center' : 'px-5')}>
+      <div className={cn('flex h-16 shrink-0 items-center', rail ? 'justify-center' : 'px-6')}>
         {rail ? <LogoMark size={30} /> : <Logo />}
       </div>
 
@@ -84,7 +84,7 @@ export function Sidebar({
             {rail ? (
               i > 0 && <div className="my-2 h-px w-6 bg-[var(--border-strong)]" aria-hidden />
             ) : (
-              <div className="px-3 pt-5 pb-1.5 text-xs font-medium text-[var(--fg-3)]">
+              <div className="px-3 pt-6 pb-2 text-xs font-medium text-[var(--fg-3)]">
                 {section.group}
               </div>
             )}
@@ -138,7 +138,7 @@ function SidebarLink({
       aria-label={rail ? item.label : undefined}
       className={({ isActive }) =>
         cn(
-          'group relative flex h-9 items-center rounded-[10px] text-sm text-[var(--fg-1)] outline-none transition-[background-color,color,box-shadow] duration-150',
+          'group relative flex h-9 items-center rounded-[10px] text-base text-[var(--fg-1)] outline-none transition-[background-color,color,box-shadow] duration-150',
           'hover:bg-[var(--bg-active)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
           rail ? 'w-10 justify-center' : 'gap-3 px-3',
           isActive &&
@@ -216,7 +216,7 @@ function AccountMenu({ username, rail }: { username: string; rail: boolean }) {
           aria-label={`Account: ${username}`}
           className={cn(
             'flex h-11 cursor-pointer items-center rounded-[10px] text-left text-sm outline-none transition-colors hover:bg-[var(--bg-active)] focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-[var(--bg-active)]',
-            rail ? 'w-10 justify-center' : 'gap-2.5 px-2',
+            rail ? 'w-10 justify-center' : 'gap-2.5 px-3',
           )}
         >
           <img
