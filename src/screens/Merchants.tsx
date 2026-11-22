@@ -25,11 +25,14 @@ import { api, ApiError } from '@/lib/api'
 import { chainInfo } from '@/lib/chains'
 import { merchantsQuery, useMerchants } from '@/lib/merchants'
 import { fmtLocal, fmtRel } from '@/lib/format'
+import { API_KEY_SCOPES } from '@/lib/types'
 import type {
+  ApiKeyScope,
   ChainInventoryEntry,
   ConfirmationTierOp,
   ConfirmationTierRule,
   Merchant,
+  MerchantApiKey,
 } from '@/lib/types'
 
 import { Badge } from '@/components/ui/badge'
@@ -506,7 +509,9 @@ function MerchantSheet({
   merchant: Merchant | null
   onOpenChange: (v: boolean) => void
 }) {
-  const [section, setSection] = React.useState<'overview' | 'webhook' | 'tuning' | 'danger'>('overview')
+  const [section, setSection] = React.useState<
+    'overview' | 'keys' | 'webhook' | 'tuning' | 'danger'
+  >('overview')
   // Reset to overview whenever a different merchant is opened.
   const merchantId = merchant?.id ?? null
   const [prevMerchantId, setPrevMerchantId] = React.useState<string | null>(merchantId)
@@ -533,7 +538,7 @@ function MerchantSheet({
                 <CopyButton value={merchant.id} />
               </div>
               <nav className="mt-4 -mb-3 flex gap-5 text-sm">
-                {(['overview', 'webhook', 'tuning', 'danger'] as const).map((s) => (
+                {(['overview', 'keys', 'webhook', 'tuning', 'danger'] as const).map((s) => (
                   <button
                     key={s}
                     type="button"
@@ -544,7 +549,7 @@ function MerchantSheet({
                         : 'text-[var(--fg-3)] hover:text-[var(--fg-2)]'
                     }`}
                   >
-                    {s === 'danger' ? 'Danger zone' : s}
+                    {s === 'danger' ? 'Danger zone' : s === 'keys' ? 'API keys' : s}
                     {section === s && (
                       <span className="absolute inset-x-0 -bottom-[1px] h-[2px] rounded-full bg-primary" />
                     )}
@@ -555,6 +560,7 @@ function MerchantSheet({
 
             <SheetBody>
               {section === 'overview' && <OverviewSection m={merchant} />}
+              {section === 'keys' && <ApiKeysSection m={merchant} />}
               {section === 'webhook' && <WebhookSection m={merchant} />}
               {section === 'tuning' && <TuningSection m={merchant} />}
               {section === 'danger' && <DangerSection m={merchant} onDone={() => onOpenChange(false)} />}
@@ -580,8 +586,8 @@ function OverviewSection({ m }: { m: Merchant }) {
           ],
           ['Source', m.source],
           [
-            'API key fingerprint',
-            m.apiKeyFingerprint ? `…${m.apiKeyFingerprint}` : '—',
+            'Main API key',
+            m.apiKeyFingerprint ? `sk_…${m.apiKeyFingerprint} · full access` : '—',
           ],
           ['Created', fmtLocal(m.createdAt)],
           ['Updated', fmtRel(m.updatedAt)],
@@ -759,6 +765,342 @@ function WebhookSection({ m }: { m: Merchant }) {
         onClose={() => setRevealed(null)}
       />
     </div>
+  )
+}
+
+/* ── sheet: api keys ─────────────────────────────────────── */
+
+const SCOPE_INFO: Record<ApiKeyScope, { label: string; hint: string; risky?: boolean }> = {
+  'invoices:read': { label: 'Read invoices', hint: "List and view this store's invoices." },
+  'invoices:write': { label: 'Create invoices', hint: 'Create and expire invoices to take payments.' },
+  'payouts:read': { label: 'Read payouts', hint: 'List and view payouts.' },
+  'payouts:write': {
+    label: 'Send payouts',
+    hint: 'Send money out of the shared pool. Never put this on a website.',
+    risky: true,
+  },
+}
+const DEFAULT_SCOPES: ApiKeyScope[] = ['invoices:read', 'invoices:write']
+
+function apiKeysQueryKey(merchantId: string) {
+  return ['merchant-api-keys', merchantId] as const
+}
+
+function ApiKeysSection({ m }: { m: Merchant }) {
+  const qc = useQueryClient()
+  const queryKey = apiKeysQueryKey(m.id)
+  const keys = useQuery({
+    queryKey,
+    queryFn: () =>
+      api<{ keys: MerchantApiKey[] }>(
+        `/api/merchants/${encodeURIComponent(m.id)}/api-keys`,
+      ),
+    select: (r) => r.keys,
+    staleTime: 10_000,
+  })
+  const [createOpen, setCreateOpen] = React.useState(false)
+  const [revealed, setRevealed] = React.useState<string | null>(null)
+  const [revokeTarget, setRevokeTarget] = React.useState<MerchantApiKey | null>(null)
+  const [showRevoked, setShowRevoked] = React.useState(false)
+
+  const revoke = useMutation({
+    mutationFn: (k: MerchantApiKey) =>
+      api<{ key: MerchantApiKey }>(
+        `/api/merchants/${encodeURIComponent(m.id)}/api-keys/${encodeURIComponent(k.id)}`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: () => {
+      toast.success('API key revoked')
+      setRevokeTarget(null)
+      qc.invalidateQueries({ queryKey })
+    },
+    onError: (e: ApiError) => {
+      setRevokeTarget(null)
+      toast.error(e.message || 'Could not revoke key')
+    },
+  })
+
+  const all = keys.data ?? []
+  const active = all.filter((k) => !k.revokedAt)
+  const revoked = all.filter((k) => !!k.revokedAt)
+  const shown = showRevoked ? all : active
+
+  return (
+    <div className="space-y-4">
+      <HintCard icon={<KeyRound className="size-4" />} title="Keys for this store's website and apps">
+        Give each website or integration its own key with only the access it
+        needs. New keys can create and read invoices only; payout access must be
+        turned on explicitly. The store's main key{' '}
+        {m.apiKeyFingerprint && (
+          <span className="font-mono">(sk_…{m.apiKeyFingerprint})</span>
+        )}{' '}
+        keeps full access for this dashboard — don't hand it out.
+      </HintCard>
+
+      {m.active === false && (
+        <HintCard icon={<AlertTriangle className="size-4" />} tone="warn" title="Store is deactivated">
+          All of this store's keys are rejected until it is activated again.
+        </HintCard>
+      )}
+
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm text-[var(--fg-2)]">
+          {keys.isSuccess &&
+            `${active.length} active${revoked.length ? ` · ${revoked.length} revoked` : ''}`}
+        </div>
+        <div className="flex items-center gap-2">
+          {revoked.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => setShowRevoked((v) => !v)}>
+              {showRevoked ? 'Hide revoked' : 'Show revoked'}
+            </Button>
+          )}
+          <Button size="sm" onClick={() => setCreateOpen(true)} disabled={!keys.isSuccess}>
+            <Plus className="size-3.5" /> New key
+          </Button>
+        </div>
+      </div>
+
+      {keys.isPending && (
+        <div className="space-y-2">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      )}
+
+      {keys.isError && (
+        <HintCard icon={<AlertTriangle className="size-4" />} tone="warn" title="Couldn't load keys">
+          {(keys.error as ApiError)?.message || 'The gateway did not answer.'} If
+          this keeps happening, the gateway may not have the scoped-keys update
+          (migration 0027) yet.
+        </HintCard>
+      )}
+
+      {keys.isSuccess && shown.length === 0 && (
+        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-[var(--fg-2)]">
+          No extra keys yet. Create one for each website or app that talks to
+          the gateway.
+        </div>
+      )}
+
+      {keys.isSuccess && shown.length > 0 && (
+        <ul className="space-y-2">
+          {shown.map((k) => (
+            <li
+              key={k.id}
+              className={`rounded-lg border px-4 py-3 ${
+                k.revokedAt
+                  ? 'border-border bg-[var(--bg-2)]/50 opacity-70'
+                  : 'border-border bg-[var(--bg-2)]'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-sm font-medium">
+                      {k.label ?? 'Unnamed key'}
+                    </span>
+                    <span className="font-mono text-[11px] text-[var(--fg-3)]">
+                      sk_…{k.fingerprint}
+                    </span>
+                    {k.revokedAt && <Badge variant="danger">Revoked</Badge>}
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {k.scopes.length === 0 ? (
+                      <Badge variant="danger">No valid scopes</Badge>
+                    ) : (
+                      k.scopes.map((s) => (
+                        <Badge key={s} variant={SCOPE_INFO[s]?.risky ? 'warn' : 'default'}>
+                          {SCOPE_INFO[s]?.label ?? s}
+                        </Badge>
+                      ))
+                    )}
+                  </div>
+                  <div className="mt-1.5 text-[11px] text-[var(--fg-3)]">
+                    Created {fmtLocal(k.createdAt)}
+                    {k.revokedAt && ` · revoked ${fmtLocal(k.revokedAt)}`}
+                  </div>
+                </div>
+                {!k.revokedAt && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setRevokeTarget(k)}
+                    disabled={revoke.isPending}
+                  >
+                    <Ban className="size-3.5" /> Revoke
+                  </Button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <CreateApiKeyDialog
+        merchantId={m.id}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={(apiKey) => {
+          setCreateOpen(false)
+          setRevealed(apiKey)
+          qc.invalidateQueries({ queryKey })
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!revokeTarget}
+        onOpenChange={(v) => !v && setRevokeTarget(null)}
+        title="Revoke this API key?"
+        body={
+          <>
+            {revokeTarget?.label ?? 'This key'}{' '}
+            <span className="font-mono">(sk_…{revokeTarget?.fingerprint})</span> stops
+            working immediately. Anything still using it will get 401 errors. This
+            can't be undone — create a new key if you need one.
+          </>
+        }
+        cta="Revoke key"
+        destructive
+        pending={revoke.isPending}
+        onConfirm={() => revokeTarget && revoke.mutate(revokeTarget)}
+      />
+
+      <RevealOnceDialog
+        value={revealed}
+        title="New API key"
+        description="Shown once and not stored by this dashboard. Copy it into the store's website or app settings now."
+        onClose={() => setRevealed(null)}
+      />
+    </div>
+  )
+}
+
+function CreateApiKeyDialog({
+  merchantId,
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  merchantId: string
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  onCreated: (apiKey: string) => void
+}) {
+  const [label, setLabel] = React.useState('')
+  const [scopes, setScopes] = React.useState<ApiKeyScope[]>(DEFAULT_SCOPES)
+
+  // Fresh form every time the dialog opens.
+  const [prevOpen, setPrevOpen] = React.useState(open)
+  if (prevOpen !== open) {
+    setPrevOpen(open)
+    if (open) {
+      setLabel('')
+      setScopes(DEFAULT_SCOPES)
+    }
+  }
+
+  const create = useMutation({
+    mutationFn: () =>
+      api<{ key: MerchantApiKey; apiKey: string }>(
+        `/api/merchants/${encodeURIComponent(merchantId)}/api-keys`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            ...(label.trim() ? { label: label.trim() } : {}),
+            scopes,
+          }),
+        },
+      ),
+    onSuccess: (res) => {
+      toast.success('API key created')
+      onCreated(res.apiKey)
+    },
+    onError: (e: ApiError) => toast.error(e.message || 'Could not create key'),
+  })
+
+  const toggle = (s: ApiKeyScope) =>
+    setScopes((cur) =>
+      cur.includes(s)
+        ? cur.filter((x) => x !== s)
+        : API_KEY_SCOPES.filter((x) => x === s || cur.includes(x)),
+    )
+  const sendsPayouts = scopes.includes('payouts:write')
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New API key</DialogTitle>
+          <DialogDescription>
+            Pick only what this website or app needs. You can't change a key's
+            access later — revoke it and create a new one.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (scopes.length > 0) create.mutate()
+          }}
+        >
+          <Field label="Name" hint="So you can tell keys apart, e.g. “Main website”.">
+            <Input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              maxLength={64}
+              placeholder="Main website"
+            />
+          </Field>
+          <fieldset className="space-y-2">
+            <legend className="mb-1 text-xs uppercase tracking-wider text-[var(--fg-3)]">
+              Access
+            </legend>
+            {API_KEY_SCOPES.map((s) => (
+              <label
+                key={s}
+                className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 ${
+                  SCOPE_INFO[s].risky && scopes.includes(s)
+                    ? 'border-warn/40 bg-warn/10'
+                    : 'border-border bg-card'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={scopes.includes(s)}
+                  onChange={() => toggle(s)}
+                  disabled={create.isPending}
+                  className="mt-0.5 size-4 accent-[var(--primary)]"
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">
+                    {SCOPE_INFO[s].label}{' '}
+                    <span className="font-mono text-[11px] font-normal text-[var(--fg-3)]">{s}</span>
+                  </span>
+                  <span className="block text-xs text-[var(--fg-2)]">{SCOPE_INFO[s].hint}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          {sendsPayouts && (
+            <HintCard icon={<AlertTriangle className="size-4" />} tone="warn" title="This key can send money">
+              Anyone holding it can pay out from the shared pool. Only give it
+              to a server you control, never to a website or browser code.
+            </HintCard>
+          )}
+          {scopes.length === 0 && (
+            <p className="text-xs text-destructive">Pick at least one permission.</p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={scopes.length === 0 || create.isPending}>
+              {create.isPending ? 'Creating…' : 'Create key'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

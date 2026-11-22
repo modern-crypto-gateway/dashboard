@@ -46,12 +46,15 @@ import {
 } from './routes/security'
 import {
   activateMerchant,
+  createMerchantApiKey,
   createMerchantViaGateway,
   deactivateMerchant,
   deleteMerchant,
   importMerchant,
+  listMerchantApiKeys,
   listMerchants,
   patchMerchant,
+  revokeMerchantApiKey,
   rotateMerchantKey,
   rotateWebhookSecret,
 } from './routes/merchants'
@@ -194,11 +197,28 @@ router.post('/api/merchants/import', async (req, env) => {
   await guardAuthAndCsrf(req, env)
   return importMerchant(req, env)
 })
+// Scoped store API keys: GET /api/merchants/:id/api-keys
+router.get('/api/merchants/*', async (req, env, _ctx, params) => {
+  await requireAuth(req, env)
+  const parts = (params.tail ?? '').split('/').filter(Boolean)
+  if (parts.length === 2 && parts[1] === 'api-keys') {
+    return listMerchantApiKeys(req, env, parts[0])
+  }
+  return error('NOT_FOUND', 'Not found', 404)
+})
+// DELETE /api/merchants/:id                     → remove local (KV) record
+// DELETE /api/merchants/:id/api-keys/:keyId     → revoke a scoped key
+// Any other shape is rejected so a sub-path can never fall through to the
+// merchant-record removal.
 router.delete('/api/merchants/*', async (req, env, _ctx, params) => {
   await guardAuthAndCsrf(req, env)
-  const id = (params.tail ?? '').split('/').filter(Boolean)[0]
-  if (!id) return error('BAD_ID', 'Merchant id required', 400)
-  return deleteMerchant(req, env, id)
+  const parts = (params.tail ?? '').split('/').filter(Boolean)
+  if (parts.length === 3 && parts[1] === 'api-keys') {
+    await cfLimit(env.GW_RL, clientId(req), 'gw')
+    return revokeMerchantApiKey(req, env, parts[0], parts[2])
+  }
+  if (parts.length !== 1) return error('BAD_ID', 'Merchant id required', 400)
+  return deleteMerchant(req, env, parts[0])
 })
 router.patch('/api/merchants/*', async (req, env, _ctx, params) => {
   await guardAuthAndCsrf(req, env)
@@ -220,6 +240,10 @@ router.post('/api/merchants/*', async (req, env, _ctx, params) => {
   if (action === 'rotate-webhook-secret') {
     await cfLimit(env.GW_RL, clientId(req), 'gw')
     return rotateWebhookSecret(req, env, id)
+  }
+  if (action === 'api-keys' && parts.length === 2) {
+    await cfLimit(env.GW_RL, clientId(req), 'gw')
+    return createMerchantApiKey(req, env, id)
   }
   if (action === 'activate') return activateMerchant(req, env, id)
   if (action === 'deactivate') return deactivateMerchant(req, env, id)

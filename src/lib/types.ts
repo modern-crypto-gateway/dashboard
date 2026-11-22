@@ -105,7 +105,34 @@ export type Merchant = {
   updatedAt: number
 }
 
-export type ConfirmationTierOp = '<' | '<=' | '>' | '>=' | '=' | '<>'
+/** Permissions a scoped store API key can hold (gateway migration 0027). */
+export const API_KEY_SCOPES = [
+  'invoices:read',
+  'invoices:write',
+  'payouts:read',
+  'payouts:write',
+] as const
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number]
+
+/**
+ * Extra API key for a store, with limited scopes. The plaintext is only
+ * returned once on create and is never stored by the dashboard. The store's
+ * main key (`Merchant.apiKeyFingerprint`) keeps full access.
+ */
+export type MerchantApiKey = {
+  id: string
+  merchantId: string
+  label: string | null
+  /** last 4 chars of the key */
+  fingerprint: string
+  scopes: ApiKeyScope[]
+  /** ISO-8601 */
+  createdAt: string
+  /** ISO-8601, null while active */
+  revokedAt: string | null
+}
+
+export type ConfirmationTierOp ='<' | '<=' | '>' | '>=' | '=' | '<>'
 
 export type ConfirmationTierRule = {
   /** Decimal string (whole-token units, e.g. `"100"`, `"0.5"`). Omit with

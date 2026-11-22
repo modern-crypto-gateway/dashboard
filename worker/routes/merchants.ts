@@ -522,6 +522,112 @@ export async function deactivateMerchant(
   return json({ merchant: payload.merchant ?? null })
 }
 
+/* ── scoped store API keys ───────────────────────────────── */
+
+// Extra keys a store hands to its website/integrations. Unlike the main key
+// (sealed in KV above, full access, used by this dashboard), these are NEVER
+// stored here: the gateway returns the plaintext once and we pass it straight
+// through to the operator. Scopes are re-validated by the gateway; we check
+// shape here only to fail fast with a clear message.
+const API_KEY_SCOPES = [
+  'invoices:read',
+  'invoices:write',
+  'payouts:read',
+  'payouts:write',
+] as const
+const KEY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+
+type UpstreamErrorBody = {
+  error?: { code?: string; message?: string; details?: unknown }
+} | null | undefined
+
+function upstreamError(payload: UpstreamErrorBody, status: number, fallback: string): Response {
+  return error(
+    payload?.error?.code ?? 'UPSTREAM_ERROR',
+    payload?.error?.message ?? fallback,
+    status || 502,
+    payload?.error?.details,
+  )
+}
+
+export async function listMerchantApiKeys(
+  _req: Request,
+  env: Bindings,
+  id: string,
+): Promise<Response> {
+  const { status, payload } = await callGateway(
+    env,
+    'GET',
+    `/admin/merchants/${encodeURIComponent(id)}/api-keys`,
+  )
+  if (status !== 200 || !Array.isArray(payload.keys)) {
+    return upstreamError(payload, status, 'Gateway rejected api-key list')
+  }
+  return json({ keys: payload.keys })
+}
+
+export async function createMerchantApiKey(
+  req: Request,
+  env: Bindings,
+  id: string,
+): Promise<Response> {
+  const body = await readJson<{ label?: unknown; scopes?: unknown }>(req)
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    return error('VALIDATION_FAILED', 'Body must be a JSON object', 400)
+  }
+  const out: { label?: string; scopes?: string[] } = {}
+  if (body.label !== undefined && body.label !== null && body.label !== '') {
+    if (typeof body.label !== 'string' || body.label.trim().length > 64) {
+      return error('VALIDATION_FAILED', 'Label must be text, at most 64 characters', 400)
+    }
+    if (body.label.trim()) out.label = body.label.trim()
+  }
+  if (body.scopes !== undefined) {
+    const scopes = body.scopes
+    if (
+      !Array.isArray(scopes) ||
+      scopes.length === 0 ||
+      scopes.some((s) => !(API_KEY_SCOPES as readonly unknown[]).includes(s)) ||
+      new Set(scopes).size !== scopes.length
+    ) {
+      return error(
+        'VALIDATION_FAILED',
+        `Scopes must be a non-empty list of: ${API_KEY_SCOPES.join(', ')}`,
+        400,
+      )
+    }
+    out.scopes = scopes as string[]
+  }
+  const { status, payload } = await callGateway(
+    env,
+    'POST',
+    `/admin/merchants/${encodeURIComponent(id)}/api-keys`,
+    out,
+  )
+  if (status !== 201 || !payload.key || typeof payload.apiKey !== 'string') {
+    return upstreamError(payload, status, 'Gateway rejected api-key create')
+  }
+  return json({ key: payload.key, apiKey: payload.apiKey }, { status: 201 })
+}
+
+export async function revokeMerchantApiKey(
+  _req: Request,
+  env: Bindings,
+  id: string,
+  keyId: string,
+): Promise<Response> {
+  if (!KEY_ID_RE.test(keyId)) return error('API_KEY_NOT_FOUND', 'API key not found', 404)
+  const { status, payload } = await callGateway(
+    env,
+    'DELETE',
+    `/admin/merchants/${encodeURIComponent(id)}/api-keys/${encodeURIComponent(keyId)}`,
+  )
+  if (status !== 200 || !payload.key) {
+    return upstreamError(payload, status, 'Gateway rejected api-key revoke')
+  }
+  return json({ key: payload.key })
+}
+
 /** Rotate the HMAC signing secret for this merchant's webhooks. Plaintext
  * is shown once, never persisted here — the merchant stores it on their
  * side to verify signatures. */
