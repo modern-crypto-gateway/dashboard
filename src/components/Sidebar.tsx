@@ -1,169 +1,240 @@
-import { NavLink } from 'react-router-dom'
-import {
-  Activity,
-  AlertTriangle,
-  ArrowUpDown,
-  CalendarClock,
-  CandlestickChart,
-  CircleDollarSign,
-  FileText,
-  Fuel,
-  Landmark,
-  LayoutDashboard,
-  LifeBuoy,
-  Link2,
-  Radio,
-  Settings,
-  ShieldCheck,
-  Store,
-  Waypoints,
-  Webhook,
-} from 'lucide-react'
+import { NavLink, useNavigate } from 'react-router-dom'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { ChevronsUpDown, LogOut, Settings } from 'lucide-react'
+
 import { cn } from '@/lib/utils'
+import { api } from '@/lib/api'
+import { sessionQuery } from '@/lib/session'
 import { useHeldQueue } from '@/lib/held'
-import { Logo } from './Logo'
-import { StatusDot } from './StatusDot'
-import { Badge } from './ui/badge'
+import { useTheme, type Accent } from '@/lib/theme'
+import { NAV_SECTIONS, type NavItem } from '@/lib/nav'
+import { Logo, LogoMark } from './Logo'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
-type Item = {
-  to: string
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-  count?: number
-  countVariant?: 'default' | 'warn' | 'accent'
-  end?: boolean
-}
-
-type Section = { group: string; items: Item[] }
-
-const sections: Section[] = [
-  {
-    group: 'Overview',
-    items: [
-      { to: '/', end: true, label: 'Dashboard', icon: LayoutDashboard },
-      { to: '/activity', label: 'Activity', icon: Activity },
-    ],
-  },
-  {
-    group: 'Money',
-    items: [
-      { to: '/balances', label: 'Balances', icon: CircleDollarSign },
-      { to: '/pool', label: 'Address pool', icon: Waypoints },
-      {
-        to: '/consolidation-schedules',
-        label: 'Auto-consolidation',
-        icon: CalendarClock,
-      },
-      { to: '/treasury', label: 'Treasury', icon: Landmark },
-      { to: '/exchange', label: 'Exchange', icon: CandlestickChart },
-      { to: '/invoices', label: 'Invoices', icon: FileText },
-      { to: '/payouts', label: 'Payouts', icon: ArrowUpDown },
-    ],
-  },
-  {
-    group: 'Operations',
-    items: [
-      {
-        to: '/orphans',
-        label: 'Orphan txs',
-        icon: AlertTriangle,
-        countVariant: 'warn',
-      },
-      {
-        to: '/held-payouts',
-        label: 'Held payouts',
-        icon: LifeBuoy,
-        countVariant: 'warn',
-      },
-      { to: '/webhooks', label: 'Webhooks', icon: Webhook },
-      { to: '/merchants', label: 'Merchants', icon: Store },
-    ],
-  },
-  {
-    group: 'Admin',
-    items: [
-      { to: '/chains', label: 'Chains', icon: Link2 },
-      { to: '/fee-wallets', label: 'Fee wallets', icon: Fuel },
-      { to: '/audit-address', label: 'Audit address', icon: ShieldCheck },
-      { to: '/alchemy', label: 'Alchemy webhooks', icon: Radio },
-    ],
-  },
-  {
-    group: 'System',
-    items: [
-      { to: '/settings', label: 'Settings', icon: Settings },
-    ],
-  },
-]
-
-export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+/**
+ * Sidebar in two densities:
+ *  - full (xl+, and the mobile drawer): icon + label, grouped.
+ *  - rail (tablet, md–xl): icons only, labels in tooltips.
+ */
+export function Sidebar({
+  onNavigate,
+  rail = false,
+  username,
+}: {
+  onNavigate?: () => void
+  rail?: boolean
+  username: string
+}) {
   // Live recovery-queue badge — shared cache with the Held payouts page.
   const held = useHeldQueue({ refetchInterval: 30_000 })
   const heldCount = held.data?.count ?? 0
-
-  const liveCount = (to: string): number | undefined =>
+  const countFor = (to: string): number | undefined =>
     to === '/held-payouts' && heldCount > 0 ? heldCount : undefined
 
   return (
-    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col gap-1 border-r border-border bg-card p-3">
-      <div className="mb-2.5 border-b border-border px-1.5 pb-3.5 pt-1">
-        <Logo />
+    <aside
+      className={cn(
+        'sticky top-0 flex h-dvh shrink-0 flex-col border-r border-border bg-[var(--bg-sidebar)]',
+        rail ? 'w-[60px]' : 'w-60',
+      )}
+    >
+      <div
+        className={cn(
+          'flex h-14 shrink-0 items-center',
+          rail ? 'justify-center' : 'px-4',
+        )}
+      >
+        {rail ? <LogoMark size={28} /> : <Logo />}
       </div>
-      <nav className="flex flex-col gap-0.5 overflow-y-auto">
-        {sections.map((section) => (
-          <div key={section.group}>
-            <div className="mt-3.5 px-2.5 pb-1.5 pt-0 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[var(--fg-2)]">
-              {section.group}
-            </div>
-            {section.items.map((it) => {
-              const Icon = it.icon
-              const count = it.count ?? liveCount(it.to)
-              return (
-                <NavLink
-                  key={it.to}
-                  to={it.to}
-                  end={it.end}
-                  onClick={onNavigate}
-                  className={({ isActive }) =>
-                    cn(
-                      'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13.5px] text-[var(--fg-1)] transition-colors outline-none',
-                      'hover:bg-[var(--bg-hover)] hover:text-foreground',
-                      isActive &&
-                        'bg-secondary font-medium text-foreground [&_svg]:text-primary',
-                    )
-                  }
-                >
-                  <Icon className="size-4 shrink-0 text-[var(--fg-2)]" />
-                  <span className="truncate">{it.label}</span>
-                  {count != null && (
-                    <Badge
-                      variant={it.countVariant === 'warn' ? 'warn' : 'default'}
-                      className="ml-auto h-5 px-1.5 text-[10.5px]"
-                    >
-                      {count}
-                    </Badge>
-                  )}
-                </NavLink>
-              )
-            })}
+
+      <nav
+        aria-label="Primary"
+        className={cn(
+          'flex flex-1 flex-col overflow-y-auto pb-3',
+          rail ? 'items-center px-2' : 'px-3',
+        )}
+      >
+        {NAV_SECTIONS.map((section, i) => (
+          <div key={section.group} className={cn('flex flex-col gap-px', rail && 'items-center')}>
+            {rail ? (
+              i > 0 && <div className="my-2 h-px w-6 bg-border" aria-hidden />
+            ) : (
+              <div className="px-2.5 pt-5 pb-1.5 text-2xs font-medium text-[var(--fg-3)]">
+                {section.group}
+              </div>
+            )}
+            {section.items.map((it) => (
+              <SidebarLink
+                key={it.to}
+                item={it}
+                rail={rail}
+                count={countFor(it.to)}
+                onNavigate={onNavigate}
+              />
+            ))}
           </div>
         ))}
       </nav>
-      <div className="flex-1" />
-      <div className="flex flex-col gap-1.5 border-t border-border px-2 py-2.5 text-xs text-[var(--fg-2)]">
-        <div className="flex items-center justify-between">
-          <span>API</span>
-          <span className="flex items-center gap-1.5 text-success">
-            <StatusDot tone="success" pulse />
-            operational
-          </span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span>Runtime</span>
-          <span className="font-mono">CF Workers</span>
-        </div>
+
+      <div
+        className={cn(
+          'flex shrink-0 flex-col gap-px border-t border-border py-2',
+          rail ? 'items-center px-2' : 'px-3',
+        )}
+      >
+        <SidebarLink
+          item={{ to: '/settings', label: 'Settings', icon: Settings }}
+          rail={rail}
+          onNavigate={onNavigate}
+        />
+        <AccountMenu username={username} rail={rail} />
       </div>
     </aside>
   )
 }
 
+function SidebarLink({
+  item,
+  rail,
+  count,
+  onNavigate,
+}: {
+  item: NavItem
+  rail: boolean
+  count?: number
+  onNavigate?: () => void
+}) {
+  const Icon = item.icon
+  const link = (
+    <NavLink
+      to={item.to}
+      end={item.end}
+      onClick={onNavigate}
+      aria-label={rail ? item.label : undefined}
+      className={({ isActive }) =>
+        cn(
+          'group relative flex h-8 items-center rounded-md text-sm text-[var(--fg-1)] outline-none transition-colors duration-150',
+          'hover:bg-[var(--bg-hover)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
+          rail ? 'w-10 justify-center' : 'gap-2.5 px-2.5',
+          isActive &&
+            'bg-[var(--bg-active)] font-medium text-foreground [&_svg]:text-primary',
+        )
+      }
+    >
+      {({ isActive }) => (
+        <>
+          {isActive && !rail && (
+            <span
+              aria-hidden
+              className="absolute top-1.5 bottom-1.5 -left-3 w-[3px] rounded-r-full bg-primary"
+            />
+          )}
+          <Icon className="size-4 shrink-0 text-[var(--fg-2)] transition-colors group-hover:text-foreground" />
+          {!rail && <span className="truncate">{item.label}</span>}
+          {count != null &&
+            (rail ? (
+              <span
+                aria-label={`${count} waiting`}
+                className="absolute top-1 right-1 size-2 rounded-full bg-warn ring-2 ring-[var(--bg-sidebar)]"
+              />
+            ) : (
+              <span className="ml-auto rounded-sm bg-[var(--warn-bg)] px-1.5 font-mono text-2xs font-medium text-warn tabular-nums">
+                {count}
+              </span>
+            ))}
+        </>
+      )}
+    </NavLink>
+  )
+
+  if (!rail) return link
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{link}</TooltipTrigger>
+      <TooltipContent side="right">
+        {item.label}
+        {count != null && <span className="ml-1.5 opacity-70">{count}</span>}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+const ACCENT_AVATAR_BG: Record<Accent, string> = {
+  blue: 'd0e1ff,bfd3ff',
+  violet: 'e6d4ff,d3baff',
+  mint: 'c8f2e0,b0ecd3',
+}
+
+function AccountMenu({ username, rail }: { username: string; rail: boolean }) {
+  const { accent } = useTheme()
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+
+  const logout = useMutation({
+    mutationFn: () => api('/api/auth/logout', { method: 'POST' }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: sessionQuery.queryKey })
+      qc.clear()
+      navigate('/login', { replace: true })
+    },
+  })
+
+  const avatarUrl = `/api/avatar?seed=${encodeURIComponent(username)}&bg=${encodeURIComponent(ACCENT_AVATAR_BG[accent])}`
+  const avatar = (
+    <img
+      src={avatarUrl}
+      alt=""
+      width={24}
+      height={24}
+      className="size-6 shrink-0 rounded-full border border-border bg-[var(--bg-2)]"
+      loading="lazy"
+    />
+  )
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Account: ${username}`}
+          className={cn(
+            'flex h-10 cursor-pointer items-center rounded-md text-left text-sm outline-none transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-[var(--bg-hover)]',
+            rail ? 'w-10 justify-center' : 'gap-2.5 px-2',
+          )}
+        >
+          {avatar}
+          {!rail && (
+            <>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{username}</span>
+                <span className="block text-2xs text-[var(--fg-2)]">Operator</span>
+              </span>
+              <ChevronsUpDown className="size-3.5 text-[var(--fg-3)]" />
+            </>
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side={rail ? 'right' : 'top'} align="start" className="w-56">
+        <DropdownMenuLabel>Signed in as {username}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => navigate('/settings')}>
+          <Settings /> Settings &amp; security
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => logout.mutate()}
+          disabled={logout.isPending}
+        >
+          <LogOut /> {logout.isPending ? 'Signing out…' : 'Sign out'}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}

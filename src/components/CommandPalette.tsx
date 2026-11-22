@@ -43,43 +43,28 @@ interface Nav {
   label: string
   to: string
   icon: React.ComponentType<{ className?: string }>
-  group: 'Overview' | 'Money' | 'Operations' | 'Admin' | 'System'
+  group: 'Overview' | 'Payments' | 'Treasury' | 'Merchants' | 'Infrastructure' | 'System'
 }
 
 const NAV: Nav[] = [
   { label: 'Dashboard', to: '/', icon: LayoutDashboard, group: 'Overview' },
   { label: 'Activity', to: '/activity', icon: Activity, group: 'Overview' },
-  { label: 'Balances', to: '/balances', icon: CircleDollarSign, group: 'Money' },
-  { label: 'Address pool', to: '/pool', icon: Waypoints, group: 'Money' },
-  {
-    label: 'Pool addresses (park / re-enable)',
-    to: '/pool/addresses',
-    icon: Waypoints,
-    group: 'Money',
-  },
-  {
-    label: 'Auto-consolidation schedules',
-    to: '/consolidation-schedules',
-    icon: CalendarClock,
-    group: 'Money',
-  },
-  { label: 'Treasury', to: '/treasury', icon: Landmark, group: 'Money' },
-  { label: 'Exchange', to: '/exchange', icon: CandlestickChart, group: 'Money' },
-  { label: 'Invoices', to: '/invoices', icon: FileText, group: 'Money' },
-  { label: 'Payouts', to: '/payouts', icon: ArrowUpDown, group: 'Money' },
-  { label: 'Orphan txs', to: '/orphans', icon: AlertTriangle, group: 'Operations' },
-  {
-    label: 'Held payouts (recover stuck legs)',
-    to: '/held-payouts',
-    icon: LifeBuoy,
-    group: 'Operations',
-  },
-  { label: 'Webhooks', to: '/webhooks', icon: Webhook, group: 'Operations' },
-  { label: 'Merchants', to: '/merchants', icon: Store, group: 'Operations' },
-  { label: 'Chains', to: '/chains', icon: Link2, group: 'Admin' },
-  { label: 'Audit address', to: '/audit-address', icon: ShieldCheck, group: 'Admin' },
-  { label: 'Fee wallets', to: '/fee-wallets', icon: Wallet, group: 'Admin' },
-  { label: 'Alchemy webhooks', to: '/alchemy', icon: Radio, group: 'Admin' },
+  { label: 'Invoices', to: '/invoices', icon: FileText, group: 'Payments' },
+  { label: 'Payouts', to: '/payouts', icon: ArrowUpDown, group: 'Payments' },
+  { label: 'Held payouts (recover stuck legs)', to: '/held-payouts', icon: LifeBuoy, group: 'Payments' },
+  { label: 'Orphan txs', to: '/orphans', icon: AlertTriangle, group: 'Payments' },
+  { label: 'Balances', to: '/balances', icon: CircleDollarSign, group: 'Treasury' },
+  { label: 'Treasury', to: '/treasury', icon: Landmark, group: 'Treasury' },
+  { label: 'Exchange', to: '/exchange', icon: CandlestickChart, group: 'Treasury' },
+  { label: 'Auto-consolidation schedules', to: '/consolidation-schedules', icon: CalendarClock, group: 'Treasury' },
+  { label: 'Address pool', to: '/pool', icon: Waypoints, group: 'Treasury' },
+  { label: 'Pool addresses (park / re-enable)', to: '/pool/addresses', icon: Waypoints, group: 'Treasury' },
+  { label: 'Merchants', to: '/merchants', icon: Store, group: 'Merchants' },
+  { label: 'Webhooks', to: '/webhooks', icon: Webhook, group: 'Merchants' },
+  { label: 'Chains', to: '/chains', icon: Link2, group: 'Infrastructure' },
+  { label: 'Fee wallets', to: '/fee-wallets', icon: Wallet, group: 'Infrastructure' },
+  { label: 'Alchemy webhooks', to: '/alchemy', icon: Radio, group: 'Infrastructure' },
+  { label: 'Audit address', to: '/audit-address', icon: ShieldCheck, group: 'Infrastructure' },
   { label: 'Settings', to: '/settings', icon: Settings, group: 'System' },
 ]
 
