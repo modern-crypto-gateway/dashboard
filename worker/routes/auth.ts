@@ -1,15 +1,26 @@
-import { randomToken, sha256Hex, unseal, verifyPassword } from '../lib/crypto'
-import { kek, type Bindings } from '../lib/env'
+import { randomToken, sha256Hex, verifyPassword } from '../lib/crypto'
+import { type Bindings } from '../lib/env'
 import { error, HttpError, json, readJson } from '../lib/http'
 import { kvDelete, kvGet, kvPut, K, type UserRecord } from '../lib/kv'
 import {
+  COOKIE_CHAL,
+  COOKIE_SESS,
   createSession,
   destroySession,
   loadSession,
   parseCookies,
 } from '../lib/session'
-import { clientId, rateLimit, RL_LOGIN, RL_TOTP } from '../lib/ratelimit'
-import { verifyTotp } from '../lib/totp'
+import { clientId } from '../lib/ratelimit'
+import { guardAssertBelow, guardCount, guardHit } from '../lib/guard'
+import {
+  assertTotpNotLocked,
+  claimRecoveryCode,
+  clearTotpFailures,
+  recordTotpFailure,
+  userScope,
+  verifyUserTotpOnce,
+} from '../lib/stepup'
+import { turnstileEnabled, verifyTurnstile } from '../lib/turnstile'
 
 interface Challenge {
   username: string
@@ -18,6 +29,21 @@ interface Challenge {
 }
 
 const CHALLENGE_TTL = 5 * 60 // 5 minutes
+
+/* Brute-force limits. All counted exactly in the AuthGuard Durable Object.
+ *   - per IP (IPv6: per /64): password 10 / 5 min, 2FA 20 / 5 min
+ *   - per username: 30 wrong passwords / hour, then that username is refused
+ *     for the rest of the hour (Turnstile makes spraying this costly)
+ *   - per login challenge: 5 wrong 2FA codes, then the challenge is burned and
+ *     the password has to be entered again
+ *   - per user: 10 wrong 2FA / recovery codes per hour locks every 2FA check
+ *     (see stepup.ts) */
+const IP_PASSWORD = { limit: 10, window: 5 * 60 }
+const IP_TOTP = { limit: 20, window: 5 * 60 }
+const USER_PASSWORD_FAILS = { limit: 30, window: 60 * 60 }
+const CHALLENGE_ATTEMPTS = 5
+
+const USERNAME_MAX = 64
 
 /* ── /api/auth/session ──────────────────────────────────────── */
 
@@ -32,13 +58,22 @@ export async function getSession(req: Request, env: Bindings): Promise<Response>
   })
 }
 
+/* ── /api/auth/login-config (public) ─────────────────────────── */
+
+/** What the login screen needs before sign-in: the public Turnstile site key. */
+export function getLoginConfig(_req: Request, env: Bindings): Response {
+  return json({
+    turnstileSiteKey: turnstileEnabled(env) ? env.TURNSTILE_SITE_KEY : null,
+  })
+}
+
 /* ── /api/auth/logout ───────────────────────────────────────── */
 
 export async function postLogout(req: Request, env: Bindings): Promise<Response> {
-  const { gw_sess } = parseCookies(req)
+  const token = parseCookies(req)[COOKIE_SESS]
   const headers = new Headers()
-  if (gw_sess) {
-    const setCookies = await destroySession(env, gw_sess)
+  if (token) {
+    const setCookies = await destroySession(env, token)
     for (const c of setCookies) headers.append('Set-Cookie', c)
   }
   return json({ ok: true }, { headers })
@@ -50,17 +85,24 @@ export async function postLoginPassword(
   req: Request,
   env: Bindings,
 ): Promise<Response> {
-  await rateLimit(env, 'login', clientId(req), RL_LOGIN)
+  await guardHit(env, `ip:${clientId(req)}`, 'login-pw', IP_PASSWORD.limit, IP_PASSWORD.window)
   const body = await readJson<{
     username?: string
     password?: string
     remember?: boolean
+    turnstileToken?: string
   }>(req)
-  const username = (body.username ?? '').trim()
-  const password = body.password ?? ''
-  if (!username || !password) {
+  // Turnstile first: a bot without a fresh token never reaches the password
+  // check or the per-username counter.
+  await verifyTurnstile(env, req, body.turnstileToken)
+
+  const username = (typeof body.username === 'string' ? body.username : '').trim()
+  const password = typeof body.password === 'string' ? body.password : ''
+  if (!username || !password || username.length > USERNAME_MAX || password.length > 1024) {
     return error('BAD_INPUT', 'Username and password required', 400)
   }
+
+  await guardAssertBelow(env, userScope(username), 'pw-fail', USER_PASSWORD_FAILS.limit)
 
   const user = await kvGet<UserRecord>(env, K.user(username), 'json')
   // Dummy verify to equalize timing on non-existent users.
@@ -72,6 +114,10 @@ export async function postLoginPassword(
         'pbkdf2$sha256$100000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
       )
   if (!user || !ok) {
+    const r = await guardCount(env, userScope(username), 'pw-fail', USER_PASSWORD_FAILS.window)
+    if (r.count === USER_PASSWORD_FAILS.limit) {
+      console.warn('security: password failures limit reached', { username })
+    }
     return error('BAD_CREDS', 'Invalid username or password', 401)
   }
 
@@ -84,15 +130,15 @@ export async function postLoginPassword(
   }
   await kvPut(env, chKey, challenge, { expirationTtl: CHALLENGE_TTL })
 
-  // Stash the challenge token in an HttpOnly short-lived cookie so the
-  // SPA's second request doesn't have to shuttle it through JS.
+  // The challenge token lives only in an HttpOnly cookie; it is not returned
+  // in the body, so page scripts never see it.
   const headers = new Headers()
   headers.append(
     'Set-Cookie',
-    `gw_chal=${encodeURIComponent(challengeToken)}; Path=/; Max-Age=${CHALLENGE_TTL}; HttpOnly; Secure; SameSite=Strict`,
+    `${COOKIE_CHAL}=${encodeURIComponent(challengeToken)}; Path=/; Max-Age=${CHALLENGE_TTL}; HttpOnly; Secure; SameSite=Strict`,
   )
 
-  return json({ challengeToken }, { headers })
+  return json({ ok: true }, { headers })
 }
 
 /* ── /api/auth/login/totp ───────────────────────────────────── */
@@ -101,14 +147,15 @@ export async function postLoginTotp(
   req: Request,
   env: Bindings,
 ): Promise<Response> {
-  await rateLimit(env, 'totp', clientId(req), RL_TOTP)
+  await guardHit(env, `ip:${clientId(req)}`, 'login-totp', IP_TOTP.limit, IP_TOTP.window)
   const body = await readJson<{ code?: string; recovery?: string }>(req)
 
-  const { gw_chal } = parseCookies(req)
-  if (!gw_chal) {
+  const chalToken = parseCookies(req)[COOKIE_CHAL]
+  if (!chalToken) {
     return error('NO_CHALLENGE', 'No login challenge — re-enter your password', 401)
   }
-  const chKey = `challenge:${await sha256Hex(gw_chal)}`
+  const chHash = await sha256Hex(chalToken)
+  const chKey = `challenge:${chHash}`
   const challenge = await kvGet<Challenge>(env, chKey, 'json')
   if (!challenge) {
     return error('NO_CHALLENGE', 'Login challenge expired — re-enter your password', 401)
@@ -120,36 +167,50 @@ export async function postLoginTotp(
     return error('NO_USER', 'Account missing or unbound', 401)
   }
 
-  const code = (body.code ?? '').trim()
-  const recovery = (body.recovery ?? '').trim()
+  // Each challenge gets a few tries, counted exactly; then it is burned.
+  const tries = await guardCount(env, userScope(user.username), `chal:${chHash}`, CHALLENGE_TTL)
+  if (tries.count > CHALLENGE_ATTEMPTS) {
+    await kvDelete(env, chKey)
+    return error('NO_CHALLENGE', 'Too many wrong codes — re-enter your password', 401)
+  }
+  await assertTotpNotLocked(env, user.username)
+
+  const code = (typeof body.code === 'string' ? body.code : '').trim()
+  const recovery = (typeof body.recovery === 'string' ? body.recovery : '').trim()
 
   let passed = false
   if (code) {
-    const secret = await unseal(user.totpSecretSealed, kek(env))
-    passed = await verifyTotp(code, secret)
+    passed = await verifyUserTotpOnce(env, user, code)
   } else if (recovery) {
     const h = await sha256Hex(recovery)
     const idx = user.recoveryHashes.indexOf(h)
-    if (idx >= 0) {
+    // Claim the code atomically before honouring it, so two parallel requests
+    // can't both spend it.
+    if (idx >= 0 && (await claimRecoveryCode(env, user.username, h))) {
       passed = true
-      // Consume the code.
+      const fresh = await kvGet<UserRecord>(env, K.user(user.username), 'json')
       const updated: UserRecord = {
-        ...user,
-        recoveryHashes: user.recoveryHashes.filter((_, i) => i !== idx),
+        ...(fresh ?? user),
+        recoveryHashes: (fresh ?? user).recoveryHashes.filter((x) => x !== h),
         updatedAt: Math.floor(Date.now() / 1000),
       }
       await kvPut(env, K.user(user.username), updated)
+      console.warn('security: recovery code used', { username: user.username })
+    } else {
+      await recordTotpFailure(env, user.username)
     }
   } else {
     return error('BAD_INPUT', 'Provide an authenticator code or recovery code', 400)
   }
 
   if (!passed) {
+    if (tries.count >= CHALLENGE_ATTEMPTS) await kvDelete(env, chKey)
     return error('BAD_CODE', 'Invalid code', 401)
   }
 
   // Consume challenge, mint session.
   await kvDelete(env, chKey)
+  await clearTotpFailures(env, user.username)
   const { setCookies } = await createSession(
     env,
     req,
@@ -160,7 +221,7 @@ export async function postLoginTotp(
   // Clear the challenge cookie.
   headers.append(
     'Set-Cookie',
-    `gw_chal=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`,
+    `${COOKIE_CHAL}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`,
   )
   for (const c of setCookies) headers.append('Set-Cookie', c)
   return json({ authenticated: true }, { headers })

@@ -2,7 +2,15 @@
  * Env accessors with early fail-fast for missing bindings/secrets.
  */
 
-export interface Bindings extends Env {}
+import type { AuthGuard } from './guard'
+
+export interface Bindings extends Env {
+  /** Exact login/2FA attempt counters (Durable Object, see guard.ts). */
+  AUTH_GUARD: DurableObjectNamespace<AuthGuard>
+  /** Cloudflare Turnstile. Login requires a Turnstile token once the secret is set. */
+  TURNSTILE_SITE_KEY?: string
+  TURNSTILE_SECRET_KEY?: string
+}
 
 export function kv(env: Bindings): KVNamespace {
   if (!env.DASHBOARD_KV) {

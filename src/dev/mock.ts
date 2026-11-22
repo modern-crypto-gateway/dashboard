@@ -272,7 +272,8 @@ function buildRoutes(db: MockDb, flags: Set<Flag>, auth: { authenticated: boolea
         ? { authenticated: true, user: { username: 'operator' }, baseUrl: 'https://gateway.wizzpay.example' }
         : { authenticated: false },
     ),
-    route('POST', '/api/auth/login/password', () => ({ challengeToken: gen.alnum(r, 32) })),
+    route('GET', '/api/auth/login-config', () => ({ turnstileSiteKey: null })),
+    route('POST', '/api/auth/login/password', () => ({ ok: true })),
     route('POST', '/api/auth/login/totp', () => {
       auth.authenticated = true
       return { authenticated: true }

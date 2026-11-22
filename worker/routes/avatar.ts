@@ -34,6 +34,9 @@ export async function getAvatar(req: Request, _env: Bindings): Promise<Response>
       'Content-Type': 'image/svg+xml',
       'Cache-Control': 'public, max-age=86400, immutable',
       'X-Content-Type-Options': 'nosniff',
+      // Third-party SVG: if opened directly it must not run script on our
+      // origin. Inside <img> this changes nothing.
+      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
     },
   })
 }

@@ -4,9 +4,11 @@
  * A session token is 32 random URL-safe bytes. The session is keyed in KV by
  * `sha256(token)` so that reading KV doesn't hand out cookies.
  *
- * Cookies:
- *   gw_sess — HttpOnly, Secure, SameSite=Strict; carries the raw token.
- *   gw_csrf — NOT HttpOnly (readable by SPA), SameSite=Strict; double-submit
+ * Cookies (the __Host- prefix makes the browser refuse any version of the
+ * cookie that is not Secure, host-only and Path=/, so a sibling subdomain
+ * can't plant or overwrite them):
+ *   __Host-gw_sess — HttpOnly, Secure, SameSite=Strict; carries the raw token.
+ *   __Host-gw_csrf — NOT HttpOnly (readable by SPA), SameSite=Strict; double-submit
  *             token compared against a per-session value in KV on every
  *             non-GET request.
  *
@@ -17,6 +19,10 @@
 import { randomToken, sha256Hex, timingSafeEqualStr } from './crypto'
 import { kvDelete, kvGet, kvPut, K, type SessionRecord } from './kv'
 import type { Bindings } from './env'
+
+export const COOKIE_SESS = '__Host-gw_sess'
+export const COOKIE_CSRF = '__Host-gw_csrf'
+export const COOKIE_CHAL = '__Host-gw_chal'
 
 const SESSION_IDLE_SECONDS = 30 * 60 // 30 min idle timeout
 const SESSION_DEFAULT_TTL_SECONDS = 8 * 60 * 60 // 8h absolute
@@ -96,8 +102,9 @@ export async function createSession(
   const csrf = randomToken(24)
   const now = Math.floor(Date.now() / 1000)
   const ttl = remember ? SESSION_REMEMBER_TTL_SECONDS : SESSION_DEFAULT_TTL_SECONDS
+  // The raw token is never stored: KV holds only its hash (the key), so a
+  // KV dump or a leaked API token doesn't hand out live session cookies.
   const record: SessionRecord = {
-    token,
     username,
     createdAt: now,
     lastSeenAt: now,
@@ -111,13 +118,13 @@ export async function createSession(
   await addToUserIndex(env, username, hash)
 
   const setCookies = [
-    buildSetCookie('gw_sess', token, {
+    buildSetCookie(COOKIE_SESS, token, {
       maxAge: ttl,
       httpOnly: true,
       secure: true,
       sameSite: 'Strict',
     }),
-    buildSetCookie('gw_csrf', csrf, {
+    buildSetCookie(COOKIE_CSRF, csrf, {
       maxAge: ttl,
       httpOnly: false,
       secure: true,
@@ -137,8 +144,8 @@ export async function destroySession(
   await kvDelete(env, K.csrf(hash))
   if (record) await removeFromUserIndex(env, record.username, hash)
   return [
-    buildSetCookie('gw_sess', '', { maxAge: 0 }),
-    buildSetCookie('gw_csrf', '', { maxAge: 0, httpOnly: false }),
+    buildSetCookie(COOKIE_SESS, '', { maxAge: 0 }),
+    buildSetCookie(COOKIE_CSRF, '', { maxAge: 0, httpOnly: false }),
   ]
 }
 
@@ -192,11 +199,18 @@ export async function loadSession(
   env: Bindings,
   req: Request,
 ): Promise<{ record: SessionRecord; hash: string } | null> {
-  const { gw_sess: token } = parseCookies(req)
+  const token = parseCookies(req)[COOKIE_SESS]
   if (!token) return null
   const hash = await sha256Hex(token)
   const record = await kvGet<SessionRecord>(env, K.session(hash), 'json')
   if (!record) return null
+
+  // Sessions created before the raw token stopped being stored are retired:
+  // their token sat in KV in the clear.
+  if (record.token !== undefined) {
+    await destroySessionByHash(env, hash)
+    return null
+  }
 
   const now = Math.floor(Date.now() / 1000)
   if (now >= record.expiresAt) {
@@ -229,7 +243,7 @@ export async function verifyCsrf(
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true
   const header = req.headers.get('X-CSRF-Token') || ''
   const cookies = parseCookies(req)
-  const cookie = cookies.gw_csrf || ''
+  const cookie = cookies[COOKIE_CSRF] || ''
   if (!header || !cookie || header !== cookie) return false
   const stored = await kvGet(env, K.csrf(hash), 'text')
   if (!stored) return false

@@ -29,7 +29,7 @@ export async function api<T = unknown>(
   if (init.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
-  const csrf = getCookie('gw_csrf')
+  const csrf = getCookie('__Host-gw_csrf')
   if (csrf && init.method && init.method !== 'GET') {
     headers.set('X-CSRF-Token', csrf)
   }

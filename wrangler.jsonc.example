@@ -75,7 +75,27 @@
 				"period": 60
 			}
 		}
-	]
+	],
+
+	/**
+	 * Exact login / 2FA attempt counters (worker/lib/guard.ts). KV counters
+	 * under-count parallel guesses, so brute-force limits live here.
+	 */
+	"durable_objects": {
+		"bindings": [{ "name": "AUTH_GUARD", "class_name": "AuthGuard" }]
+	},
+	"migrations": [{ "tag": "v1-auth-guard", "new_sqlite_classes": ["AuthGuard"] }],
+
+	/**
+	 * Cloudflare Turnstile on the login page. Create a widget in the
+	 * Cloudflare dashboard (Turnstile > Add widget, hostname = this
+	 * dashboard's domain), put its site key here, and set the secret with
+	 *   wrangler secret put TURNSTILE_SECRET_KEY
+	 * Login requires Turnstile only once both are set.
+	 */
+	"vars": {
+		"TURNSTILE_SITE_KEY": ""
+	}
 
 	/**
 	 * Required secrets (set via `wrangler secret put <NAME>`):
@@ -86,6 +106,9 @@
 	 *       openssl rand -base64 32
 	 *     Rotating this invalidates all sealed blobs — only do it when
 	 *     you are also prepared to re-onboard the dashboard.
+	 *
+	 *   TURNSTILE_SECRET_KEY (optional, enables Turnstile on login together
+	 *     with vars.TURNSTILE_SITE_KEY)
 	 *
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

@@ -22,6 +22,7 @@ import {
   postUser,
 } from './routes/setup'
 import {
+  getLoginConfig,
   getSession,
   postLoginPassword,
   postLoginTotp,
@@ -90,6 +91,7 @@ async function guardAuthAndCsrf(req: Request, env: Bindings) {
 /* ── public / unauthenticated ─────────────────────────────── */
 router.get('/api/auth/setup-status', getSetupStatus)
 router.get('/api/auth/session', getSession)
+router.get('/api/auth/login-config', getLoginConfig)
 router.get('/api/avatar', getAvatar)
 router.get('/api/health', async (_req, env) => {
   const done = await kvGet(env, K.setupComplete, 'text')
@@ -113,13 +115,16 @@ router.get('/api/settings/config', async (req, env) => {
   await requireAuth(req, env)
   return getConfig(req, env)
 })
+// Base URL and admin key decide where the admin key is sent: a stolen
+// session alone must not be able to point them at another host, so both
+// need a fresh authenticator code (checked in the handlers).
 router.post('/api/settings/base-url', async (req, env) => {
-  await guardAuthAndCsrf(req, env)
-  return settingsBaseUrl(req, env)
+  const sess = await guardAuthAndCsrf(req, env)
+  return settingsBaseUrl(req, env, sess.record.username)
 })
 router.post('/api/settings/admin-key', async (req, env) => {
-  await guardAuthAndCsrf(req, env)
-  return settingsAdminKey(req, env)
+  const sess = await guardAuthAndCsrf(req, env)
+  return settingsAdminKey(req, env, sess.record.username)
 })
 router.post('/api/settings/default-merchant', async (req, env) => {
   await guardAuthAndCsrf(req, env)
@@ -151,7 +156,7 @@ router.post('/api/security/password', async (req, env) => {
     `${sess.record.username}:${clientId(req)}`,
     RL_SEC_PASSWORD,
   )
-  return postChangePassword(req, env, sess.record.username)
+  return postChangePassword(req, env, sess.record.username, sess.hash)
 })
 router.post('/api/security/totp/begin', async (req, env) => {
   const sess = await guardAuthAndCsrf(req, env)
@@ -171,7 +176,7 @@ router.post('/api/security/totp/commit', async (req, env) => {
     `${sess.record.username}:${clientId(req)}`,
     RL_SEC_TOTP_ROTATE,
   )
-  return securityTotpCommit(req, env, sess.record.username)
+  return securityTotpCommit(req, env, sess.record.username, sess.hash)
 })
 router.post('/api/security/recovery/regenerate', async (req, env) => {
   const sess = await guardAuthAndCsrf(req, env)
@@ -354,9 +359,11 @@ async function handle(
   }
 }
 
+export { AuthGuard } from './lib/guard'
+
 export default {
   async fetch(request, env, ctx) {
     const res = await handle(request, env, ctx)
     return applySecurityHeaders(res)
   },
-} satisfies ExportedHandler<Env>
+} satisfies ExportedHandler<Bindings>

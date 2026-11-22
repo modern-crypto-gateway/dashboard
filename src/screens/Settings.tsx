@@ -29,6 +29,10 @@ export function SettingsPage() {
 
   const [baseUrl, setBaseUrl] = React.useState('')
   const [adminKey, setAdminKey] = React.useState('')
+  // Both changes decide where the admin key is sent, so each needs a fresh
+  // authenticator code; a stolen session alone can't make them.
+  const [baseUrlTotp, setBaseUrlTotp] = React.useState('')
+  const [adminKeyTotp, setAdminKeyTotp] = React.useState('')
 
   // Re-seed the input when the loaded baseUrl changes (e.g. after save).
   const loadedBaseUrl = cfg.data?.baseUrl ?? null
@@ -41,20 +45,24 @@ export function SettingsPage() {
   }
 
   const saveBaseUrl = useMutation({
-    mutationFn: (body: { baseUrl: string }) =>
+    mutationFn: (body: { baseUrl: string; totp: string }) =>
       api('/api/settings/base-url', {
         method: 'POST',
         body: JSON.stringify(body),
       }),
     onSuccess: () => {
       toast.success('Base URL updated')
+      setBaseUrlTotp('')
       qc.invalidateQueries({ queryKey: ['settings', 'config'] })
     },
-    onError: (e: ApiError) => toast.error(e.message || 'Could not update'),
+    onError: (e: ApiError) => {
+      toast.error(e.message || 'Could not update')
+      setBaseUrlTotp('')
+    },
   })
 
   const rotateKey = useMutation({
-    mutationFn: (body: { adminKey: string }) =>
+    mutationFn: (body: { adminKey: string; totp: string }) =>
       api('/api/settings/admin-key', {
         method: 'POST',
         body: JSON.stringify(body),
@@ -62,9 +70,13 @@ export function SettingsPage() {
     onSuccess: () => {
       toast.success('Admin key rotated')
       setAdminKey('')
+      setAdminKeyTotp('')
       qc.invalidateQueries({ queryKey: ['settings', 'config'] })
     },
-    onError: (e: ApiError) => toast.error(e.message || 'Could not rotate'),
+    onError: (e: ApiError) => {
+      toast.error(e.message || 'Could not rotate')
+      setAdminKeyTotp('')
+    },
   })
 
   return (
@@ -83,7 +95,7 @@ export function SettingsPage() {
               className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end"
               onSubmit={(e) => {
                 e.preventDefault()
-                saveBaseUrl.mutate({ baseUrl: baseUrl.trim() })
+                saveBaseUrl.mutate({ baseUrl: baseUrl.trim(), totp: baseUrlTotp })
               }}
             >
               <div className="min-w-0 flex-1">
@@ -101,11 +113,13 @@ export function SettingsPage() {
                   )}
                 </Field>
               </div>
+              <TotpField value={baseUrlTotp} onChange={setBaseUrlTotp} />
               <Button
                 type="submit"
                 className="self-end"
                 disabled={
                   saveBaseUrl.isPending ||
+                  baseUrlTotp.length !== 6 ||
                   !/^https?:\/\//.test(baseUrl) ||
                   baseUrl === cfg.data?.baseUrl
                 }
@@ -148,7 +162,7 @@ export function SettingsPage() {
               className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-start"
               onSubmit={(e) => {
                 e.preventDefault()
-                rotateKey.mutate({ adminKey })
+                rotateKey.mutate({ adminKey, totp: adminKeyTotp })
               }}
             >
               <div className="min-w-0 flex-1">
@@ -163,10 +177,11 @@ export function SettingsPage() {
                   />
                 </Field>
               </div>
+              <TotpField value={adminKeyTotp} onChange={setAdminKeyTotp} />
               <Button
                 type="submit"
                 className="self-end sm:mt-[26px] sm:self-start"
-                disabled={rotateKey.isPending || adminKey.length < 32}
+                disabled={rotateKey.isPending || adminKey.length < 32 || adminKeyTotp.length !== 6}
               >
                 <Save className="size-4" />
                 {rotateKey.isPending
@@ -327,5 +342,24 @@ function DefaultMerchantCard({ currentId }: { currentId: string | null }) {
         </Button>
       </form>
     </Card>
+  )
+}
+
+/** 6-digit authenticator code input used to confirm sensitive settings. */
+function TotpField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="sm:w-32">
+      <Field label="Authenticator code">
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          placeholder="123456"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          maxLength={6}
+          className="font-mono tracking-widest"
+        />
+      </Field>
+    </div>
   )
 }

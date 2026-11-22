@@ -62,8 +62,32 @@ export async function rateLimit(
   })
 }
 
+/**
+ * Rate-limit identity for the caller. IPv4 addresses are used as-is. IPv6
+ * addresses are cut to their /64 prefix: one subscriber usually holds a whole
+ * /64, so keying on the full address would hand an attacker billions of
+ * separate buckets.
+ */
 export function clientId(req: Request): string {
-  return req.headers.get('cf-connecting-ip') || 'anon'
+  const ip = req.headers.get('cf-connecting-ip') || 'anon'
+  return ip.includes(':') ? ipv6Prefix64(ip) : ip
+}
+
+export function ipv6Prefix64(ip: string): string {
+  const addr = ip.split('%')[0].toLowerCase()
+  // IPv4-mapped (::ffff:1.2.3.4): the IPv4 part is the identity.
+  const v4 = addr.match(/(\d{1,3}(?:\.\d{1,3}){3})$/)
+  if (v4) return v4[1]
+  const [head, tail] = addr.includes('::') ? addr.split('::', 2) : [addr, null]
+  const h = head ? head.split(':') : []
+  const t = tail ? tail.split(':') : []
+  const fill = tail === null ? 0 : Math.max(0, 8 - h.length - t.length)
+  const groups = [...h, ...Array<string>(fill).fill('0'), ...t]
+  const prefix = groups
+    .slice(0, 4)
+    .map((g) => g.replace(/^0+(?=.)/, '') || '0')
+    .join(':')
+  return `${prefix}::/64`
 }
 
 /* ── Window presets for the KV limiter ─────────────────────

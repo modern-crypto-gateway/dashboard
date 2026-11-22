@@ -66,7 +66,8 @@ export interface UserRecord {
 }
 
 export interface SessionRecord {
-  token: string
+  /** Legacy: older records stored the raw token. New ones never do. */
+  token?: string
   username: string
   createdAt: number
   lastSeenAt: number

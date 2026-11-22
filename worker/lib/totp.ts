@@ -93,19 +93,32 @@ export async function verifyTotp(
   secretB32: string,
   opts: { window?: number; step?: number; digits?: number } = {},
 ): Promise<boolean> {
+  return (await matchTotpStep(code, secretB32, opts)) !== null
+}
+
+/**
+ * Like verifyTotp, but returns the time step the code matched (or null).
+ * Callers that must stop a code being replayed inside its ~90s validity
+ * claim the step once (see guard.ts) and refuse a second use.
+ */
+export async function matchTotpStep(
+  code: string,
+  secretB32: string,
+  opts: { window?: number; step?: number; digits?: number } = {},
+): Promise<number | null> {
   const step = opts.step ?? 30
   const window = opts.window ?? 1
   const digits = opts.digits ?? 6
   const now = Math.floor(Date.now() / 1000 / step)
   const secret = base32Decode(secretB32)
   const cleanCode = code.replace(/\s+/g, '')
-  if (cleanCode.length !== digits || !/^\d+$/.test(cleanCode)) return false
+  if (cleanCode.length !== digits || !/^\d+$/.test(cleanCode)) return null
   for (let i = -window; i <= window; i++) {
     const expected = await hotp(secret, now + i, digits)
     // constant-time-ish per character compare
     let diff = 0
     for (let j = 0; j < digits; j++) diff |= expected.charCodeAt(j) ^ cleanCode.charCodeAt(j)
-    if (diff === 0) return true
+    if (diff === 0) return now + i
   }
-  return false
+  return null
 }

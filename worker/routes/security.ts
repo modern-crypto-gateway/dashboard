@@ -27,6 +27,7 @@ import {
   listUserSessions,
 } from '../lib/session'
 import { generateTotpSecretB32, otpauthUrl, verifyTotp } from '../lib/totp'
+import { verifyUserTotpOnce } from '../lib/stepup'
 
 async function loadUser(env: Bindings, username: string): Promise<UserRecord> {
   const u = await kvGet<UserRecord>(env, K.user(username), 'json')
@@ -34,15 +35,8 @@ async function loadUser(env: Bindings, username: string): Promise<UserRecord> {
   return u
 }
 
-async function verifyCurrentTotp(
-  env: Bindings,
-  user: UserRecord,
-  code: string,
-): Promise<boolean> {
-  if (!user.totpSecretSealed) return false
-  const secret = await unseal(user.totpSecretSealed, kek(env))
-  return verifyTotp(code, secret)
-}
+// Single-use, lockout-counted check of the current authenticator code.
+const verifyCurrentTotp = verifyUserTotpOnce
 
 /* ── sessions ─────────────────────────────────────────────── */
 
@@ -99,6 +93,7 @@ export async function postChangePassword(
   req: Request,
   env: Bindings,
   username: string,
+  currentHash: string,
 ): Promise<Response> {
   const body = await readJson<{
     oldPassword?: string
@@ -127,7 +122,10 @@ export async function postChangePassword(
     updatedAt: Math.floor(Date.now() / 1000),
   }
   await kvPut(env, K.user(username), updated)
-  return json({ ok: true })
+  // A new password must end every other session: if the old password leaked,
+  // the session it opened has to go too.
+  const revoked = await destroyAllSessionsFor(env, username, currentHash)
+  return json({ ok: true, revokedSessions: revoked })
 }
 
 /* ── rotate TOTP ──────────────────────────────────────────── */
@@ -162,6 +160,7 @@ export async function postTotpCommit(
   req: Request,
   env: Bindings,
   username: string,
+  currentHash: string,
 ): Promise<Response> {
   const body = await readJson<{ code?: string; currentTotp?: string }>(req)
   const code = (body.code ?? '').trim()
@@ -189,7 +188,8 @@ export async function postTotpCommit(
   }
   await kvPut(env, K.user(username), updated)
   await kvDelete(env, pendingRotateKey(username))
-  return json({ ok: true })
+  const revoked = await destroyAllSessionsFor(env, username, currentHash)
+  return json({ ok: true, revokedSessions: revoked })
 }
 
 /* ── regenerate recovery codes ────────────────────────────── */

@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { KeyRound, Lock } from '@/components/icons'
@@ -14,6 +14,7 @@ import { OtpInput } from '@/components/OtpInput'
 import { PasswordField } from '@/components/PasswordField'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Turnstile, type TurnstileHandle } from '@/components/Turnstile'
 
 type Stage = 'creds' | 'totp' | 'recovery'
 
@@ -24,6 +25,15 @@ export function LoginScreen() {
   const [code, setCode] = React.useState('')
   const [recovery, setRecovery] = React.useState('')
   const [remember, setRemember] = React.useState(true)
+  const [turnstileToken, setTurnstileToken] = React.useState('')
+  const turnstileRef = React.useRef<TurnstileHandle>(null)
+
+  const loginConfig = useQuery({
+    queryKey: ['auth', 'login-config'],
+    queryFn: () => api<{ turnstileSiteKey: string | null }>('/api/auth/login-config'),
+    staleTime: Infinity,
+  })
+  const siteKey = loginConfig.data?.turnstileSiteKey ?? null
 
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -31,8 +41,13 @@ export function LoginScreen() {
   const needsSetup = setup.data ? !setup.data.setupComplete : false
 
   const stepOne = useMutation({
-    mutationFn: (body: { username: string; password: string; remember: boolean }) =>
-      api<{ challengeToken: string }>('/api/auth/login/password', {
+    mutationFn: (body: {
+      username: string
+      password: string
+      remember: boolean
+      turnstileToken?: string
+    }) =>
+      api<{ ok: true }>('/api/auth/login/password', {
         method: 'POST',
         body: JSON.stringify(body),
       }),
@@ -40,6 +55,8 @@ export function LoginScreen() {
     onError: (e: ApiError) => {
       toast.error(e.message || 'Invalid credentials')
     },
+    // A Turnstile token works once; get a fresh one for the next attempt.
+    onSettled: () => turnstileRef.current?.reset(),
   })
 
   const stepTwo = useMutation({
@@ -90,7 +107,12 @@ export function LoginScreen() {
               className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault()
-                stepOne.mutate({ username, password, remember })
+                stepOne.mutate({
+                  username,
+                  password,
+                  remember,
+                  ...(siteKey ? { turnstileToken } : {}),
+                })
               }}
             >
               <Field label="Username" htmlFor="u">
@@ -123,10 +145,25 @@ export function LoginScreen() {
                 />
                 <span>Keep me signed in for 7 days</span>
               </label>
+              {siteKey && (
+                <Turnstile
+                  ref={turnstileRef}
+                  siteKey={siteKey}
+                  action="login"
+                  onToken={setTurnstileToken}
+                  onError={(m) => toast.error(m)}
+                />
+              )}
               <Button
                 type="submit"
                 className="w-full"
-                disabled={stepOne.isPending || !username || !password}
+                disabled={
+                  stepOne.isPending ||
+                  !username ||
+                  !password ||
+                  loginConfig.isLoading ||
+                  (!!siteKey && !turnstileToken)
+                }
               >
                 {stepOne.isPending ? (
                   'Signing in…'
