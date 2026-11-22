@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from '@/components/Sidebar'
 import { Topbar } from '@/components/Topbar'
 import {
@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 
 export function AppShell() {
   const session = useSession()
+  const { pathname } = useLocation()
   const username = session.data?.user?.username ?? 'admin'
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [paletteOpen, setPaletteOpen] = React.useState(false)
@@ -73,7 +74,8 @@ export function AppShell() {
             onOpenCommandPalette={() => setPaletteOpen(true)}
           />
           <div
-            className="mx-auto w-full max-w-[1360px] flex-1 px-5 pt-8 pb-20 md:px-8 lg:px-10"
+            key={pathname}
+            className="page-enter mx-auto w-full max-w-[1360px] flex-1 px-5 pt-8 pb-20 md:px-8 lg:px-10"
           >
             <Outlet />
           </div>

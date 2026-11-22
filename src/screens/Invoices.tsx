@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Link } from 'react-router-dom'
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   Activity,
@@ -11,10 +11,20 @@ import {
   FileText,
   Hash,
   KeyRound,
-  Loader2,
   Plus,
   Webhook,
   X,
+  ArrowsLeftRight,
+  Braces,
+  Calendar,
+  CheckCircle2,
+  Dollar,
+  Layers,
+  ListBullets,
+  QrCode as QrCodeIcon,
+  Scale,
+  Tag,
+  Timer,
 } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
@@ -78,9 +88,16 @@ import {
   Sheet,
   SheetBody,
   SheetContent,
-  SheetHeader,
-  SheetTitle,
+  SheetFooter,
+  SheetHero,
+  SheetSection,
+  SheetTabs,
 } from '@/components/ui/sheet'
+import { StatusPill, toneFor, type StatusTone } from '@/components/StatusPill'
+import { Pager, RowAvatar, TableCard } from '@/components/DataTable'
+import { Table, TableWrap, TBody, Td, Th, THead, Tr } from '@/components/ui/table'
+import { chainInfo } from '@/lib/chains'
+import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 
 /* ── public helpers reused by Payouts ───────────────────── */
@@ -111,42 +128,33 @@ function normalizeInvoiceStatus(
   }
 }
 
-function statusVariant(
-  status: string,
-): 'success' | 'accent' | 'warn' | 'danger' | 'default' {
+function statusTone(status: string): StatusTone {
   switch (status) {
-    // Invoice lifecycle (v3)
     case 'completed':
-    case 'confirmed': // payouts + legacy invoices
-      return 'success'
+    case 'confirmed':
+      return 'ok'
     case 'processing':
-      return 'warn'
-    case 'pending':
-      return 'default'
-    // Payouts
     case 'submitted':
     case 'reserved':
     case 'topping-up':
-    case 'planned':
-      return 'warn'
-    // Tx ingest
     case 'detected':
-      return 'warn'
+      return 'run'
+    case 'pending':
+    case 'planned':
+      return 'wait'
+    case 'expired':
+      return 'off'
     case 'reverted':
     case 'orphaned':
-      return 'danger'
-    // Terminal failures
-    case 'expired':
     case 'canceled':
     case 'failed':
-      return 'danger'
-    // Legacy fidelity values, kept for back-compat with old gateways
+      return 'bad'
     case 'overpaid':
-      return 'accent'
+      return 'info'
     case 'partial':
       return 'warn'
     default:
-      return 'default'
+      return toneFor(status)
   }
 }
 
@@ -158,49 +166,35 @@ export function StatusBadge({
   status: string
   extraStatus?: InvoiceExtraStatus
   /**
-   * When `true`, render the lifecycle badge on top and the fidelity chip
-   * below as a smaller text affordance — used in narrow list cells to keep
-   * the row from blowing out into the next column.
+   * When `true`, render the lifecycle pill on top and the fidelity note
+   * below — used in narrow list cells.
    */
   stack?: boolean
 }) {
   const norm = normalizeInvoiceStatus(status)
   const effectiveExtra = extraStatus ?? norm.extra
-  if (stack) {
-    return (
-      <span className="inline-flex flex-col items-start gap-0.5">
-        <Badge variant={statusVariant(norm.status)}>{norm.status}</Badge>
-        {effectiveExtra && (
-          <span
-            className={
-              'text-2xs font-medium uppercase tracking-wider ' +
-              (effectiveExtra === 'overpaid' ? 'text-primary' : 'text-warn')
-            }
-          >
-            {effectiveExtra}
-          </span>
-        )}
-      </span>
-    )
-  }
+  const extra = effectiveExtra && (
+    <StatusPill tone={effectiveExtra === 'overpaid' ? 'info' : 'warn'} size="sm" icon={null}>
+      {effectiveExtra}
+    </StatusPill>
+  )
   return (
-    <span className="inline-flex flex-wrap items-center gap-1">
-      <Badge variant={statusVariant(norm.status)}>{norm.status}</Badge>
-      {effectiveExtra && (
-        <Badge
-          variant={effectiveExtra === 'overpaid' ? 'accent' : 'warn'}
-          className="text-2xs"
-        >
-          {effectiveExtra}
-        </Badge>
-      )}
+    <span
+      className={
+        stack
+          ? 'inline-flex flex-col items-start gap-1'
+          : 'inline-flex flex-wrap items-center gap-1'
+      }
+    >
+      <StatusPill tone={statusTone(norm.status)}>{norm.status.replace(/-/g, ' ')}</StatusPill>
+      {extra}
     </span>
   )
 }
 
 /* ── page ────────────────────────────────────────────────── */
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 25
 
 /* Filter spec for invoices — keys are the gateway's query-param names. */
 
@@ -365,35 +359,41 @@ export function InvoicesPage() {
   })
   const { chainOptions, tokenOptions } = useFilterOptions(chainsQ.data?.chains)
 
-  const list = useInfiniteQuery({
+  // Page-based view over the same limit/offset API. Page resets when the
+  // store or the filters change.
+  const [page, setPage] = React.useState(0)
+  const pageKey = `${active?.id ?? ''}|${JSON.stringify(filters)}`
+  const [lastPageKey, setLastPageKey] = React.useState(pageKey)
+  if (lastPageKey !== pageKey) {
+    setLastPageKey(pageKey)
+    setPage(0)
+  }
+
+  const list = useQuery({
     enabled: canList,
-    queryKey: ['invoices', 'list', active?.id ?? null, filters] as const,
-    initialPageParam: 0,
-    queryFn: async ({ pageParam }) => {
+    queryKey: ['invoices', 'list', active?.id ?? null, filters, page] as const,
+    queryFn: async () => {
       const qs = new URLSearchParams(cleanFilterValues(filters))
       qs.set('limit', String(PAGE_SIZE))
-      qs.set('offset', String(pageParam))
+      qs.set('offset', String(page * PAGE_SIZE))
       const res = await api<Partial<InvoiceListResponse> | null>(
         `/api/mg/${encodeURIComponent(active!.id)}/invoices?${qs}`,
       )
       // A misconfigured gateway can answer 200 with an empty / non-JSON body
       // (api() yields null then) or omit `invoices`. Normalize to a valid
-      // page so the list shows an empty state instead of crashing on flatMap.
+      // page so the list shows an empty state instead of crashing.
       return {
         invoices: Array.isArray(res?.invoices) ? res.invoices : [],
         limit: typeof res?.limit === 'number' ? res.limit : PAGE_SIZE,
-        offset: typeof res?.offset === 'number' ? res.offset : pageParam,
+        offset: typeof res?.offset === 'number' ? res.offset : page * PAGE_SIZE,
         hasMore: res?.hasMore === true,
       } satisfies InvoiceListResponse
     },
-    getNextPageParam: (last) => (last.hasMore ? last.offset + last.limit : undefined),
+    placeholderData: keepPreviousData,
     refetchInterval: 30_000,
   })
 
-  const all = React.useMemo(
-    () => list.data?.pages.flatMap((p) => p.invoices) ?? [],
-    [list.data],
-  )
+  const all = list.data?.invoices ?? []
   const narrowed = hasNarrowingFilter(filters)
 
   if (merchants.isLoading) {
@@ -408,12 +408,12 @@ export function InvoicesPage() {
       <PageHeader
         eyebrow="Payments"
         title="Invoices"
-        description="Every invoice the selected store has issued, straight from the gateway."
+        description="Issued by the selected store."
         actions={
           <>
             <MerchantSwitcher />
             <Button size="sm" disabled={!canList} onClick={() => setCreateOpen(true)}>
-              <Plus className="size-3.5" /> New invoice
+              <Plus className="size-4" /> New invoice
             </Button>
           </>
         }
@@ -431,41 +431,35 @@ export function InvoicesPage() {
             chainOptions={chainOptions}
             tokenOptions={tokenOptions}
             resultCount={all.length}
-            loading={list.isFetching && !list.isFetchingNextPage}
+            loading={list.isFetching}
           />
 
           {list.isLoading ? (
             <ListSkeleton />
           ) : list.isError ? (
             <ErrorCard message={list.error instanceof Error ? list.error.message : 'Could not load'} />
-          ) : all.length === 0 ? (
+          ) : all.length === 0 && page === 0 ? (
             narrowed ? (
               <NoMatch onClear={() => setFilters({})} />
             ) : (
               <EmptyState onCreate={() => setCreateOpen(true)} />
             )
           ) : (
-            <>
-              <InvoiceList rows={all} onOpen={setDetailId} />
-              {list.hasNextPage && (
-                <div className="flex justify-center">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => list.fetchNextPage()}
-                    disabled={list.isFetchingNextPage}
-                  >
-                    {list.isFetchingNextPage ? (
-                      <>
-                        <Loader2 className="size-3.5 animate-spin" /> Loading…
-                      </>
-                    ) : (
-                      <>Load more</>
-                    )}
-                  </Button>
-                </div>
-              )}
-            </>
+            <TableCard
+              footer={
+                <Pager
+                  page={page}
+                  pageSize={PAGE_SIZE}
+                  shown={all.length}
+                  hasNext={list.data?.hasMore === true}
+                  onPage={setPage}
+                  loading={list.isFetching}
+                  noun="invoices"
+                />
+              }
+            >
+              <InvoiceList rows={all} onOpen={setDetailId} dim={list.isPlaceholderData} />
+            </TableCard>
           )}
         </>
       )}
@@ -493,25 +487,31 @@ export function InvoicesPage() {
 function InvoiceList({
   rows,
   onOpen,
+  dim,
 }: {
   rows: GatewayInvoice[]
   onOpen: (id: string) => void
+  dim?: boolean
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden h-9 grid-cols-[1fr_120px_180px_110px_90px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-4 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)] sm:grid">
-        <div>Invoice</div>
-        <div>Chain</div>
-        <div>Amount</div>
-        <div>Status</div>
-        <div>Updated</div>
-      </div>
-      <ul>
-        {rows.map((inv) => (
-          <InvoiceRow key={inv.id} inv={inv} onOpen={() => onOpen(inv.id)} />
-        ))}
-      </ul>
-    </div>
+    <TableWrap>
+      <Table className={cn('min-w-[720px] transition-opacity', dim && 'opacity-60')}>
+        <THead>
+          <tr>
+            <Th>Invoice</Th>
+            <Th>Status</Th>
+            <Th>Network</Th>
+            <Th align="right">Amount</Th>
+            <Th align="right">Updated</Th>
+          </tr>
+        </THead>
+        <TBody>
+          {rows.map((inv) => (
+            <InvoiceRow key={inv.id} inv={inv} onOpen={() => onOpen(inv.id)} />
+          ))}
+        </TBody>
+      </Table>
+    </TableWrap>
   )
 }
 
@@ -538,106 +538,82 @@ function InvoiceRow({
   const paid = inv.paidUsd ? parseFloat(inv.paidUsd) : 0
   const required = inv.amountUsd ? parseFloat(inv.amountUsd) : 0
   const showPaid = inv.amountUsd != null && paid > 0
+  const info = chainInfo(inv.chainId)
   return (
-    <li className="border-b border-border last:border-0">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onOpen}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            onOpen()
-          }
-        }}
-        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[1fr_120px_180px_110px_90px] sm:gap-4"
-      >
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="truncate font-mono text-xs">
-              {truncateAddr(inv.id, 8, 6)}
-            </span>
-            <span onClick={(e) => e.stopPropagation()}>
-              <CopyButton value={inv.id} />
-            </span>
-            {inv.webhookUrl && (
-              <span
-                className="inline-flex items-center text-[var(--fg-3)]"
-                title="Per-invoice webhook URL override"
-              >
-                <Webhook className="size-3" />
-              </span>
-            )}
-          </div>
-          {inv.externalId && (
-            <div className="mt-0.5 truncate font-mono text-2xs text-[var(--fg-3)]">
-              ext · {inv.externalId}
+    <Tr
+      interactive
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen()
+        }
+      }}
+      className="focus-visible:bg-[var(--bg-hover)] focus-visible:outline-none"
+    >
+      <Td>
+        <div className="flex min-w-0 items-center gap-3">
+          <RowAvatar
+            text={inv.token.slice(0, 1)}
+            color={multiFamily ? undefined : info.color}
+            icon={multiFamily ? Layers : undefined}
+          />
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 font-medium">
+              <span className="truncate">{inv.externalId ?? truncateAddr(inv.id, 8, 6)}</span>
+              {inv.webhookUrl && (
+                <span title="Per-invoice webhook URL override" className="text-[var(--fg-3)]">
+                  <Webhook className="size-3.5" />
+                </span>
+              )}
             </div>
+            <div className="flex items-center gap-1 font-mono text-xs text-[var(--fg-3)]">
+              {truncateAddr(inv.id, 6, 4)}
+              <span onClick={(e) => e.stopPropagation()}>
+                <CopyButton value={inv.id} />
+              </span>
+            </div>
+          </div>
+        </div>
+      </Td>
+      <Td>
+        <StatusBadge status={inv.status} extraStatus={inv.extraStatus ?? null} />
+      </Td>
+      <Td>
+        {multiFamily ? (
+          <span className="text-sm text-[var(--fg-1)]">
+            {families.map((f) => f.toUpperCase()).join(' · ')}
+          </span>
+        ) : (
+          <ChainPill chainId={inv.chainId} className="text-sm" />
+        )}
+      </Td>
+      <Td align="right">
+        <div className="font-semibold">{amountSpecOf(inv)}</div>
+        <div className="text-xs">
+          {showPaid ? (
+            <span className={paid >= required ? 'text-[var(--st-ok)]' : 'text-[var(--fg-2)]'}>
+              {fmtUsd(paid)} paid
+              {inv.overpaidUsd && parseFloat(inv.overpaidUsd) > 0 && (
+                <span className="text-[var(--st-warn)]"> · +{fmtUsd(inv.overpaidUsd)}</span>
+              )}
+            </span>
+          ) : (
+            <span className="text-[var(--fg-3)]">{inv.token}</span>
           )}
         </div>
-
-        {multiFamily ? (
-          <div className="flex flex-wrap items-center gap-1">
-            {families.map((f) => (
-              <span
-                key={f}
-                className="rounded-sm border border-border bg-[var(--bg-2)] px-1 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]"
-              >
-                {f}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <ChainPill chainId={inv.chainId} />
-        )}
-
-        <div className="min-w-0">
-          <div className="truncate font-mono text-xs">
-            {amountSpecOf(inv)}
-          </div>
-          <div className="flex items-center gap-1 font-mono text-2xs text-[var(--fg-3)]">
-            {showPaid ? (
-              <>
-                <span
-                  className={
-                    paid >= required
-                      ? 'text-success'
-                      : 'text-[var(--fg-2)]'
-                  }
-                >
-                  {fmtUsd(paid)} paid
-                </span>
-                {inv.overpaidUsd && parseFloat(inv.overpaidUsd) > 0 && (
-                  <span className="text-warn">
-                    · +{fmtUsd(inv.overpaidUsd)} over
-                  </span>
-                )}
-              </>
-            ) : (
-              <span>{inv.token}</span>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <StatusBadge
-            status={inv.status}
-            extraStatus={inv.extraStatus ?? null}
-            stack
-          />
-        </div>
-
-        <div className="text-xs text-[var(--fg-3)]">
-          {fmtRel(unixOf(inv.updatedAt))}
-        </div>
-      </div>
-    </li>
+      </Td>
+      <Td align="right" className="text-sm whitespace-nowrap text-[var(--fg-2)]">
+        {fmtRel(unixOf(inv.updatedAt))}
+      </Td>
+    </Tr>
   )
 }
 
 /* ── detail sheet ────────────────────────────────────────── */
 
-type Tab = 'overview' | 'addresses' | 'transactions'
+type Tab = 'overview' | 'payment' | 'transactions'
 
 function InvoiceDetailSheet({
   merchantId,
@@ -695,94 +671,155 @@ function InvoiceDetailSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent>
-        <SheetHeader className="space-y-2">
-          <div className="flex items-center gap-2">
-            <SheetTitle className="truncate font-mono text-base">
-              {invoiceId ? truncateAddr(invoiceId, 10, 8) : ''}
-            </SheetTitle>
-            {invoiceId && <CopyButton value={invoiceId} />}
-            {inv && (
-              <StatusBadge status={inv.status} extraStatus={inv.extraStatus ?? null} />
-            )}
-          </div>
-          <SheetTabs value={tab} onChange={setTab} />
-        </SheetHeader>
+        <SheetHero
+          icon={FileText}
+          title={
+            inv ? (
+              inv.externalId ?? truncateAddr(inv.id, 8, 6)
+            ) : (
+              <span className="font-mono">{invoiceId ? truncateAddr(invoiceId, 8, 6) : ''}</span>
+            )
+          }
+          meta={
+            <>
+              {inv ? (
+                <StatusBadge status={inv.status} extraStatus={inv.extraStatus ?? null} />
+              ) : (
+                <Skeleton className="h-6 w-20 rounded-full" />
+              )}
+              {inv && <ChainPill chainId={inv.chainId} className="text-sm" />}
+              {inv && (
+                <span className="text-[var(--fg-3)]">
+                  · {fmtRel(unixOf(inv.createdAt))}
+                </span>
+              )}
+            </>
+          }
+          actions={invoiceId ? <CopyButton value={invoiceId} /> : undefined}
+        >
+          {detail.data && <InvoiceHero data={detail.data} />}
+        </SheetHero>
 
-        <SheetBody>
+        <SheetTabs<Tab>
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'overview', label: 'Overview', icon: ListBullets },
+            { value: 'payment', label: 'Pay to', icon: QrCodeIcon },
+            {
+              value: 'transactions',
+              label: 'Transactions',
+              icon: ArrowsLeftRight,
+              count: detail.data?.transactions.length,
+            },
+          ]}
+        />
+
+        <SheetBody key={tab} className="fade-in">
           {detail.isLoading ? (
             <DetailSkeleton />
           ) : !detail.data ? (
-            <div className="py-8 text-center text-sm text-destructive">
-              {detail.error instanceof Error ? detail.error.message : 'Not found'}
-            </div>
+            <ErrorState
+              title="Invoice not found"
+              message={detail.error instanceof Error ? detail.error.message : undefined}
+            />
           ) : tab === 'overview' ? (
             <OverviewTab data={detail.data} />
-          ) : tab === 'addresses' ? (
+          ) : tab === 'payment' ? (
             <AddressesTab data={detail.data} />
           ) : (
             <TransactionsTab data={detail.data} />
           )}
-
-          {detail.data && canExpire && (
-            <div className="mt-6 border-t border-border pt-5">
-              <div className="eyebrow mb-3">Danger zone</div>
-              <div className="flex items-center justify-between gap-4 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5">
-                <div>
-                  <div className="text-sm font-medium">Force expire</div>
-                  <div className="text-xs text-[var(--fg-2)]">
-                    Moves the invoice to expired immediately. Partial deposits
-                    become orphans.
-                  </div>
-                </div>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => expire.mutate()}
-                  disabled={expire.isPending}
-                >
-                  <X className="size-3.5" />
-                  {expire.isPending ? 'Expiring…' : 'Expire'}
-                </Button>
-              </div>
-            </div>
-          )}
         </SheetBody>
+
+        {detail.data && canExpire && (
+          <SheetFooter className="justify-between">
+            <div className="min-w-0 text-xs text-[var(--fg-2)]">
+              <span className="font-medium text-foreground">Force expire</span> · Moves the
+              invoice to expired immediately. Partial deposits become orphans.
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 text-destructive hover:bg-[var(--danger-bg)] hover:text-destructive"
+              onClick={() => expire.mutate()}
+              disabled={expire.isPending}
+            >
+              <X className="size-4" />
+              {expire.isPending ? 'Expiring…' : 'Expire'}
+            </Button>
+          </SheetFooter>
+        )}
       </SheetContent>
     </Sheet>
   )
 }
 
-function SheetTabs({
-  value,
-  onChange,
-}: {
-  value: Tab
-  onChange: (t: Tab) => void
-}) {
-  const tabs: Array<{ key: Tab; label: string }> = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'addresses', label: 'Addresses' },
-    { key: 'transactions', label: 'Transactions' },
+/* Big amount + lifecycle stepper under the sheet title. */
+function InvoiceHero({ data }: { data: InvoiceDetails }) {
+  const { invoice, amounts, transactions } = data
+  const norm = normalizeInvoiceStatus(invoice.status)
+  const required = invoice.amountUsd
+    ? fmtUsd(invoice.amountUsd)
+    : `${invoice.requiredAmountRaw} ${invoice.token}`
+  const confirmed = parseFloat(amounts.confirmedUsd ?? '0') || 0
+  const confirming = parseFloat(amounts.confirmingUsd ?? '0') || 0
+  const terminalBad = norm.status === 'expired' || norm.status === 'canceled'
+  const completed = norm.status === 'completed'
+  const requiredUsd = parseFloat(amounts.requiredUsd ?? '0') || 0
+  const received = confirmed + confirming
+  const paidAll = completed || (requiredUsd > 0 && received >= requiredUsd)
+  const anyPaid = received > 0 || transactions.length > 0
+  const steps: Array<{ key: string; label: string; done: boolean; live?: boolean; bad?: boolean }> = [
+    { key: 'created', label: 'Created', done: true },
+    { key: 'paid', label: paidAll ? 'Paid' : anyPaid ? 'Part paid' : 'Paid', done: paidAll, live: !paidAll && anyPaid },
+    { key: 'confirming', label: 'Confirming', done: completed, live: !completed && (confirming > 0 || paidAll) },
+    terminalBad
+      ? { key: 'end', label: norm.status === 'expired' ? 'Expired' : 'Canceled', done: true, bad: true }
+      : { key: 'end', label: 'Completed', done: completed },
   ]
   return (
-    <div className="-mb-px flex gap-1 border-b-0">
-      {tabs.map(({ key, label }) => {
-        const active = value === key
-        return (
-          <button
-            key={key}
-            onClick={() => onChange(key)}
-            className={
-              'cursor-pointer rounded-t-md border-b-2 px-3 py-2 text-xs font-medium transition-colors ' +
-              (active
-                ? 'border-foreground text-foreground'
-                : 'border-transparent text-[var(--fg-3)] hover:text-foreground')
-            }
-          >
-            {label}
-          </button>
-        )
-      })}
+    <div className="mt-5 rounded-2xl border border-border bg-[var(--bg-2)] p-4">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <div className="text-xs text-[var(--fg-2)]">Amount due</div>
+          <div className="figure mt-0.5 text-2xl font-semibold">{required}</div>
+        </div>
+        {amounts.requiredUsd != null && (
+          <div className="text-right text-xs text-[var(--fg-2)]">
+            <div>Received</div>
+            <div className="figure text-base font-semibold text-foreground">
+              {fmtUsd(String(confirmed + confirming))}
+            </div>
+          </div>
+        )}
+      </div>
+      <ol className="mt-4 grid grid-cols-4 gap-2">
+        {steps.map((s) => (
+          <li key={s.key} className="min-w-0">
+            <div
+              className={cn(
+                'h-1.5 rounded-full',
+                s.bad
+                  ? 'bg-[var(--st-bad-dot)]'
+                  : s.done
+                    ? 'bg-[var(--st-ok-dot)]'
+                    : s.live
+                      ? 'animate-pulse bg-[var(--st-run-dot)]'
+                      : 'bg-[var(--chart-muted)]',
+              )}
+            />
+            <div
+              className={cn(
+                'mt-1.5 truncate text-xs',
+                s.done || s.live ? 'font-medium text-foreground' : 'text-[var(--fg-3)]',
+              )}
+            >
+              {s.label}
+            </div>
+          </li>
+        ))}
+      </ol>
     </div>
   )
 }
@@ -793,109 +830,78 @@ function OverviewTab({ data }: { data: InvoiceDetails }) {
   const showTolerance =
     invoice.paymentToleranceUnderBps > 0 || invoice.paymentToleranceOverBps > 0
   return (
-    <div className="space-y-5">
-      <KV grid>
-        <KVItem label="Chain">
-          <ChainPill chainId={invoice.chainId} />
-        </KVItem>
-        <KVItem label="Token">
-          <span className="font-mono">{invoice.token}</span>
-        </KVItem>
-        <KVItem label="External id">
-          <span className="font-mono text-xs">
-            {invoice.externalId ?? '—'}
-          </span>
-        </KVItem>
-        <KVItem label="Required">
-          <span className="font-mono">
-            {invoice.amountUsd
-              ? fmtUsd(invoice.amountUsd)
-              : invoice.requiredAmountRaw}
-          </span>
-        </KVItem>
-        <KVItem label="Received">
-          <span className="font-mono">
-            {invoice.paidUsd
-              ? fmtUsd(invoice.paidUsd)
-              : invoice.receivedAmountRaw}
-          </span>
-        </KVItem>
-        <KVItem label="Created">
-          <span className="font-mono text-xs">{fmtLocal(invoice.createdAt)}</span>
-        </KVItem>
-        <KVItem label="Expires">
-          <ExpiresCell iso={invoice.expiresAt} />
-        </KVItem>
-        {invoice.confirmedAt && (
-          <KVItem label="Confirmed">
-            <span className="font-mono text-xs">{fmtLocal(invoice.confirmedAt)}</span>
-          </KVItem>
-        )}
-
-        {families.length > 0 && (
-          <KVItem label="Accepted families" wide>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {families.map((f) => (
-                <Badge key={f} variant="outline" className="uppercase">
-                  {f}
-                </Badge>
-              ))}
-              {families.length > 1 && (
-                <span className="text-2xs text-[var(--fg-3)]">
-                  payable from any · USD-aggregated
-                </span>
-              )}
-            </div>
-          </KVItem>
-        )}
-
-        {showTolerance && (
-          <KVItem label="Tolerance" wide>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
-              <span className="font-mono text-[var(--fg-2)]">
-                under{' '}
-                <span className="text-foreground">
-                  {bpsLabel(invoice.paymentToleranceUnderBps)}
-                </span>
-              </span>
-              <span className="font-mono text-[var(--fg-2)]">
-                over{' '}
-                <span className="text-foreground">
-                  {bpsLabel(invoice.paymentToleranceOverBps)}
-                </span>
-              </span>
-              <span className="text-2xs text-[var(--fg-3)]">
-                snapshotted at create time
-              </span>
-            </div>
-          </KVItem>
-        )}
-
-        {invoice.webhookUrl && (
-          <KVItem label="Webhook URL" wide>
-            <div className="flex min-w-0 items-center gap-1.5">
-              <Webhook className="size-3.5 shrink-0 text-[var(--fg-3)]" />
-              <a
-                href={invoice.webhookUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-xs text-primary hover:underline"
-              >
-                <span className="truncate">{invoice.webhookUrl}</span>
-                <ExternalLink className="size-3 shrink-0" />
-              </a>
-              <CopyButton value={invoice.webhookUrl} />
-              <Badge variant="outline" className="shrink-0 text-2xs">
-                per-invoice override
-              </Badge>
-            </div>
-          </KVItem>
-        )}
-      </KV>
-
+    <div className="space-y-6">
       {amounts.requiredUsd != null && (
         <PaymentProgress amounts={amounts} overpaidUsd={invoice.overpaidUsd} />
       )}
+
+      <SheetSection title="Details">
+        <dl className="divide-y divide-border rounded-xl border border-border">
+          <Fact icon={Coins} label="Token">
+            <span className="font-medium">{invoice.token}</span>
+            {families.length > 1 && (
+              <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
+                {families.map((f) => (
+                  <Badge key={f} variant="default" className="uppercase">
+                    {f}
+                  </Badge>
+                ))}
+              </span>
+            )}
+          </Fact>
+          {families.length === 1 && (
+            <Fact icon={Layers} label="Family">
+              <span className="uppercase">{families[0]}</span>
+            </Fact>
+          )}
+          <Fact icon={Tag} label="External ID">
+            {invoice.externalId ? (
+              <span className="inline-flex items-center gap-1 font-mono text-xs">
+                {invoice.externalId}
+                <CopyButton value={invoice.externalId} />
+              </span>
+            ) : (
+              <span className="text-[var(--fg-3)]">—</span>
+            )}
+          </Fact>
+          <Fact icon={Calendar} label="Created">
+            {fmtLocal(invoice.createdAt)}
+          </Fact>
+          <Fact icon={Timer} label="Expires">
+            <ExpiresCell iso={invoice.expiresAt} />
+          </Fact>
+          {invoice.confirmedAt && (
+            <Fact icon={CheckCircle2} label="Confirmed">
+              {fmtLocal(invoice.confirmedAt)}
+            </Fact>
+          )}
+          {showTolerance && (
+            <Fact icon={Scale} label="Tolerance">
+              <span className="figure">
+                −{bpsLabel(invoice.paymentToleranceUnderBps)} / +
+                {bpsLabel(invoice.paymentToleranceOverBps)}
+              </span>
+            </Fact>
+          )}
+          {invoice.webhookUrl && (
+            <Fact icon={Webhook} label="Webhook">
+              <span className="flex min-w-0 items-center justify-end gap-1">
+                <a
+                  href={invoice.webhookUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Per-invoice webhook override"
+                  className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-xs hover:underline"
+                >
+                  <span className="truncate">{invoice.webhookUrl}</span>
+                  <ExternalLink className="size-3 shrink-0" />
+                </a>
+                <CopyButton value={invoice.webhookUrl} />
+              </span>
+            </Fact>
+          )}
+        </dl>
+      </SheetSection>
 
       {invoice.rates && Object.keys(invoice.rates).length > 0 && (
         <RatesSnapshot
@@ -905,13 +911,33 @@ function OverviewTab({ data }: { data: InvoiceDetails }) {
       )}
 
       {invoice.metadata && Object.keys(invoice.metadata).length > 0 && (
-        <div className="space-y-2">
-          <div className="eyebrow">Metadata</div>
-          <pre className="overflow-x-auto rounded-md border border-border bg-secondary px-3 py-2 text-2xs font-mono">
+        <SheetSection title="Metadata" icon={Braces}>
+          <pre className="overflow-x-auto rounded-xl border border-border bg-[var(--bg-2)] px-4 py-3 font-mono text-xs leading-relaxed">
             {JSON.stringify(invoice.metadata, null, 2)}
           </pre>
-        </div>
+        </SheetSection>
       )}
+    </div>
+  )
+}
+
+/** One row of a details list: icon · label on the left, value on the right. */
+function Fact({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex min-h-11 items-center gap-3 px-4 py-2.5 text-sm">
+      <dt className="flex w-32 shrink-0 items-center gap-2 text-[var(--fg-2)]">
+        <Icon className="size-4 shrink-0" />
+        {label}
+      </dt>
+      <dd className="min-w-0 flex-1 text-right">{children}</dd>
     </div>
   )
 }
@@ -938,65 +964,45 @@ function RatesSnapshot({
     [rates],
   )
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-card">
+    <div className="overflow-hidden rounded-xl border border-border">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
+        aria-expanded={open}
+        className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--bg-hover)]"
       >
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="eyebrow shrink-0">Pinned rates</span>
-          <span className="shrink-0 text-2xs text-[var(--fg-3)]">
-            {sortedEntries.length} token
-            {sortedEntries.length === 1 ? '' : 's'}
+        <span className="flex items-center gap-2 text-sm font-semibold">
+          <Dollar className="size-4 text-[var(--fg-2)]" />
+          Pinned rates
+          <span className="figure rounded-full bg-[var(--bg-active)] px-1.5 text-2xs font-medium text-[var(--fg-1)]">
+            {sortedEntries.length}
           </span>
-        </div>
-        <div className="flex items-center gap-2">
+        </span>
+        <span className="flex items-center gap-2">
           {windowExpiresAt && (
-            <span
-              className={
-                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-2xs font-medium ' +
-                (expired
-                  ? 'border-[var(--warn-border)] bg-[var(--warn-bg)] text-warn'
-                  : 'border-border bg-[var(--bg-2)] text-[var(--fg-2)]')
-              }
-              title={fmtLocal(windowExpiresAt, { seconds: true })}
+            <StatusPill
+              tone={expired ? 'warn' : 'wait'}
+              size="sm"
+              icon={Timer}
             >
-              {expired ? 'expired' : 'expires'}{' '}
-              <span className="font-mono">
-                {fmtLocal(windowExpiresAt)}
+              <span title={fmtLocal(windowExpiresAt, { seconds: true })}>
+                {expired ? 'Expired' : 'Until'} {fmtLocal(windowExpiresAt)}
               </span>
-            </span>
+            </StatusPill>
           )}
           <ChevronDown
-            className={`size-3.5 shrink-0 text-[var(--fg-3)] transition-transform ${open ? 'rotate-180' : ''}`}
+            className={cn('size-4 shrink-0 text-[var(--fg-3)] transition-transform duration-200', open && 'rotate-180')}
           />
-        </div>
+        </span>
       </button>
       {open && (
-        <ul className="grid grid-cols-1 border-t border-border sm:grid-cols-2">
-          {sortedEntries.map(([sym, rate], i) => {
-            const lastInCol =
-              i === sortedEntries.length - 1 ||
-              i === sortedEntries.length - 2
-            return (
-              <li
-                key={sym}
-                className={
-                  'flex items-baseline justify-between gap-3 px-3 py-2 sm:[&:nth-child(odd)]:border-r sm:[&:nth-child(odd)]:border-border ' +
-                  (lastInCol ? '' : 'border-b border-border')
-                }
-              >
-                <span className="rounded bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-2xs uppercase tracking-wider text-[var(--fg-2)]">
-                  {sym}
-                </span>
-                <span className="font-mono text-sm tabular-nums">
-                  <span className="text-[var(--fg-3)]">$</span>
-                  {rate}
-                </span>
-              </li>
-            )
-          })}
+        <ul className="fade-in grid grid-cols-2 gap-px border-t border-border bg-border sm:grid-cols-3">
+          {sortedEntries.map(([sym, rate]) => (
+            <li key={sym} className="flex items-baseline justify-between gap-3 bg-card px-4 py-2.5">
+              <span className="text-xs font-medium text-[var(--fg-2)]">{sym}</span>
+              <span className="figure text-sm font-medium">${rate}</span>
+            </li>
+          ))}
         </ul>
       )}
     </div>
@@ -1012,19 +1018,18 @@ function ExpiresCell({ iso }: { iso: string }) {
   }, [])
   const diff = target - now
   if (!isFinite(target)) {
-    return <span className="font-mono text-xs">—</span>
+    return <span>—</span>
   }
   if (diff <= 0) {
     return (
-      <span className="font-mono text-xs text-destructive">
-        expired · {fmtLocal(iso, { seconds: true })}
+      <span className="text-destructive" title={fmtLocal(iso, { seconds: true })}>
+        Expired {fmtLocal(iso)}
       </span>
     )
   }
   return (
-    <span className="font-mono text-xs">
-      in {fmtCountdown(diff)}
-      <span className="ml-1.5 text-[var(--fg-3)]">· {fmtLocal(iso)}</span>
+    <span title={fmtLocal(iso, { seconds: true })}>
+      <span className="figure font-medium">in {fmtCountdown(diff)}</span>
     </span>
   )
 }
@@ -1041,28 +1046,30 @@ function AddressesTab({ data }: { data: InvoiceDetails }) {
     <div
       className={
         list.length > 1
-          ? 'grid grid-cols-1 gap-3 sm:grid-cols-2'
-          : 'grid grid-cols-1 gap-3'
+          ? 'grid grid-cols-1 gap-4 sm:grid-cols-2'
+          : 'grid grid-cols-1 gap-4'
       }
     >
       {list.map((r) => (
         <div
           key={r.family + r.address}
-          className="flex flex-col items-center gap-2.5 rounded-md border border-border bg-card p-3"
+          className="flex flex-col items-center gap-3 rounded-2xl border border-border p-4"
         >
           <div className="flex w-full items-center justify-between gap-2">
-            <span className="rounded-full border border-border bg-[var(--bg-2)] px-2 py-0.5 text-2xs font-semibold uppercase tracking-wider text-[var(--fg-2)]">
+            <Badge variant="default" className="uppercase">
               {r.family}
-            </span>
+            </Badge>
             <CopyButton value={r.address} />
           </div>
-          <QrCode value={r.address} size={152} />
-          <div className="w-full break-all text-center font-mono text-2xs text-[var(--fg-2)]">
+          <div className="rounded-xl bg-white p-2 ring-1 ring-border">
+            <QrCode value={r.address} size={168} />
+          </div>
+          <div className="w-full break-all text-center font-mono text-xs text-[var(--fg-1)]">
             {r.address}
           </div>
           {r.poolAddressId && (
-            <div className="flex w-full items-center justify-between gap-2 border-t border-border pt-2 text-2xs text-[var(--fg-3)]">
-              <span className="uppercase tracking-wider">pool row</span>
+            <div className="flex w-full items-center justify-between gap-2 border-t border-border pt-2.5 text-xs text-[var(--fg-2)]">
+              <span>Pool row</span>
               <span className="inline-flex items-center gap-1 font-mono">
                 {truncateAddr(r.poolAddressId, 6, 4)}
                 <CopyButton value={r.poolAddressId} />
@@ -1078,9 +1085,13 @@ function AddressesTab({ data }: { data: InvoiceDetails }) {
 function TransactionsTab({ data }: { data: InvoiceDetails }) {
   if (data.transactions.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-border py-8 text-center text-sm text-[var(--fg-2)]">
-        No transactions observed yet.
-      </div>
+      <SharedEmptyState
+        compact
+        framed
+        icon={ArrowsLeftRight}
+        title="No transactions yet"
+        description="Deposits to the payment address appear here as soon as they're seen."
+      />
     )
   }
   // Multi-family invoices accept any registered token; "wrong token" only
@@ -1090,135 +1101,56 @@ function TransactionsTab({ data }: { data: InvoiceDetails }) {
     data.invoice.amountUsd != null
   const invoiceToken = data.invoice.token
   return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className="w-full border-separate border-spacing-0 text-sm">
-        <thead>
-          <tr className="bg-[var(--bg-2)]">
-            <Th>Tx</Th>
-            <Th>Chain</Th>
-            <Th>Status</Th>
-            <Th>From</Th>
-            <Th>Token</Th>
-            <Th>Amount</Th>
-            <Th>USD</Th>
-            <Th>Conf</Th>
-            <Th>Detected</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.transactions.map((t) => {
-            const uncounted =
-              !isMultiFamily &&
-              t.amountUsd == null &&
-              t.token.toUpperCase() !== invoiceToken.toUpperCase()
-            return (
-              <tr
-                key={t.id}
-                className={uncounted ? 'opacity-55' : ''}
-                title={
-                  uncounted
-                    ? `Wrong token — this transfer of ${t.token} doesn't count toward a ${invoiceToken} invoice. Logged for audit only.`
-                    : t.blockNumber != null
-                      ? `block ${t.blockNumber}`
-                      : undefined
-                }
-              >
-                <Td>
-                  <Addr value={t.txHash} />
-                </Td>
-                <Td className="text-xs">
-                  <ChainPill chainId={t.chainId} />
-                </Td>
-                <Td>
-                  <StatusBadge status={t.status} />
-                </Td>
-                <Td>
-                  <Addr value={t.fromAddress} />
-                </Td>
-                <Td className="font-mono text-xs">
-                  <span className="inline-flex items-center gap-1.5">
-                    {t.token}
-                    {uncounted && (
-                      <span className="rounded border border-border bg-[var(--bg-2)] px-1 py-0 text-2xs uppercase tracking-wider text-[var(--fg-3)]">
-                        uncounted
-                      </span>
-                    )}
-                  </span>
-                </Td>
-                <Td className="font-mono text-xs">{fmtNum(t.amount)}</Td>
-                <Td className="font-mono text-xs text-[var(--fg-2)]">
-                  {t.amountUsd ? fmtUsd(t.amountUsd) : '—'}
-                </Td>
-                <Td className="font-mono text-xs">{t.confirmations}</Td>
-                <Td className="font-mono text-2xs text-[var(--fg-3)] whitespace-nowrap">
+    <ul className="space-y-2.5">
+      {data.transactions.map((t) => {
+        const uncounted =
+          !isMultiFamily &&
+          t.amountUsd == null &&
+          t.token.toUpperCase() !== invoiceToken.toUpperCase()
+        const info = chainInfo(t.chainId)
+        return (
+          <li
+            key={t.id}
+            className={cn('rounded-xl border border-border p-3.5', uncounted && 'opacity-55')}
+            title={
+              uncounted
+                ? `Wrong token — this transfer of ${t.token} doesn't count toward a ${invoiceToken} invoice. Logged for audit only.`
+                : t.blockNumber != null
+                  ? `block ${t.blockNumber}`
+                  : undefined
+            }
+          >
+            <div className="flex items-center gap-3">
+              <RowAvatar text={t.token.slice(0, 1)} color={info.color} />
+              <div className="min-w-0 flex-1">
+                <div className="figure flex items-center gap-2 font-semibold">
+                  {fmtNum(t.amount)} {t.token}
+                  {uncounted && (
+                    <Badge variant="default" className="font-normal">
+                      Uncounted
+                    </Badge>
+                  )}
+                </div>
+                <div className="text-xs text-[var(--fg-2)]">
+                  {info.name} · {t.amountUsd ? fmtUsd(t.amountUsd) : 'no USD'} ·{' '}
                   {fmtRel(unixOf(t.detectedAt))}
-                </Td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function Th({ children }: { children?: React.ReactNode }) {
-  return (
-    <th className="border-b border-border px-3 py-2 text-left text-2xs font-medium uppercase tracking-wider text-[var(--fg-3)]">
-      {children}
-    </th>
-  )
-}
-function Td({
-  children,
-  className = '',
-}: {
-  children?: React.ReactNode
-  className?: string
-}) {
-  return (
-    <td
-      className={'border-b border-border px-3 py-2 last:border-b-0 ' + className}
-    >
-      {children}
-    </td>
-  )
-}
-
-function KV({
-  children,
-  grid = false,
-}: {
-  children: React.ReactNode
-  grid?: boolean
-}) {
-  return (
-    <dl
-      className={
-        grid
-          ? 'grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2'
-          : 'space-y-4'
-      }
-    >
-      {children}
-    </dl>
-  )
-}
-
-function KVItem({
-  label,
-  children,
-  wide,
-}: {
-  label: string
-  children: React.ReactNode
-  wide?: boolean
-}) {
-  return (
-    <div className={wide ? 'sm:col-span-2' : ''}>
-      <dt className="eyebrow mb-1">{label}</dt>
-      <dd>{children}</dd>
-    </div>
+                </div>
+              </div>
+              <StatusBadge status={t.status} />
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1.5 border-t border-border pt-3 text-xs sm:grid-cols-[auto_1fr_auto]">
+              <span className="text-[var(--fg-2)]">Tx</span>
+              <Addr value={t.txHash} />
+              <span className="figure text-[var(--fg-2)] sm:row-span-2 sm:self-center">
+                <span className="font-semibold text-foreground">{t.confirmations}</span> conf
+              </span>
+              <span className="text-[var(--fg-2)]">From</span>
+              <Addr value={t.fromAddress} />
+            </div>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -1237,97 +1169,71 @@ function PaymentProgress({
 
   const denom = Math.max(required, confirmed + confirming) || 1
   const pct = (v: number) => Math.min(100, Math.max(0, (v / denom) * 100))
-
   const confirmedPct = pct(confirmed)
   const confirmingPct = pct(confirming)
-  const overpaidPct = pct(Math.max(0, confirmed - required))
-  const remainingPct = Math.max(0, 100 - confirmedPct - confirmingPct)
+  const paidPct = Math.round(Math.min(100, ((confirmed + confirming) / (required || 1)) * 100))
 
-  const milestones: Array<{
-    key: string
-    label: string
-    value: string
-    swatch: string
-    muted?: boolean
-  }> = [
-    {
-      key: 'required',
-      label: 'Required',
-      value: fmtUsd(amounts.requiredUsd ?? '0'),
-      swatch: 'bg-[var(--fg-3)]',
-      muted: true,
-    },
+  const items: Array<{ key: string; label: string; value: string; swatch: string; muted?: boolean }> = [
     {
       key: 'confirmed',
-      label: overpaid > 0 ? 'Confirmed (overpaid)' : 'Confirmed',
+      label: overpaid > 0 ? 'Confirmed · over' : 'Confirmed',
       value: fmtUsd(amounts.confirmedUsd ?? '0'),
-      swatch: overpaid > 0 ? 'bg-warn' : 'bg-success',
+      swatch: overpaid > 0 ? 'bg-[var(--st-warn-dot)]' : 'bg-[var(--st-ok-dot)]',
     },
     {
       key: 'confirming',
       label: 'Confirming',
       value: fmtUsd(amounts.confirmingUsd ?? '0'),
-      swatch: 'bg-primary/70',
+      swatch: 'bg-[var(--st-run-dot)]',
     },
     {
       key: 'remaining',
       label: 'Remaining',
       value: fmtUsd(amounts.remainingUsd ?? '0'),
-      swatch: 'bg-[var(--bg-3,var(--bg-2))] border border-border',
+      swatch: 'bg-[var(--chart-muted)]',
       muted: remaining === 0,
     },
   ]
 
   return (
-    <div className="space-y-3 rounded-md border border-border bg-[var(--bg-2)] p-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <div className="eyebrow">Payment progress</div>
-        <div className="font-mono text-xs text-[var(--fg-3)]">
-          {fmtUsd(String(confirmed + confirming))} / {fmtUsd(amounts.requiredUsd ?? '0')}
-        </div>
-      </div>
-
-      <div className="relative h-2 w-full overflow-hidden rounded-full bg-[color-mix(in_oklch,var(--border)_60%,transparent)]">
+    <SheetSection
+      title="Payment"
+      icon={Dollar}
+      action={
+        <span className="figure text-sm font-semibold">
+          {paidPct}%
+        </span>
+      }
+    >
+      <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-[var(--chart-muted)]">
         {confirmedPct > 0 && (
           <div
-            className={overpaid > 0 ? 'absolute inset-y-0 left-0 bg-warn' : 'absolute inset-y-0 left-0 bg-success'}
+            className={cn(
+              'absolute inset-y-0 left-0 rounded-full',
+              overpaid > 0 ? 'bg-[var(--st-warn-dot)]' : 'bg-[var(--st-ok-dot)]',
+            )}
             style={{ width: `${confirmedPct}%` }}
           />
         )}
         {confirmingPct > 0 && (
           <div
-            className="absolute inset-y-0 bg-primary/70"
+            className="absolute inset-y-0 animate-pulse bg-[var(--st-run-dot)]"
             style={{ left: `${confirmedPct}%`, width: `${confirmingPct}%` }}
           />
         )}
-        {overpaid > 0 && overpaidPct > 0 && (
-          <div
-            className="absolute inset-y-0 bg-warn/40"
-            style={{ left: `${confirmedPct - overpaidPct}%`, width: `${overpaidPct}%` }}
-          />
-        )}
-        {remainingPct > 0 && confirmedPct + confirmingPct < 100 && (
-          <div
-            className="absolute inset-y-0 right-0 bg-[repeating-linear-gradient(45deg,transparent_0_4px,color-mix(in_oklch,var(--border)_80%,transparent)_4px_8px)]"
-            style={{ width: `${remainingPct}%` }}
-          />
-        )}
       </div>
-
-      <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-4">
-        {milestones.map((m) => (
-          <div key={m.key} className="flex items-center gap-2">
-            <span className={`size-2 shrink-0 rounded-full ${m.swatch}`} />
-            <div className="min-w-0 leading-tight">
-              <div className={`truncate ${m.muted ? 'text-[var(--fg-3)]' : 'text-[var(--fg-2)]'}`}>
-                {m.label}
-              </div>
-              <div className="font-mono tabular-nums">{m.value}</div>
+      <div className="grid grid-cols-3 gap-2">
+        {items.map((m) => (
+          <div key={m.key} className="rounded-xl bg-[var(--bg-2)] px-3 py-2.5">
+            <div className={cn('flex items-center gap-1.5 text-xs', m.muted ? 'text-[var(--fg-3)]' : 'text-[var(--fg-2)]')}>
+              <span className={cn('size-2 shrink-0 rounded-full', m.swatch)} />
+              {m.label}
             </div>
+            <div className="figure mt-0.5 font-semibold">{m.value}</div>
           </div>
         ))}
       </div>
-    </div>
+    </SheetSection>
   )
 }
 

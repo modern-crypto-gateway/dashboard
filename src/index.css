@@ -6,15 +6,16 @@
 /* ============================================================
    Gateway Dashboard — "ink & signal"
    Warm paper neutrals, ink-black type, one electric signal colour
-   (lime by default) for the primary action, what's live and the
-   lead chart series. The app sits in a floating inset panel on a
-   quieter canvas. Geist for UI and numbers (tabular), Geist Mono
-   only for addresses, hashes and ids. Phosphor icons.
+   (lime by default) for what's live, the active place and the lead
+   chart series; primary buttons are ink. The app sits in a floating
+   inset panel on a quieter canvas. Plus Jakarta Sans for UI and
+   numbers (tabular), Geist Mono only for addresses, hashes and ids.
+   Phosphor icons. Status pills: icon + short label on a soft tint.
    Depth: soft shadow on the panel and overlays, hairlines inside.
    ============================================================ */
 
 @theme inline {
-  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     'Segoe UI', sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
@@ -131,6 +132,26 @@
   --muted-bg: #f2f2ef;
   --muted-fg: #5d5d63;
 
+  /* Status pills (text / tint / dot) */
+  --st-ok: #0b7a4b;
+  --st-ok-bg: #e6f5ed;
+  --st-ok-dot: #12b76a;
+  --st-run: #4a3fd0;
+  --st-run-bg: #eeecfd;
+  --st-run-dot: #6e56cf;
+  --st-wait: #55555b;
+  --st-wait-bg: #efefeb;
+  --st-wait-dot: #a1a1a6;
+  --st-warn: #995405;
+  --st-warn-bg: #fdf0d9;
+  --st-warn-dot: #f5a524;
+  --st-bad: #c2261b;
+  --st-bad-bg: #fdebea;
+  --st-bad-dot: #f04438;
+  --st-info: #1f5bd0;
+  --st-info-bg: #e8f0fe;
+  --st-info-dot: #3b82f6;
+
   /* Charts: lead series follows the signal; neutrals for context */
   --chart-1: var(--accent-ink);
   --chart-1-fill: #a3d72f;
@@ -197,6 +218,25 @@
 
   --muted-bg: #1e1e22;
   --muted-fg: #a4a4aa;
+
+  --st-ok: #5ee0a0;
+  --st-ok-bg: rgb(18 183 106 / 0.14);
+  --st-ok-dot: #2fd08a;
+  --st-run: #b4a8ff;
+  --st-run-bg: rgb(130 110 240 / 0.16);
+  --st-run-dot: #9b8afb;
+  --st-wait: #b0b0b6;
+  --st-wait-bg: rgb(255 255 255 / 0.07);
+  --st-wait-dot: #7a7a80;
+  --st-warn: #fcc35c;
+  --st-warn-bg: rgb(245 165 36 / 0.14);
+  --st-warn-dot: #f5a524;
+  --st-bad: #ff8a80;
+  --st-bad-bg: rgb(240 68 56 / 0.15);
+  --st-bad-dot: #f04438;
+  --st-info: #8ab4ff;
+  --st-info-bg: rgb(59 130 246 / 0.15);
+  --st-info-dot: #60a5fa;
 
   --chart-1: #c8f04f;
   --chart-1-fill: #c8f04f;
@@ -346,6 +386,18 @@ h3 {
   .fade-in {
     animation: fadeSlide 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
   }
+  /* Route change: content rises in; stagger children marked .stagger */
+  .page-enter {
+    animation: pageEnter 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .page-enter .stagger > * {
+    animation: pageEnter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .page-enter .stagger > *:nth-child(2) { animation-delay: 40ms; }
+  .page-enter .stagger > *:nth-child(3) { animation-delay: 80ms; }
+  .page-enter .stagger > *:nth-child(4) { animation-delay: 120ms; }
+  .page-enter .stagger > *:nth-child(5) { animation-delay: 160ms; }
+  .page-enter .stagger > *:nth-child(n + 6) { animation-delay: 200ms; }
 }
 
 @keyframes fadeSlide {
@@ -356,6 +408,17 @@ h3 {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
