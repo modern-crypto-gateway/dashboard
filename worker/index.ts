@@ -75,7 +75,7 @@ import {
   listPayouts,
 } from './routes/payouts'
 import { getAvatar } from './routes/avatar'
-import { assistantPost, getAssistantState } from './assistant/routes'
+import { assistantPost, getAssistantState, getConversation } from './assistant/routes'
 import { requireMoneyStepUp } from './lib/stepup'
 
 const router = new Router()
@@ -270,10 +270,14 @@ router.get('/api/assistant/state', async (req, env) => {
   const sess = await requireAuth(req, env)
   return getAssistantState(req, env, sess)
 })
+router.get('/api/assistant/conversations/*', async (req, env, _ctx, params) => {
+  const sess = await requireAuth(req, env)
+  return getConversation(req, env, sess, params.tail ?? '')
+})
 router.post('/api/assistant/*', async (req, env, ctx, params) => {
   const sess = await guardAuthAndCsrf(req, env)
   await cfLimit(env.GW_RL, clientId(req), 'gw')
-  return assistantPost(params.tail ?? '', req, env, sess, (r) => router.handle(r, env, ctx))
+  return assistantPost(params.tail ?? '', req, env, sess, (r) => router.handle(r, env, ctx), ctx)
 })
 
 /* ── gateway proxy (admin-scoped) ────────────────────────── */

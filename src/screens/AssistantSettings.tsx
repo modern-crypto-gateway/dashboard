@@ -178,8 +178,8 @@ export function AssistantSettingsCard() {
         <Callout tone="info">
           Conversations go to Anthropic under your API key, including the gateway data the assistant looks up.
           The assistant has no access to endpoints that return keys or secrets, and secret-looking fields are
-          stripped from results before anything is sent. Each conversation belongs to your
-          current sign-in and is deleted 24 hours after its last message.
+          stripped from results before anything is sent. Chats are kept for 30 days after their last
+          message (at most 200), then deleted.
         </Callout>
       </div>
     </Card>

@@ -76,7 +76,7 @@ export function Sidebar({
       <nav
         aria-label="Primary"
         className={cn(
-          'flex flex-1 flex-col overflow-y-auto pb-3',
+          'no-scrollbar flex flex-1 flex-col overflow-y-auto pb-3',
           rail ? 'items-center px-2' : 'px-3',
         )}
       >

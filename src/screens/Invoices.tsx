@@ -617,7 +617,7 @@ function InvoiceRow({
 
 type Tab = 'overview' | 'payment' | 'transactions'
 
-function InvoiceDetailSheet({
+export function InvoiceDetailSheet({
   merchantId,
   invoiceId,
   onOpenChange,

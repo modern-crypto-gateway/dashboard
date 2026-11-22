@@ -776,7 +776,7 @@ function FeeTierBadge({ tier }: { tier: FeeTier }) {
 
 type Tab = 'overview' | 'chain' | 'fees'
 
-function PayoutDetailSheet({
+export function PayoutDetailSheet({
   merchantId,
   payoutId,
   onOpenChange,

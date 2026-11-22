@@ -1,518 +1,899 @@
 import * as React from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useLocation } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { ApiError } from '@/lib/api'
 import {
+  applyEvent,
   assistantStateQuery,
+  conversationKey,
+  conversationQuery,
+  emptyConversation,
+  LOCAL_USER_ID,
   postAssistant,
+  streamAssistant,
+  type AssistantAnswer,
   type AssistantConversation,
-  type AssistantPendingAction,
-  type AssistantState,
+  type AssistantStep,
   type AssistantUiItem,
+  type EntityRef,
+  type StreamEvent,
 } from '@/lib/assistant'
+import { useActiveMerchant } from '@/lib/merchants'
+import { useMediaQuery } from '@/lib/useMediaQuery'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { OtpInput } from '@/components/OtpInput'
 import {
   AlertTriangle,
+  ArrowDown,
   Check,
-  ChevronDown,
-  ChevronRight,
-  Loader2,
+  Collapse,
+  Copy,
+  Expand,
+  History as HistoryIcon,
   Plus,
+  Receipt,
+  Search,
+  Send,
   SendRight,
   Sparkle,
+  Stop,
+  Wallet,
   X,
-  XCircle,
 } from '@/components/icons'
+import { ActivityBlock } from './assistant/Steps'
+import { ApprovalCard } from './assistant/ApprovalCard'
+import { AnsweredQuestion, QuestionCard } from './assistant/QuestionCard'
+import { History } from './assistant/History'
+import { EntityContext } from '@/lib/assistantUi'
+import { Markdown } from './assistant/Markdown'
+
+const InvoiceSheet = React.lazy(() =>
+  import('@/screens/Invoices').then((m) => ({ default: m.InvoiceDetailSheet })),
+)
+const PayoutSheet = React.lazy(() => import('@/screens/Payouts').then((m) => ({ default: m.PayoutDetailSheet })))
+
+type Mode = 'compact' | 'expanded'
+
+function readPref<T extends string>(key: string, fallback: T, allowed: readonly T[]): T {
+  try {
+    const v = window.localStorage.getItem(key) as T | null
+    return v && allowed.includes(v) ? v : fallback
+  } catch {
+    return fallback
+  }
+}
+function writePref(key: string, value: string | null) {
+  try {
+    if (value === null) window.localStorage.removeItem(key)
+    else window.localStorage.setItem(key, value)
+  } catch {
+    /* storage unavailable: preference just isn't remembered */
+  }
+}
 
 /**
  * Floating AI assistant (bottom right). Renders only inside the signed-in
  * app shell; the server refuses every /api/assistant call without a session
- * anyway. Nothing here holds the Anthropic key: the browser only sends chat
- * text and approval decisions, and gets back display items.
+ * anyway. Nothing here holds the Anthropic key: the browser sends chat text
+ * and approval decisions, and receives display items and progress events.
  */
 export function Assistant() {
   const [open, setOpen] = React.useState(false)
+  const [mode, setMode] = React.useState<Mode>(() => readPref('gw:assistant:mode', 'compact', ['compact', 'expanded']))
+  const desktop = useMediaQuery('(min-width: 768px)')
 
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    if (open) window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open])
+  const setModePersist = (m: Mode) => {
+    setMode(m)
+    writePref('gw:assistant:mode', m)
+  }
 
   return (
     <>
-      {open && <AssistantPanel onClose={() => setOpen(false)} />}
-      <button
-        type="button"
-        aria-label={open ? 'Close assistant' : 'Open assistant'}
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className={cn(
-          'fixed right-4 bottom-4 z-50 flex size-12 items-center justify-center rounded-full shadow-[var(--shadow-md)] transition-transform duration-150 hover:scale-105 active:scale-95 md:right-6 md:bottom-6',
-          'bg-primary text-primary-foreground',
-          open && 'max-md:hidden',
-        )}
-      >
-        {open ? <X className="size-5" /> : <Sparkle className="size-5" weight="fill" />}
-      </button>
+      {open && (
+        <AssistantPanel
+          mode={desktop ? mode : 'expanded'}
+          desktop={desktop}
+          onMode={setModePersist}
+          onClose={() => setOpen(false)}
+        />
+      )}
+      {!(open && (mode === 'expanded' || !desktop)) && (
+        <button
+          type="button"
+          aria-label={open ? 'Close assistant' : 'Open assistant'}
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className={cn(
+            'fixed right-4 bottom-4 z-50 flex size-12 items-center justify-center rounded-full shadow-[var(--shadow-md)] transition-all duration-200 hover:scale-105 active:scale-95 md:right-6 md:bottom-6',
+            'bg-primary text-primary-foreground',
+          )}
+        >
+          <span className={cn('transition-transform duration-200', open && 'rotate-90')}>
+            {open ? <X className="size-5" /> : <Sparkle className="size-5" weight="fill" />}
+          </span>
+        </button>
+      )}
     </>
   )
 }
 
-function AssistantPanel({ onClose }: { onClose: () => void }) {
+/* ── panel ────────────────────────────────────────────────── */
+
+function AssistantPanel({
+  mode,
+  desktop,
+  onMode,
+  onClose,
+}: {
+  mode: Mode
+  desktop: boolean
+  onMode: (m: Mode) => void
+  onClose: () => void
+}) {
   const qc = useQueryClient()
-  const state = useQuery(assistantStateQuery)
+  const navigate = useNavigate()
   const { pathname } = useLocation()
-  const [draft, setDraft] = React.useState('')
-  const listRef = React.useRef<HTMLDivElement>(null)
+  const { active, setActiveId: setActiveStore } = useActiveMerchant()
+  const state = useQuery(assistantStateQuery)
 
-  const setConversation = (conversation: AssistantConversation) =>
-    qc.setQueryData<AssistantState>(assistantStateQuery.queryKey, (old) =>
-      old ? { ...old, conversation } : old,
-    )
-
-  const onFail = (e: ApiError) => {
-    toast.error(e.message || 'The assistant could not answer')
-    qc.invalidateQueries({ queryKey: assistantStateQuery.queryKey })
+  const [storedId, setActiveIdState] = React.useState<string | null>(() => {
+    try {
+      return window.localStorage.getItem('gw:assistant:chat')
+    } catch {
+      return null
+    }
+  })
+  const setActiveId = (id: string | null) => {
+    setActiveIdState(id)
+    writePref('gw:assistant:chat', id)
   }
+  const [showHistory, setShowHistory] = React.useState(false)
+  const [streaming, setStreaming] = React.useState(false)
+  // First message of a chat being created, shown until the server answers.
+  const [draftNew, setDraftNew] = React.useState<{ text: string; at: number } | null>(null)
+  const [entity, setEntity] = React.useState<EntityRef | null>(null)
 
-  const send = useMutation({
-    mutationFn: (message: string) =>
-      postAssistant<{ conversation: AssistantConversation }>('chat', { message, page: pathname }),
-    onSuccess: (r) => setConversation(r.conversation),
-    onError: onFail,
-  })
+  const convQ = useQuery({ ...conversationQuery(storedId ?? 'none'), enabled: !!storedId, retry: false })
+  // A remembered chat that no longer exists (deleted, expired) starts fresh.
+  const gone = !!storedId && convQ.error instanceof ApiError && convQ.error.status === 404
+  const activeId = gone ? null : storedId
 
-  const reset = useMutation({
-    mutationFn: () => postAssistant('reset'),
-    onSuccess: () => qc.invalidateQueries({ queryKey: assistantStateQuery.queryKey }),
-    onError: onFail,
-  })
-
-  const conv = state.data?.conversation
+  const conv = activeId ? (convQ.data ?? null) : null
   const configured = state.data?.config.configured ?? false
   const modelLabel = state.data?.models.find((m) => m.id === state.data?.config.model)?.label
-  const working = send.isPending || !!conv?.busy
-  const blocked = !configured || working || !!conv?.pending
+  const working = streaming || !!conv?.busy
+  const expanded = mode === 'expanded'
 
-  // Keep the newest item in view.
   React.useEffect(() => {
-    const el = listRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [conv?.ui.length, conv?.pending?.id, send.isPending])
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || entity) return
+      // Escape closes the topmost thing only: leave it to an open sheet,
+      // dialog or menu (Radix marks them data-state="open").
+      if (document.querySelector('[data-state="open"]:is([role="dialog"],[role="menu"],[role="listbox"])')) return
+      onClose()
+    }
+    // Capture phase on window runs before Radix's own Escape handling, so an
+    // open sheet is still in the DOM when this checks for it.
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [onClose, entity])
 
-  const submit = () => {
-    const text = draft.trim()
-    if (!text || blocked) return
-    setDraft('')
-    // Show the message immediately; the server's copy replaces it.
-    qc.setQueryData<AssistantState>(assistantStateQuery.queryKey, (old) =>
-      old
-        ? {
-            ...old,
-            conversation: {
-              ...old.conversation,
-              ui: [...old.conversation.ui, { kind: 'user', text, at: Date.now() }],
-            },
-          }
-        : old,
+  /* streaming turn (chat or approve) */
+  const runTurn = async (
+    action: 'chat' | 'approve' | 'answer',
+    body: Record<string, unknown>,
+    knownId: string | null,
+  ): Promise<void> => {
+    setStreaming(true)
+    let cid = knownId
+    const onEvent = (ev: StreamEvent) => {
+      if (ev.t === 'start') {
+        cid = ev.conversation.id
+        if (!knownId) {
+          qc.setQueryData<AssistantConversation>(conversationKey(cid), emptyConversation(ev.conversation))
+          setActiveId(cid)
+          setDraftNew(null)
+        }
+        void qc.invalidateQueries({ queryKey: assistantStateQuery.queryKey })
+        return
+      }
+      if (ev.t === 'error') {
+        toast.error(ev.message)
+        return
+      }
+      if (cid) {
+        qc.setQueryData<AssistantConversation>(conversationKey(cid), (old) => (old ? applyEvent(old, ev) : old))
+      }
+    }
+    try {
+      await streamAssistant(action, body, onEvent)
+    } finally {
+      setStreaming(false)
+      void qc.invalidateQueries({ queryKey: assistantStateQuery.queryKey })
+      if (cid) void qc.invalidateQueries({ queryKey: conversationKey(cid) })
+    }
+  }
+
+  const send = async (text: string) => {
+    const page = pathname
+    const storeId = active?.id
+    if (activeId && conv) {
+      // Show the message at once; the server's copy replaces it.
+      qc.setQueryData<AssistantConversation>(conversationKey(activeId), (old) =>
+        old ? { ...old, ui: [...old.ui, { kind: 'user', id: LOCAL_USER_ID, text, at: Date.now() }] } : old,
+      )
+    } else {
+      setDraftNew({ text, at: Date.now() })
+    }
+    try {
+      await runTurn('chat', { conversationId: activeId, message: text, page, storeId }, activeId)
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'The assistant could not answer')
+      setDraftNew(null)
+      if (activeId) {
+        qc.setQueryData<AssistantConversation>(conversationKey(activeId), (old) =>
+          old ? { ...old, ui: old.ui.filter((x) => x.id !== LOCAL_USER_ID) } : old,
+        )
+      }
+      throw e
+    }
+  }
+
+  const decide = async (decisions: Record<string, 'approve' | 'decline'>, totp?: string) => {
+    if (!conv?.pending) return
+    await runTurn(
+      'approve',
+      { conversationId: conv.id, batchId: conv.pending.id, decisions, ...(totp ? { totp } : {}) },
+      conv.id,
     )
-    send.mutate(text)
+  }
+
+  const answer = async (answers: AssistantAnswer[] | null) => {
+    if (!conv?.question) return
+    await runTurn(
+      'answer',
+      { conversationId: conv.id, questionId: conv.question.id, ...(answers ? { answers } : { skip: true }) },
+      conv.id,
+    )
+  }
+
+  const stop = async () => {
+    if (!activeId) return
+    try {
+      await postAssistant('stop', { conversationId: activeId })
+      toast('Stopping after the current step…')
+    } catch {
+      /* the turn may have just finished */
+    }
+  }
+
+  const newChat = () => {
+    setActiveId(null)
+    setDraftNew(null)
+    setShowHistory(false)
+  }
+
+  const openEntity = React.useCallback(
+    (ref: EntityRef) => {
+      if (ref.type === 'invoice' || ref.type === 'payout') {
+        setEntity(ref)
+        return
+      }
+      if (ref.type === 'store') {
+        setActiveStore(ref.storeId)
+        navigate('/stores')
+      } else {
+        navigate(ref.path)
+      }
+      if (!desktop) onClose()
+    },
+    [desktop, navigate, onClose, setActiveStore],
+  )
+
+  const history = (
+    <History
+      conversations={state.data?.conversations ?? []}
+      loading={state.isLoading}
+      activeId={activeId}
+      onOpen={(id) => {
+        setActiveId(id)
+        setShowHistory(false)
+      }}
+      onNew={newChat}
+      onRename={async (id, title) => {
+        await postAssistant('rename', { conversationId: id, title })
+        await qc.invalidateQueries({ queryKey: assistantStateQuery.queryKey })
+        await qc.invalidateQueries({ queryKey: conversationKey(id) })
+      }}
+      onDelete={async (id) => {
+        try {
+          await postAssistant('delete', { conversationId: id })
+          if (id === activeId) newChat()
+          qc.removeQueries({ queryKey: conversationKey(id) })
+          await qc.invalidateQueries({ queryKey: assistantStateQuery.queryKey })
+        } catch (e) {
+          toast.error(e instanceof ApiError ? e.message : 'Could not delete the chat')
+        }
+      }}
+    />
+  )
+
+  return (
+    <EntityContext.Provider value={openEntity}>
+      <div
+        role="dialog"
+        aria-label="AI assistant"
+        className={cn(
+          'fixed z-50 flex animate-in overflow-hidden border border-border bg-card shadow-[var(--shadow-md)] duration-200 fade-in-0',
+          !desktop && 'inset-0',
+          desktop &&
+            !expanded &&
+            'right-6 bottom-[5.5rem] h-[min(720px,calc(100dvh-7.5rem))] w-[440px] origin-bottom-right zoom-in-95 slide-in-from-bottom-3 rounded-[20px]',
+          desktop && expanded && 'inset-y-2 right-2 w-[min(1040px,calc(100vw-1rem))] slide-in-from-right-4 rounded-[20px]',
+        )}
+      >
+        {expanded && desktop && (
+          <aside className="flex w-[248px] shrink-0 flex-col border-r border-border bg-[var(--bg-0)]">
+            <div className="flex h-[57px] shrink-0 items-center gap-2 border-b border-border px-4">
+              <HistoryIcon className="size-4 text-[var(--fg-2)]" />
+              <span className="text-[13px] font-semibold">Chats</span>
+            </div>
+            {history}
+          </aside>
+        )}
+
+        <section className="flex min-w-0 flex-1 flex-col">
+          {/* header */}
+          <header className="flex h-[57px] shrink-0 items-center gap-2.5 border-b border-border px-3.5">
+            <Avatar working={working} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13.5px] font-semibold">{conv?.title ?? (draftNew ? 'New chat' : 'Assistant')}</div>
+              <div className="flex items-center gap-1.5 truncate text-[11.5px] text-[var(--fg-2)]">
+                <span
+                  className={cn(
+                    'size-1.5 rounded-full',
+                    !configured ? 'bg-[var(--fg-3)]' : working ? 'bg-[var(--accent)] animate-pulse' : 'bg-success',
+                  )}
+                />
+                {!configured ? 'Not connected' : working ? 'Working…' : (modelLabel ?? 'Ready')}
+              </div>
+            </div>
+            {(!expanded || !desktop) && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Chat history"
+                aria-pressed={showHistory}
+                onClick={() => setShowHistory((s) => !s)}
+                className={cn(showHistory && 'bg-[var(--bg-active)]')}
+              >
+                <HistoryIcon className="size-4" />
+              </Button>
+            )}
+            <Button variant="ghost" size="icon-sm" aria-label="New chat" onClick={newChat} disabled={!activeId && !draftNew}>
+              <Plus className="size-4" />
+            </Button>
+            {desktop && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={expanded ? 'Make smaller' : 'Expand'}
+                onClick={() => onMode(expanded ? 'compact' : 'expanded')}
+              >
+                {expanded ? <Collapse className="size-4" /> : <Expand className="size-4" />}
+              </Button>
+            )}
+            <Button variant="ghost" size="icon-sm" aria-label="Close assistant" onClick={onClose}>
+              <X className="size-4" />
+            </Button>
+          </header>
+
+          {showHistory && (!expanded || !desktop) ? (
+            <div className="min-h-0 flex-1 animate-in duration-200 fade-in-0">{history}</div>
+          ) : (
+            <>
+              <Thread
+                conv={conv}
+                draftNew={draftNew}
+                configured={configured}
+                stateLoading={state.isLoading || (!!activeId && convQ.isLoading)}
+                live={working}
+                wide={expanded && desktop}
+                onPick={(t) => void send(t).catch(() => {})}
+                onDecide={decide}
+                onClose={onClose}
+              />
+              {conv?.question && !working && (
+                <QuestionCard
+                  key={conv.question.id}
+                  questions={conv.question.questions}
+                  disabled={working}
+                  onAnswer={(a) => answer(a)}
+                  onSkip={() => answer(null)}
+                />
+              )}
+              <Composer
+                disabled={!configured || !!conv?.pending}
+                working={working}
+                pending={!!conv?.pending}
+                question={!!conv?.question}
+                wide={expanded && desktop}
+                onSend={send}
+                onStop={stop}
+              />
+            </>
+          )}
+        </section>
+      </div>
+
+      <React.Suspense fallback={null}>
+        {entity?.type === 'invoice' && (
+          <InvoiceSheet merchantId={entity.storeId} invoiceId={entity.id} onOpenChange={(o) => !o && setEntity(null)} />
+        )}
+        {entity?.type === 'payout' && (
+          <PayoutSheet
+            merchantId={entity.storeId}
+            payoutId={entity.id}
+            onOpenChange={(o) => !o && setEntity(null)}
+            onOpenBatch={() => {
+              setEntity(null)
+              navigate('/payouts')
+            }}
+          />
+        )}
+      </React.Suspense>
+    </EntityContext.Provider>
+  )
+}
+
+/* ── avatar ───────────────────────────────────────────────── */
+
+function Avatar({ working, size = 'md' }: { working?: boolean; size?: 'sm' | 'md' | 'lg' }) {
+  const dim = size === 'lg' ? 'size-12 rounded-2xl' : size === 'sm' ? 'size-6 rounded-lg' : 'size-8 rounded-xl'
+  const icon = size === 'lg' ? 'size-6' : size === 'sm' ? 'size-3.5' : 'size-4'
+  return (
+    <span
+      className={cn(
+        'grid shrink-0 place-items-center bg-[var(--accent)] text-[var(--accent-fg)] shadow-[var(--shadow-sm)]',
+        dim,
+        working && 'ai-pulse',
+      )}
+    >
+      <Sparkle className={icon} weight="fill" />
+    </span>
+  )
+}
+
+/* ── thread ───────────────────────────────────────────────── */
+
+type Block =
+  | { kind: 'user'; item: Extract<AssistantUiItem, { kind: 'user' }> }
+  | { kind: 'response'; id: string; parts: Part[] }
+
+type Part =
+  | { kind: 'text'; item: Extract<AssistantUiItem, { kind: 'assistant' }> }
+  | { kind: 'steps'; id: string; steps: AssistantStep[] }
+  | { kind: 'notice'; item: Extract<AssistantUiItem, { kind: 'notice' }> }
+  | { kind: 'question'; item: Extract<AssistantUiItem, { kind: 'question' }> }
+
+/** Group the flat transcript into user messages and assistant responses. */
+function toBlocks(ui: AssistantUiItem[]): Block[] {
+  const blocks: Block[] = []
+  let resp: Extract<Block, { kind: 'response' }> | null = null
+  for (const item of ui) {
+    if (item.kind === 'user') {
+      resp = null
+      blocks.push({ kind: 'user', item })
+      continue
+    }
+    if (!resp) {
+      resp = { kind: 'response', id: item.id, parts: [] }
+      blocks.push(resp)
+    }
+    const last = resp.parts[resp.parts.length - 1]
+    if (item.kind === 'step') {
+      if (last?.kind === 'steps') last.steps.push(item.step)
+      else resp.parts.push({ kind: 'steps', id: item.id, steps: [item.step] })
+    } else if (item.kind === 'assistant') {
+      resp.parts.push({ kind: 'text', item })
+    } else if (item.kind === 'question') {
+      resp.parts.push({ kind: 'question', item })
+    } else {
+      resp.parts.push({ kind: 'notice', item })
+    }
+  }
+  return blocks
+}
+
+function Thread({
+  conv,
+  draftNew,
+  configured,
+  stateLoading,
+  live,
+  wide,
+  onPick,
+  onDecide,
+  onClose,
+}: {
+  conv: AssistantConversation | null
+  draftNew: { text: string; at: number } | null
+  configured: boolean
+  stateLoading: boolean
+  live: boolean
+  wide: boolean
+  onPick: (text: string) => void
+  onDecide: (d: Record<string, 'approve' | 'decline'>, totp?: string) => Promise<void>
+  onClose: () => void
+}) {
+  const ref = React.useRef<HTMLDivElement>(null)
+  const inner = React.useRef<HTMLDivElement>(null)
+  const [atBottom, setAtBottom] = React.useState(true)
+  const atBottomRef = React.useRef(true)
+  // Only the reader's own scrolling (wheel, touch, keys, scrollbar drag) can
+  // stop the auto-follow; scrolls caused by content changing size cannot.
+  const userScrollAt = React.useRef(0)
+  const markUser = () => {
+    userScrollAt.current = Date.now()
+  }
+  const ui = React.useMemo<AssistantUiItem[]>(() => {
+    if (conv) return conv.ui
+    return draftNew ? [{ kind: 'user', id: LOCAL_USER_ID, text: draftNew.text, at: draftNew.at }] : []
+  }, [conv, draftNew])
+  const blocks = React.useMemo(() => toBlocks(ui), [ui])
+  const lastBlock = blocks[blocks.length - 1]
+  const awaitingFirst = live && (!lastBlock || lastBlock.kind === 'user')
+
+  // Follow new content (new items, streaming text, steps that grow) while
+  // the reader is at the bottom; leave them alone once they scroll up.
+  React.useEffect(() => {
+    const el = ref.current
+    const body = inner.current
+    if (!el || !body) return
+    const ro = new ResizeObserver(() => {
+      if (atBottomRef.current) el.scrollTop = el.scrollHeight
+    })
+    ro.observe(body)
+    return () => ro.disconnect()
+  }, [])
+  // …and right after every content change commits (ResizeObserver only fires
+  // on rendering frames, which a background tab skips).
+  const last = ui[ui.length - 1]
+  const signature = [
+    ui.length,
+    last?.id,
+    last?.kind === 'assistant' ? last.text.length : last?.kind === 'step' ? `${last.step.status}${last.step.summary?.length ?? 0}` : '',
+    conv?.pending?.id ?? '',
+    live,
+  ].join('|')
+  React.useLayoutEffect(() => {
+    const el = ref.current
+    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
+  }, [signature])
+
+  const onScroll = () => {
+    const el = ref.current
+    if (!el) return
+    const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    if (!bottom && atBottomRef.current && Date.now() - userScrollAt.current > 800) {
+      // Not the reader: keep following.
+      el.scrollTop = el.scrollHeight
+      return
+    }
+    atBottomRef.current = bottom
+    setAtBottom(bottom)
   }
 
   return (
-    <div
-      role="dialog"
-      aria-label="AI assistant"
-      className={cn(
-        'fixed z-50 flex flex-col overflow-hidden border border-border bg-card shadow-[var(--shadow-md)]',
-        'inset-0 md:inset-auto md:right-6 md:bottom-22 md:h-[min(680px,calc(100dvh-8rem))] md:w-[420px] md:rounded-[20px]',
-      )}
-    >
-      <header className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <Sparkle className="size-4 text-[var(--accent-ink)]" weight="fill" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">Assistant</div>
-          {modelLabel && <div className="truncate text-xs text-[var(--fg-2)]">{modelLabel}</div>}
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => reset.mutate()}
-          disabled={reset.isPending || working || !conv || conv.ui.length === 0}
-          title="Start a new chat"
-        >
-          <Plus className="size-3.5" /> New chat
-        </Button>
-        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close assistant">
-          <X className="size-4" />
-        </Button>
-      </header>
-
-      <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-        {state.isLoading && <div className="text-sm text-[var(--fg-2)]">Loading…</div>}
-        {state.data && !configured && (
-          <div className="rounded-xl border border-border bg-[var(--bg-0)] p-4 text-sm">
-            <p className="font-medium">Connect Claude to start</p>
-            <p className="mt-1 text-[var(--fg-2)]">
-              Add your Anthropic API key in{' '}
-              <Link to="/settings" className="text-primary underline underline-offset-4" onClick={onClose}>
-                Settings → AI assistant
-              </Link>
-              .
-            </p>
-          </div>
-        )}
-        {configured && conv && conv.ui.length === 0 && <EmptyHints onPick={setDraft} />}
-        {conv?.ui.map((item, i) => <UiRow key={`${item.at}-${i}`} item={item} />)}
-        {working && (
-          <div className="flex items-center gap-2 text-sm text-[var(--fg-2)]">
-            <Loader2 className="size-4 animate-spin" /> Working…
-          </div>
-        )}
-        {conv?.pending && <ApprovalCard key={conv.pending.id} pending={conv.pending} onDone={setConversation} />}
-      </div>
-
-      <form
-        className="border-t border-border p-3"
-        onSubmit={(e) => {
-          e.preventDefault()
-          submit()
-        }}
+    <div className="relative min-h-0 flex-1">
+      <div
+        ref={ref}
+        onScroll={onScroll}
+        onWheel={markUser}
+        onTouchMove={markUser}
+        onPointerDown={markUser}
+        onKeyDown={markUser}
+        className="h-full overflow-y-auto"
       >
-        <div className="flex items-end gap-2">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value.slice(0, 4000))}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                submit()
-              }
-            }}
-            rows={2}
-            placeholder={
-              conv?.pending ? 'Approve or decline the changes above first' : 'Ask about stores, invoices, payouts…'
-            }
-            disabled={blocked}
-            aria-label="Message"
-            className="max-h-40 min-h-[44px] flex-1 resize-none rounded-xl border border-input bg-[var(--bg-0)] px-3 py-2.5 text-sm outline-none placeholder:text-[var(--fg-3)] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:opacity-50"
-          />
-          <Button type="submit" size="icon" disabled={blocked || !draft.trim()} aria-label="Send">
-            <SendRight className="size-4" />
-          </Button>
+        <div ref={inner} className={cn('mx-auto space-y-5 px-4 py-5', wide && 'max-w-[720px] px-6')}>
+          {stateLoading && ui.length === 0 && <ThreadSkeleton />}
+
+          {!stateLoading && !configured && (
+            <div className="rounded-2xl border border-border bg-[var(--bg-0)] p-4 text-[13px]">
+              <p className="font-medium">Connect Claude to start</p>
+              <p className="mt-1 text-[var(--fg-2)]">
+                Add your Anthropic API key in{' '}
+                <Link to="/settings" className="text-[var(--accent-ink)] underline underline-offset-4" onClick={onClose}>
+                  Settings → AI assistant
+                </Link>
+                .
+              </p>
+            </div>
+          )}
+
+          {!stateLoading && configured && ui.length === 0 && <EmptyState onPick={onPick} />}
+
+          {blocks.map((b, i) =>
+            b.kind === 'user' ? (
+              <UserMessage key={b.item.id} item={b.item} />
+            ) : (
+              <Response key={b.id} parts={b.parts} live={live && i === blocks.length - 1} />
+            ),
+          )}
+
+          {awaitingFirst && (
+            <div className="flex animate-in items-center gap-3 duration-300 fade-in-0">
+              <Avatar working size="sm" />
+              <span className="ai-shimmer text-[13px] font-medium">Thinking…</span>
+            </div>
+          )}
+
+          {conv?.pending && <ApprovalCard key={conv.pending.id} pending={conv.pending} busy={live} onDecide={onDecide} />}
         </div>
-        <p className="mt-2 text-[11px] leading-snug text-[var(--fg-3)]">
-          Changes wait for your approval. Money moves also need your authenticator code.
-        </p>
-      </form>
+      </div>
+      {!atBottom && (
+        <button
+          type="button"
+          onClick={() => {
+            atBottomRef.current = true
+            setAtBottom(true)
+            ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: 'smooth' })
+          }}
+          className="absolute bottom-3 left-1/2 flex -translate-x-1/2 animate-in items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-[12px] shadow-[var(--shadow-md)] duration-200 fade-in-0 slide-in-from-bottom-2 hover:bg-[var(--bg-hover)]"
+        >
+          <ArrowDown className="size-3.5" /> Latest
+        </button>
+      )}
     </div>
   )
 }
 
-function EmptyHints({ onPick }: { onPick: (s: string) => void }) {
-  const hints = [
-    'Summarize today: new invoices, payments, payouts',
-    'Which payouts failed this week and why?',
-    'Show balances by chain and token',
-    'Any orphan transactions I should look at?',
-  ]
+function time(ts: number): string {
+  return new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
+function UserMessage({ item }: { item: Extract<AssistantUiItem, { kind: 'user' }> }) {
   return (
-    <div className="space-y-2">
-      <p className="text-sm text-[var(--fg-2)]">Ask anything about your gateway. Try:</p>
-      {hints.map((h) => (
-        <button
-          key={h}
-          type="button"
-          onClick={() => onPick(h)}
-          className="block w-full rounded-xl border border-border px-3 py-2 text-left text-sm hover:bg-[var(--bg-hover)]"
-        >
-          {h}
-        </button>
+    <div className="group flex animate-in flex-col items-end duration-300 fade-in-0 slide-in-from-bottom-1">
+      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-[13.5px] leading-relaxed whitespace-pre-wrap text-primary-foreground shadow-[var(--shadow-sm)]">
+        {item.text}
+      </div>
+      <span className="mt-1 text-[10.5px] text-[var(--fg-3)] opacity-0 transition-opacity group-hover:opacity-100">
+        {time(item.at)}
+      </span>
+    </div>
+  )
+}
+
+function Response({ parts, live }: { parts: Part[]; live: boolean }) {
+  const lastText = [...parts].reverse().find((p) => p.kind === 'text') as Extract<Part, { kind: 'text' }> | undefined
+  const allText = parts
+    .filter((p): p is Extract<Part, { kind: 'text' }> => p.kind === 'text')
+    .map((p) => p.item.text)
+    .join('\n\n')
+  const lastPart = parts[parts.length - 1]
+  const streamingId = live && lastPart?.kind === 'text' ? lastPart.item.id : null
+  const waiting = live && lastPart && lastPart.kind !== 'text' && !(lastPart.kind === 'steps' && lastPart.steps.some((s) => s.status === 'running'))
+
+  return (
+    <div className="group flex animate-in gap-3 duration-300 fade-in-0 slide-in-from-bottom-1">
+      <Avatar working={live} size="sm" />
+      <div className="min-w-0 flex-1 space-y-2.5 pt-0.5">
+        {parts.map((p) =>
+          p.kind === 'text' ? (
+            <Markdown key={p.item.id} text={p.item.text} streaming={p.item.id === streamingId} />
+          ) : p.kind === 'steps' ? (
+            <ActivityBlock key={p.id} steps={p.steps} live={live} />
+          ) : p.kind === 'question' ? (
+            <AnsweredQuestion key={p.item.id} questions={p.item.questions} answers={p.item.answers} status={p.item.status} />
+          ) : (
+            <div
+              key={p.item.id}
+              className="flex animate-in items-start gap-2 rounded-lg border border-[var(--warn-border)] bg-[var(--warn-bg)] px-3 py-2 text-[12.5px] text-warn duration-200 fade-in-0"
+            >
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {p.item.text}
+            </div>
+          ),
+        )}
+        {waiting && <span className="ai-shimmer block text-[12.5px] font-medium">Working…</span>}
+        {!live && lastText && (
+          <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            <CopyButton text={allText} />
+            <span className="text-[10.5px] text-[var(--fg-3)]">{time(lastText.item.at)}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = React.useState(false)
+  return (
+    <button
+      type="button"
+      aria-label="Copy answer"
+      onClick={() => {
+        void navigator.clipboard?.writeText(text)
+        setDone(true)
+        window.setTimeout(() => setDone(false), 1200)
+      }}
+      className="rounded-md p-1 text-[var(--fg-3)] hover:bg-[var(--bg-hover)] hover:text-foreground"
+    >
+      {done ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+    </button>
+  )
+}
+
+function ThreadSkeleton() {
+  return (
+    <div className="space-y-4">
+      {[70, 45, 85].map((w, i) => (
+        <div key={i} className="flex gap-3">
+          <div className="size-6 animate-pulse rounded-lg bg-[var(--muted-bg)]" />
+          <div className="flex-1 space-y-2">
+            <div className="h-3 animate-pulse rounded bg-[var(--muted-bg)]" style={{ width: `${w}%` }} />
+            <div className="h-3 w-1/2 animate-pulse rounded bg-[var(--muted-bg)]" />
+          </div>
+        </div>
       ))}
     </div>
   )
 }
 
-/* ── transcript rows ──────────────────────────────────────── */
+/* ── empty state ──────────────────────────────────────────── */
 
-function UiRow({ item }: { item: AssistantUiItem }) {
-  if (item.kind === 'user') {
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3 py-2 text-sm whitespace-pre-wrap text-primary-foreground">
-          {item.text}
-        </div>
-      </div>
-    )
-  }
-  if (item.kind === 'assistant') {
-    return (
-      <div className="max-w-[95%] text-sm leading-relaxed">
-        <RichText text={item.text} />
-      </div>
-    )
-  }
-  if (item.kind === 'notice') {
-    return (
-      <div className="flex items-start gap-2 rounded-lg bg-[var(--warn-bg)] px-3 py-2 text-xs text-warn">
-        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {item.text}
-      </div>
-    )
-  }
-  const icon =
-    item.status === 'ok' ? (
-      <Check className="size-3.5 text-success" />
-    ) : item.status === 'error' ? (
-      <XCircle className="size-3.5 text-destructive" />
-    ) : (
-      <X className="size-3.5 text-[var(--fg-3)]" />
-    )
-  const verb =
-    item.risk === 'read'
-      ? 'Looked up'
-      : item.status === 'ok'
-        ? 'Done'
-        : item.status === 'error'
-          ? 'Failed'
-          : item.status === 'declined'
-            ? 'Declined'
-            : 'Expired'
-  return (
-    <div className="text-xs text-[var(--fg-2)]">
-      <div className="flex items-center gap-1.5">
-        {icon}
-        <span>
-          {verb}: <span className="text-foreground">{item.label}</span>
-        </span>
-      </div>
-      {item.detail && <div className="mt-1 ml-5 font-mono break-all text-[var(--fg-3)]">{item.detail}</div>}
-    </div>
-  )
+const SUGGESTIONS: Record<string, Array<{ icon: typeof Receipt; text: string }>> = {
+  '/invoices': [
+    { icon: Receipt, text: 'Which invoices were paid in the last 24 hours?' },
+    { icon: Search, text: 'Show expired invoices that received a partial payment' },
+  ],
+  '/payouts': [
+    { icon: Send, text: 'Which payouts failed this week, and why?' },
+    { icon: Search, text: 'List payouts still pending for more than an hour' },
+  ],
 }
+const DEFAULT_SUGGESTIONS = [
+  { icon: Sparkle, text: 'Summarize today: new invoices, payments and payouts' },
+  { icon: Wallet, text: 'Show balances by chain and token' },
+  { icon: Send, text: 'Which payouts failed this week, and why?' },
+  { icon: Search, text: 'Any orphan transactions I should look at?' },
+]
 
-/**
- * Minimal, safe formatting for the model's text: paragraphs, "- " bullets,
- * **bold** and `code`. Built from React nodes only (no HTML injection).
- */
-function RichText({ text }: { text: string }) {
-  const blocks = text.split(/\n{2,}/)
+function EmptyState({ onPick }: { onPick: (text: string) => void }) {
+  const { pathname } = useLocation()
+  const extra = SUGGESTIONS[pathname] ?? []
+  const list = [...extra, ...DEFAULT_SUGGESTIONS.filter((d) => !extra.some((e) => e.text === d.text))].slice(0, 4)
   return (
-    <div className="space-y-2">
-      {blocks.map((b, i) => {
-        const lines = b.split('\n')
-        if (lines.every((l) => /^\s*[-*] /.test(l))) {
-          return (
-            <ul key={i} className="list-disc space-y-1 pl-5">
-              {lines.map((l, j) => (
-                <li key={j}>{inline(l.replace(/^\s*[-*] /, ''))}</li>
-              ))}
-            </ul>
-          )
-        }
-        return (
-          <p key={i} className="whitespace-pre-wrap">
-            {inline(b)}
-          </p>
-        )
-      })}
-    </div>
-  )
-}
-
-function inline(s: string): React.ReactNode[] {
-  const out: React.ReactNode[] = []
-  const rx = /(\*\*[^*]+\*\*|`[^`]+`)/g
-  let last = 0
-  let m: RegExpExecArray | null
-  while ((m = rx.exec(s))) {
-    if (m.index > last) out.push(s.slice(last, m.index))
-    const t = m[0]
-    out.push(
-      t.startsWith('**') ? (
-        <strong key={m.index}>{t.slice(2, -2)}</strong>
-      ) : (
-        <code key={m.index} className="rounded bg-[var(--muted-bg)] px-1 font-mono text-[0.85em] break-all">
-          {t.slice(1, -1)}
-        </code>
-      ),
-    )
-    last = m.index + t.length
-  }
-  if (last < s.length) out.push(s.slice(last))
-  return out
-}
-
-/* ── approval card ────────────────────────────────────────── */
-
-function ApprovalCard({
-  pending,
-  onDone,
-}: {
-  pending: NonNullable<AssistantConversation['pending']>
-  onDone: (c: AssistantConversation) => void
-}) {
-  const qc = useQueryClient()
-  const [selected, setSelected] = React.useState<Record<string, boolean>>(() =>
-    Object.fromEntries(pending.actions.map((a) => [a.id, true])),
-  )
-  const [code, setCode] = React.useState('')
-  const [now, setNow] = React.useState(() => Date.now())
-  React.useEffect(() => {
-    const t = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(t)
-  }, [])
-
-  const approvedCount = pending.actions.filter((a) => selected[a.id]).length
-  const moneySelected = pending.actions.some((a) => a.risk === 'money' && selected[a.id])
-  const anyMoney = pending.actions.some((a) => a.risk === 'money')
-  const left = Math.max(0, Math.floor((pending.expiresAt - now) / 1000))
-  const expired = left === 0
-
-  const decide = useMutation({
-    mutationFn: (mode: 'selected' | 'none') => {
-      const decisions = Object.fromEntries(
-        pending.actions.map((a) => [a.id, mode === 'selected' && selected[a.id] ? 'approve' : 'decline']),
-      )
-      return postAssistant<{ conversation: AssistantConversation }>('approve', {
-        batchId: pending.id,
-        decisions,
-        ...(mode === 'selected' && moneySelected ? { totp: code } : {}),
-      })
-    },
-    onSuccess: (r) => onDone(r.conversation),
-    onError: (e: ApiError) => {
-      toast.error(e.message || 'Could not apply the decision')
-      setCode('')
-      if (e.code === 'AI_NO_PENDING') qc.invalidateQueries({ queryKey: assistantStateQuery.queryKey })
-    },
-  })
-
-  return (
-    <div
-      className={cn(
-        'space-y-3 rounded-2xl border p-3',
-        anyMoney ? 'border-[var(--warn-border)] bg-[var(--warn-bg)]/40' : 'border-border bg-[var(--bg-0)]',
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-sm font-semibold">
-          {pending.actions.length === 1 ? '1 change needs your approval' : `${pending.actions.length} changes need your approval`}
-        </div>
-        <div className={cn('text-xs tabular-nums', left < 60 ? 'text-warn' : 'text-[var(--fg-2)]')}>
-          {expired ? 'expired' : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`}
-        </div>
-      </div>
-
-      <ul className="space-y-2">
-        {pending.actions.map((a) => (
-          <ActionRow
-            key={a.id}
-            action={a}
-            checked={!!selected[a.id]}
-            onChange={(v) => setSelected((s) => ({ ...s, [a.id]: v }))}
-            disabled={decide.isPending || expired}
-          />
+    <div className="flex animate-in flex-col items-center pt-6 pb-2 text-center duration-500 fade-in-0 slide-in-from-bottom-2">
+      <Avatar size="lg" />
+      <h2 className="mt-4 text-[17px] font-semibold tracking-[-0.01em]">How can I help?</h2>
+      <p className="mt-1 max-w-[320px] text-[12.5px] text-pretty text-[var(--fg-2)]">
+        I can look things up across your stores, invoices and payouts, and prepare changes for your approval.
+      </p>
+      <div className="mt-5 grid w-full gap-2 sm:grid-cols-2">
+        {list.map(({ icon: Icon, text }, i) => (
+          <button
+            key={text}
+            type="button"
+            onClick={() => onPick(text)}
+            style={{ animationDelay: `${i * 60}ms` }}
+            className="flex animate-in items-start gap-2.5 rounded-xl border border-border bg-card p-3 text-left text-[12.5px] leading-snug shadow-[var(--shadow-sm)] transition-colors duration-300 fill-mode-both fade-in-0 slide-in-from-bottom-1 hover:border-[var(--accent-border)] hover:bg-[var(--bg-hover)]"
+          >
+            <Icon className="mt-0.5 size-4 shrink-0 text-[var(--accent-ink)]" />
+            {text}
+          </button>
         ))}
-      </ul>
-
-      {moneySelected && !expired && (
-        <div className="space-y-1.5">
-          <div className="text-xs font-medium">Authenticator code to approve money moves</div>
-          <OtpInput value={code} onChange={setCode} />
-        </div>
-      )}
-
-      <div className="flex gap-2">
-        <Button
-          className="flex-1"
-          variant={anyMoney ? 'signal' : 'default'}
-          disabled={decide.isPending || expired || approvedCount === 0 || (moneySelected && code.length !== 6)}
-          onClick={() => decide.mutate('selected')}
-        >
-          {decide.isPending ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : approvedCount === pending.actions.length ? (
-            pending.actions.length === 1 ? 'Approve' : `Approve all ${approvedCount}`
-          ) : (
-            `Approve ${approvedCount} of ${pending.actions.length}`
-          )}
-        </Button>
-        <Button variant="outline" disabled={decide.isPending} onClick={() => decide.mutate('none')}>
-          {expired ? 'Dismiss' : 'Decline all'}
-        </Button>
       </div>
     </div>
   )
 }
 
-function ActionRow({
-  action,
-  checked,
-  onChange,
+/* ── composer ─────────────────────────────────────────────── */
+
+function Composer({
   disabled,
+  working,
+  pending,
+  question,
+  wide,
+  onSend,
+  onStop,
 }: {
-  action: AssistantPendingAction
-  checked: boolean
-  onChange: (v: boolean) => void
   disabled: boolean
+  working: boolean
+  pending: boolean
+  question: boolean
+  wide: boolean
+  onSend: (text: string) => Promise<void>
+  onStop: () => Promise<void>
 }) {
-  // Money moves open with the exact request visible.
-  const [showRaw, setShowRaw] = React.useState(action.risk === 'money')
+  const [draft, setDraft] = React.useState('')
+  const ta = React.useRef<HTMLTextAreaElement>(null)
+
+  // Back to the message box when a turn finishes, so the next question can
+  // be typed straight away.
+  const wasWorking = React.useRef(working)
+  React.useEffect(() => {
+    if (wasWorking.current && !working && !disabled) ta.current?.focus()
+    wasWorking.current = working
+  }, [working, disabled])
+
+  // Grow with the text, up to about eight lines.
+  React.useLayoutEffect(() => {
+    const el = ta.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+  }, [draft])
+
+  const submit = () => {
+    const text = draft.trim()
+    if (!text || disabled || working) return
+    setDraft('')
+    void onSend(text).catch(() => setDraft(text))
+  }
+
   return (
-    <li className="rounded-xl border border-border bg-card p-2.5">
-      <label className="flex cursor-pointer items-start gap-2.5">
-        <input
-          type="checkbox"
-          className="mt-0.5 size-4 rounded border-border"
-          checked={checked}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.checked)}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-sm font-medium">{action.label}</span>
-            <Badge variant={action.risk === 'money' ? 'warn' : 'default'}>
-              {action.risk === 'money' ? 'Money move' : 'Change'}
-            </Badge>
-          </div>
-          {action.facts.length > 0 && (
-            <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
-              {action.facts.map(([k, v], i) => (
-                <React.Fragment key={`${k}-${i}`}>
-                  <dt className="text-[var(--fg-2)]">{k}</dt>
-                  <dd className="min-w-0 font-mono break-all">{v}</dd>
-                </React.Fragment>
-              ))}
-            </dl>
-          )}
-          {action.reason && (
-            <p className="mt-1.5 text-xs text-[var(--fg-2)]">
-              <span className="font-medium">Assistant’s reason:</span> {action.reason}
-            </p>
+    <form
+      className={cn('shrink-0 border-t border-border bg-card px-3 pt-3 pb-2.5', wide && 'px-6')}
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+    >
+      <div className={cn('mx-auto', wide && 'max-w-[720px]')}>
+        <div className="flex items-end gap-2 rounded-2xl border border-input bg-[var(--bg-0)] p-1.5 pl-3 transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20">
+          <textarea
+            ref={ta}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value.slice(0, 4000))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                submit()
+              }
+            }}
+            rows={1}
+            placeholder={
+              pending
+                ? 'Approve or decline the changes above first'
+                : question
+                  ? 'Or type a different answer…'
+                  : working
+                  ? 'Working on it…'
+                  : 'Ask about stores, invoices, payouts…'
+            }
+            disabled={disabled}
+            aria-label="Message"
+            className="max-h-[200px] min-h-[36px] flex-1 resize-none bg-transparent py-2 text-[13.5px] leading-relaxed outline-none placeholder:text-[var(--fg-3)] disabled:opacity-50"
+          />
+          {working ? (
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              aria-label="Stop"
+              onClick={() => void onStop()}
+              className="shrink-0 rounded-xl"
+            >
+              <Stop className="size-3.5" weight="fill" />
+            </Button>
+          ) : (
+            <Button type="submit" size="icon" disabled={disabled || !draft.trim()} aria-label="Send" className="shrink-0 rounded-xl">
+              <SendRight className="size-4" />
+            </Button>
           )}
         </div>
-      </label>
-      <button
-        type="button"
-        onClick={() => setShowRaw((s) => !s)}
-        className="mt-1.5 ml-6.5 flex items-center gap-1 text-xs text-[var(--fg-2)] hover:text-foreground"
-      >
-        {showRaw ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />} Exact request
-      </button>
-      {showRaw && (
-        <pre className="mt-1.5 ml-6.5 max-h-48 overflow-auto rounded-lg bg-[var(--muted-bg)] p-2 font-mono text-[11px] break-all whitespace-pre-wrap">
-          {`${action.method} ${action.path}${action.query ? '?' + new URLSearchParams(action.query).toString() : ''}`}
-          {action.body != null ? `\n\n${JSON.stringify(action.body, null, 2)}` : ''}
-        </pre>
-      )}
-    </li>
+        <div className="mt-1.5 flex items-center justify-between gap-2 px-1 text-[10.5px] text-[var(--fg-3)]">
+          <span>Changes wait for your approval · money moves need your 2FA code</span>
+          <span className="hidden shrink-0 sm:inline">
+            {draft.length > 3500 ? `${draft.length}/4000` : 'Enter to send · Shift+Enter new line'}
+          </span>
+        </div>
+      </div>
+    </form>
   )
 }

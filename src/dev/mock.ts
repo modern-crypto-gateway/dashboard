@@ -262,7 +262,9 @@ function buildRoutes(db: MockDb, flags: Set<Flag>, auth: { authenticated: boolea
     }
   }
 
-  // AI assistant mock state.
+  // AI assistant mock state: chats, plus scripted streams that mimic the
+  // Worker's NDJSON progress events (see worker/assistant/types.ts).
+  type MockUi = Record<string, unknown> & { id: string; kind: string }
   type MockAiAction = {
     id: string
     method: string
@@ -274,12 +276,23 @@ function buildRoutes(db: MockDb, flags: Set<Flag>, auth: { authenticated: boolea
     facts: Array<[string, string]>
     reason: string
   }
-  const ai: {
-    configured: boolean
-    model: string
-    ui: Array<Record<string, unknown>>
+  type MockConv = {
+    id: string
+    title: string
+    createdAt: number
+    updatedAt: number
+    rev: number
+    busy: boolean
+    ui: MockUi[]
     pending: { id: string; expiresAt: number; actions: MockAiAction[] } | null
-  } = { configured: true, model: 'claude-opus-5-5', ui: [], pending: null }
+    question: { id: string; questions: Array<Record<string, unknown>> } | null
+  }
+  const ai: { configured: boolean; model: string; convs: MockConv[] } = {
+    configured: true,
+    model: 'claude-opus-5-5',
+    convs: [],
+  }
+  const aiMeta = (c: MockConv) => ({ id: c.id, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt, pending: !!c.pending || !!c.question })
   const aiState = () => ({
     config: { configured: ai.configured, keyHint: ai.configured ? 'a1B2' : null, model: ai.model },
     models: [
@@ -287,8 +300,163 @@ function buildRoutes(db: MockDb, flags: Set<Flag>, auth: { authenticated: boolea
       { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
       { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5' },
     ],
-    conversation: { rev: 0, busy: false, ui: ai.ui, pending: ai.pending },
+    conversations: [...ai.convs].sort((a, b) => b.updatedAt - a.updatedAt).map(aiMeta),
   })
+  const aiStore0 = db.merchants[0]?.id ?? 'mrc_demo'
+  const aiInvoice0 = db.invoices.find((i) => i.merchantId === aiStore0)?.id ?? 'inv_demo'
+  const aiPayout0 = db.payouts.find((p) => p.merchantId === aiStore0)?.id ?? 'po_demo'
+
+  /** Build a scripted turn: events with delays, applied to the chat as they go. */
+  const aiScript = (
+    conv: MockConv,
+    userText: string | null,
+    kind: 'chat' | 'approve' | 'answer',
+    decisions?: Record<string, string>,
+    answers?: Array<{ selected: string[]; other?: string }> | null,
+  ) => {
+    const ev: Array<{ ev: unknown; delay?: number }> = []
+    const at = () => Date.now()
+    const put = (item: MockUi, delay = 120) => {
+      const i = conv.ui.findIndex((x) => x.id === item.id)
+      if (i >= 0) conv.ui[i] = item
+      else conv.ui.push(item)
+      ev.push({ ev: { t: 'ui', item: { ...item } }, delay })
+    }
+    const stream = (id: string, text: string, every = 35) => {
+      for (const w of text.match(/\S+\s*/g) ?? []) ev.push({ ev: { t: 'delta', id, delta: w }, delay: every })
+    }
+    ev.push({ ev: { t: 'start', conversation: aiMeta(conv) }, delay: 60 })
+    if (userText) put({ kind: 'user', id: gen.uuid(r), text: userText, at: at() }, 40)
+
+    const thinkId = gen.uuid(r)
+    const thinking = 'Looking at the selected store first, then pulling recent activity so the numbers line up.'
+    put({ kind: 'step', id: thinkId, at: at(), step: { id: thinkId, kind: 'thinking', status: 'running', label: 'Thinking', startedAt: at() } }, 300)
+    stream(thinkId, thinking, 30)
+    put({ kind: 'step', id: thinkId, at: at(), step: { id: thinkId, kind: 'thinking', status: 'ok', label: 'Thinking', summary: thinking, startedAt: at() - 1400, endedAt: at() } }, 80)
+
+    const call = (label: string, method: string, path: string, summary: string, preview: unknown, risk: string = 'read', status = 'ok') => {
+      const id = gen.uuid(r)
+      const base = { id, kind: 'call', label, method, path, query: null, risk, reason: 'Needed to answer your question.', startedAt: at() }
+      put({ kind: 'step', id, at: at(), step: { ...base, status: 'running' } }, 150)
+      put({ kind: 'step', id, at: at(), step: { ...base, status, summary, preview: JSON.stringify(preview, null, 2), endedAt: at() + 600 } }, 650)
+    }
+
+    const answer = (text: string) => {
+      const id = gen.uuid(r)
+      put({ kind: 'assistant', id, text: '', at: at() }, 200)
+      stream(id, text)
+      const i = conv.ui.findIndex((x) => x.id === id)
+      conv.ui[i] = { kind: 'assistant', id, text, at: at() }
+    }
+
+    if (kind === 'approve') {
+      for (const a of conv.pending?.actions ?? []) {
+        const ok = decisions?.[a.id] === 'approve'
+        put(
+          {
+            kind: 'step',
+            id: a.id,
+            at: at(),
+            step: { id: a.id, kind: 'call', label: a.label, method: a.method, path: a.path, query: null, risk: a.risk, reason: a.reason, status: ok ? 'ok' : 'declined', summary: ok ? 'Done' : 'You declined this', startedAt: at(), endedAt: at() + 700 },
+          },
+          ok ? 900 : 200,
+        )
+      }
+      conv.pending = null
+      answer(`Done. The payout is submitted: [payout](gw:payout/${aiStore0}/${aiPayout0}). I'll show its status when you ask.`)
+    } else if (kind === 'chat' && userText && /pay|send/i.test(userText) && !/store/i.test(userText)) {
+      // Missing details: ask with a form instead of guessing.
+      call('List stores', 'GET', '/api/merchants', `${db.merchants.length} items`, db.merchants.slice(0, 3).map((m) => ({ id: m.id, name: m.name })))
+      answer('A couple of details before I prepare it:')
+      const qid = gen.uuid(r)
+      const questions = [
+        {
+          header: 'Store',
+          question: 'Which store should send the payout?',
+          options: db.merchants.slice(0, 3).map((m, i) => ({ label: m.name, description: i === 0 ? 'Selected store · most USDT on Tron' : undefined })),
+          multiSelect: false,
+          allowOther: false,
+        },
+        {
+          header: 'Speed',
+          question: 'How fast should it confirm?',
+          options: [
+            { label: 'Standard', description: '≈ 1.1 TRX fee · a few minutes' },
+            { label: 'Fast', description: '≈ 2.4 TRX fee · under a minute' },
+            { label: 'Economy', description: '≈ 0.6 TRX fee · can take longer' },
+          ],
+          multiSelect: false,
+          allowOther: true,
+        },
+      ]
+      conv.question = { id: qid, questions }
+      put({ kind: 'question', id: qid, questions, answers: null, status: 'waiting', at: at() }, 150)
+    } else if (kind === 'answer' || (userText && /pay|send|invoice/i.test(userText))) {
+      if (kind === 'answer' && conv.question) {
+        const q = conv.question
+        conv.question = null
+        put({ kind: 'question', id: q.id, questions: q.questions, answers: answers ?? null, status: answers ? 'answered' : 'skipped', at: at() }, 60)
+      }
+      call('List stores', 'GET', '/api/merchants', `${db.merchants.length} items`, db.merchants.slice(0, 2).map((m) => ({ id: m.id, name: m.name })))
+      call('Estimate payout fees', 'POST', `/api/mg/${aiStore0}/payouts/estimate`, 'Done', { fee: '1.1 TRX', tier: 'medium' })
+      answer('The fee for **250 USDT** on Tron is about **1.1 TRX**. I have queued the payout and the invoice below for your approval.')
+      conv.pending = {
+        id: gen.uuid(r),
+        expiresAt: Date.now() + 10 * 60 * 1000,
+        actions: [
+          {
+            id: gen.uuid(r),
+            method: 'POST',
+            path: `/api/mg/${aiStore0}/invoices`,
+            query: null,
+            body: { chainId: 'tron', token: 'USDT', amountUsd: '120.00', externalId: 'order-1042' },
+            risk: 'write',
+            label: 'Create invoice',
+            facts: [['storeId', aiStore0], ['amountUsd', '120.00'], ['token', 'USDT'], ['chainId', 'tron'], ['externalId', 'order-1042']],
+            reason: 'You asked for an invoice for order 1042.',
+          },
+          {
+            id: gen.uuid(r),
+            method: 'POST',
+            path: `/api/mg/${aiStore0}/payouts`,
+            query: null,
+            body: { chainId: 'tron', token: 'USDT', amount: '250', destinationAddress: 'TQ5NvQ2t1r7cGx3dV4h7oW2m8bTnE6yZkP' },
+            risk: 'money',
+            label: 'Send payout',
+            facts: [['storeId', aiStore0], ['amount', '250'], ['token', 'USDT'], ['chainId', 'tron'], ['destinationAddress', 'TQ5NvQ2t1r7cGx3dV4h7oW2m8bTnE6yZkP']],
+            reason: 'Pays the supplier invoice you mentioned.',
+          },
+        ],
+      }
+    } else {
+      call('List stores', 'GET', '/api/merchants', `${db.merchants.length} items`, db.merchants.slice(0, 2).map((m) => ({ id: m.id, name: m.name })))
+      call('List invoices', 'GET', `/api/mg/${aiStore0}/invoices`, '25 items', { invoices: [{ id: aiInvoice0, status: 'paid' }], total: 140 })
+      call('List payouts', 'GET', `/api/mg/${aiStore0}/payouts`, '3 items', { payouts: [{ id: aiPayout0, status: 'confirmed' }] })
+      call('Held payouts', 'GET', '/api/gw/admin/payouts/held', 'HTTP 502 · Gateway did not answer', { error: { message: 'Gateway did not answer' } }, 'read', 'error')
+      answer(
+        [
+          'Here is today so far for [your store](gw:store/' + aiStore0 + '):',
+          '',
+          '| Metric | Count | Amount |',
+          '|---|---:|---:|',
+          '| Invoices created | 14 | — |',
+          '| Invoices paid | 11 | $3,482.10 |',
+          '| Payouts sent | 3 | $1,250.00 |',
+          '',
+          `- Latest paid invoice: [${aiInvoice0.slice(0, 12)}](gw:invoice/${aiStore0}/${aiInvoice0})`,
+          `- Latest payout: [${aiPayout0.slice(0, 12)}](gw:payout/${aiStore0}/${aiPayout0}), confirmed`,
+          '- No orphan transactions. I could not load **held payouts** (the gateway did not answer).',
+          '',
+          'Want me to dig into any of these? See all on the [Invoices page](gw:page/invoices).',
+        ].join('\n'),
+      )
+    }
+    conv.rev += 1
+    conv.busy = false
+    conv.updatedAt = Date.now()
+    ev.push({ ev: { t: 'done', conversation: JSON.parse(JSON.stringify(conv)) }, delay: 80 })
+    return R(200, ev, { 'content-type': 'application/x-ndjson' })
+  }
 
   return [
     /* auth / setup */
@@ -328,8 +496,12 @@ function buildRoutes(db: MockDb, flags: Set<Flag>, auth: { authenticated: boolea
       return { recoveryCodes: Array.from({ length: 10 }, () => `${gen.alnum(r, 5)}-${gen.alnum(r, 5)}`.toLowerCase()) }
     }),
 
-    /* AI assistant (mock: canned replies, no model) */
+    /* AI assistant (mock: scripted streams, no model) */
     route('GET', '/api/assistant/state', () => aiState()),
+    route('GET', '/api/assistant/conversations/:id', ({ params }) => {
+      const c = ai.convs.find((x) => x.id === params.id)
+      return c ? { conversation: c } : notFound('Conversation')
+    }),
     route('POST', '/api/assistant/config', ({ body }) => {
       const b = (body ?? {}) as { apiKey?: string; model?: string }
       if (b.apiKey) ai.configured = true
@@ -341,75 +513,52 @@ function buildRoutes(db: MockDb, flags: Set<Flag>, auth: { authenticated: boolea
       return { config: aiState().config }
     }),
     route('POST', '/api/assistant/test', () => ({ ok: true, model: ai.model })),
-    route('POST', '/api/assistant/reset', () => {
-      ai.ui = []
-      ai.pending = null
+    route('POST', '/api/assistant/stop', () => ({ ok: true, stopping: true })),
+    route('POST', '/api/assistant/rename', ({ body }) => {
+      const c = ai.convs.find((x) => x.id === body.conversationId)
+      if (c) c.title = String(body.title ?? c.title)
+      return { ok: true }
+    }),
+    route('POST', '/api/assistant/delete', ({ body }) => {
+      ai.convs = ai.convs.filter((x) => x.id !== body.conversationId)
       return { ok: true }
     }),
     route('POST', '/api/assistant/chat', ({ body }) => {
-      const text = String((body as { message?: string })?.message ?? '')
-      const at = Date.now()
-      ai.ui.push({ kind: 'user', text, at })
-      ai.ui.push({ kind: 'action', label: 'List stores', method: 'GET', path: '/api/merchants', risk: 'read', status: 'ok', at })
-      if (/pay|send|invoice/i.test(text)) {
-        ai.ui.push({ kind: 'action', label: 'Estimate payout fees', method: 'POST', path: '/api/mg/mrc_demo/payouts/estimate', risk: 'read', status: 'ok', at })
-        ai.ui.push({
-          kind: 'assistant',
-          text: 'The fee for **250 USDT** on Tron is about **1.1 TRX**. I have queued the payout and the invoice below for your approval.',
-          at,
-        })
-        ai.pending = {
+      const text = String(body.message ?? '').trim()
+      let conv = ai.convs.find((x) => x.id === body.conversationId)
+      if (!conv) {
+        conv = {
           id: gen.uuid(r),
-          expiresAt: Date.now() + 10 * 60 * 1000,
-          actions: [
-            {
-              id: 'tu_demo_1',
-              method: 'POST',
-              path: '/api/mg/mrc_demo/invoices',
-              query: null,
-              body: { chainId: 'tron', token: 'USDT', amountUsd: '120.00', externalId: 'order-1042' },
-              risk: 'write',
-              label: 'Create invoice',
-              facts: [['storeId', 'mrc_demo'], ['amountUsd', '120.00'], ['token', 'USDT'], ['chainId', 'tron']],
-              reason: 'You asked for an invoice for order 1042.',
-            },
-            {
-              id: 'tu_demo_2',
-              method: 'POST',
-              path: '/api/mg/mrc_demo/payouts',
-              query: null,
-              body: { chainId: 'tron', token: 'USDT', amount: '250', destinationAddress: 'TQ5NvQ2t1r7cGx3dV4h7oW2m8bTnE6yZkP' },
-              risk: 'money',
-              label: 'Send payout',
-              facts: [['storeId', 'mrc_demo'], ['amount', '250'], ['token', 'USDT'], ['chainId', 'tron'], ['destinationAddress', 'TQ5NvQ2t1r7cGx3dV4h7oW2m8bTnE6yZkP']],
-              reason: 'Pays the supplier invoice you mentioned.',
-            },
-          ],
+          title: text.length > 60 ? `${text.slice(0, 57)}…` : text,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          rev: 0,
+          busy: true,
+          ui: [],
+          pending: null,
+          question: null,
         }
-      } else {
-        ai.ui.push({
-          kind: 'assistant',
-          text: [
-            'Today so far:',
-            '',
-            '- **14** invoices created, **11** paid ($3,482.10)',
-            '- **3** payouts sent, all confirmed',
-            '- No orphan transactions',
-          ].join('\n'),
-          at,
-        })
+        ai.convs.push(conv)
       }
-      return { conversation: aiState().conversation }
+      if (conv.question) {
+        // Typing instead of picking an option counts as the answer.
+        const q = conv.question
+        conv.question = null
+        const i = conv.ui.findIndex((x) => x.id === q.id)
+        if (i >= 0) conv.ui[i] = { ...conv.ui[i], status: 'replied' }
+      }
+      return aiScript(conv, text, 'chat')
+    }),
+    route('POST', '/api/assistant/answer', ({ body }) => {
+      const conv = ai.convs.find((x) => x.id === body.conversationId)
+      if (!conv?.question) return R(409, { error: { code: 'AI_NO_QUESTION', message: 'Nothing is waiting for an answer.' } })
+      const answers = body.skip ? null : ((body.answers ?? null) as Array<{ selected: string[]; other?: string }> | null)
+      return aiScript(conv, null, 'answer', undefined, answers)
     }),
     route('POST', '/api/assistant/approve', ({ body }) => {
-      const d = ((body as { decisions?: Record<string, string> })?.decisions ?? {}) as Record<string, string>
-      const at = Date.now()
-      for (const a of ai.pending?.actions ?? []) {
-        ai.ui.push({ kind: 'action', label: a.label, method: a.method, path: a.path, risk: a.risk, status: d[a.id] === 'approve' ? 'ok' : 'declined', at })
-      }
-      ai.ui.push({ kind: 'assistant', text: 'Done. The payout is submitted; I will show its status when you ask.', at })
-      ai.pending = null
-      return { conversation: aiState().conversation }
+      const conv = ai.convs.find((x) => x.id === body.conversationId)
+      if (!conv?.pending) return R(409, { error: { code: 'AI_NO_PENDING', message: 'Nothing is waiting for approval.' } })
+      return aiScript(conv, null, 'approve', (body.decisions ?? {}) as Record<string, string>)
     }),
 
     /* settings / security */
@@ -1163,6 +1312,21 @@ export function installMockApi() {
       headers.set('X-RateLimit-Limit', '120')
       headers.set('X-RateLimit-Remaining', String(96 + Math.floor(Math.random() * 20)))
       headers.set('X-RateLimit-Reset', String(Math.floor(Date.now() / 1000) + 42))
+    }
+    // Scripted assistant streams: emit each event after its delay, as NDJSON.
+    if (headers.get('content-type')?.includes('ndjson') && Array.isArray(result.body)) {
+      const events = result.body as Array<{ ev: unknown; delay?: number }>
+      const enc = new TextEncoder()
+      const body = new ReadableStream<Uint8Array>({
+        async start(c) {
+          for (const e of events) {
+            await new Promise((res) => setTimeout(res, e.delay ?? 120))
+            c.enqueue(enc.encode(JSON.stringify(e.ev) + '\n'))
+          }
+          c.close()
+        },
+      })
+      return new Response(body, { status: result.status, headers })
     }
     return new Response(JSON.stringify(result.body), { status: result.status, headers })
   }

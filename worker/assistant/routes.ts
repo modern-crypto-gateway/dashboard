@@ -3,13 +3,22 @@
  * also requires the CSRF token (both enforced in worker/index.ts before these
  * handlers run). Nothing here is reachable without logging in.
  *
- *   GET  /api/assistant/state      settings summary + this session's conversation
- *   POST /api/assistant/config     set the Anthropic key (needs 2FA code) and/or model
- *   POST /api/assistant/key/delete remove the Anthropic key
- *   POST /api/assistant/test       check the key works
- *   POST /api/assistant/chat       send a message
- *   POST /api/assistant/approve    approve / decline the pending batch
- *   POST /api/assistant/reset      start a new chat
+ *   GET  /api/assistant/state              settings summary + chat list
+ *   GET  /api/assistant/conversations/:id  one chat
+ *   POST /api/assistant/config             set the Anthropic key (needs 2FA code) and/or model
+ *   POST /api/assistant/key/delete         remove the Anthropic key
+ *   POST /api/assistant/test               check the key works
+ *   POST /api/assistant/chat               send a message (streams progress)
+ *   POST /api/assistant/approve            approve / decline the pending batch (streams progress)
+ *   POST /api/assistant/answer             answer / skip the assistant's question (streams progress)
+ *   POST /api/assistant/stop               stop the running turn after the current step
+ *   POST /api/assistant/rename             rename a chat
+ *   POST /api/assistant/delete             delete a chat
+ *
+ * chat / approve answer with `application/x-ndjson`: one JSON event per line
+ * (see StreamEvent in types.ts), ending with `done` and the saved chat. Every
+ * check that can refuse the request (input, lock, 2FA, claim) runs before the
+ * stream starts, so refusals are ordinary JSON errors.
  */
 
 import Anthropic from '@anthropic-ai/sdk'
@@ -24,7 +33,9 @@ import {
   executeBatch,
   notice,
   repairDangling,
+  resolveQuestion,
   runModel,
+  validateAnswers,
   type Decisions,
   type TurnCtx,
 } from './agent'
@@ -39,7 +50,7 @@ import {
   writeModel,
 } from './config'
 import type { AssistantStoreApi } from './store'
-import type { Conversation } from './types'
+import { metaOf, type Conversation, type StreamEvent } from './types'
 
 export interface Sess {
   hash: string
@@ -49,17 +60,25 @@ export interface Sess {
 type Dispatch = (req: Request) => Promise<Response>
 
 const MESSAGE_MAX = 4000
+const TITLE_MAX = 80
 const PAGE_RX = /^\/[A-Za-z0-9/_-]{0,120}$/
+const STORE_ID_RX = /^[A-Za-z0-9_-]{1,128}$/
+const CONV_ID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
-function store(env: Bindings, sess: Sess): AssistantStoreApi {
+function store(env: Bindings, username: string): AssistantStoreApi {
   const ns = env.ASSISTANT_STORE
   if (!ns) throw new Error('ASSISTANT_STORE Durable Object binding is missing (see wrangler.jsonc.example).')
-  return ns.get(ns.idFromName(`sess:${sess.hash}`)) as unknown as AssistantStoreApi
+  return ns.get(ns.idFromName(`user:${username}`)) as unknown as AssistantStoreApi
 }
 
-/** What the browser may see: no raw messages, no thinking, no tool results. */
+function convId(v: unknown): string | null {
+  return typeof v === 'string' && CONV_ID_RX.test(v) ? v : null
+}
+
+/** What the browser may see: no raw messages, no tool results, no secrets. */
 function publicView(conv: Conversation) {
   return {
+    ...metaOf(conv),
     rev: conv.rev,
     busy: conv.busyUntil > Date.now(),
     ui: conv.ui,
@@ -78,6 +97,7 @@ function publicView(conv: Conversation) {
         reason: a.reason,
       })),
     },
+    question: conv.question && { id: conv.question.id, questions: conv.question.questions },
   }
 }
 
@@ -94,7 +114,13 @@ function anthropicClient(env: Bindings, req: Request, apiKey: string, opts: { ma
   return new Anthropic({ apiKey, baseURL, ...opts })
 }
 
-async function makeCtx(req: Request, env: Bindings, sess: Sess, dispatch: Dispatch): Promise<TurnCtx> {
+async function makeCtx(
+  req: Request,
+  env: Bindings,
+  sess: Sess,
+  dispatch: Dispatch,
+  s: AssistantStoreApi,
+): Promise<TurnCtx> {
   const [apiKey, cfg] = await Promise.all([readApiKey(env), readConfig(env)])
   if (!apiKey) throw new HttpError(409, 'AI_NOT_CONFIGURED', 'Add an Anthropic API key in Settings first.')
   return {
@@ -109,7 +135,9 @@ async function makeCtx(req: Request, env: Bindings, sess: Sess, dispatch: Dispat
     // 5-minute turn lock that every step renews.
     client: anthropicClient(env, req, apiKey, { maxRetries: 1, timeout: 90_000 }),
     model: cfg.model,
-    checkpoint: (conv) => store(env, sess).checkpoint(conv),
+    checkpoint: (conv) => s.checkpoint(conv),
+    shouldStop: async () => false,
+    emit: () => {},
   }
 }
 
@@ -126,15 +154,63 @@ function describeFailure(e: unknown): string {
   return 'Something went wrong. Try again.'
 }
 
-/* ── state ────────────────────────────────────────────────── */
+/**
+ * Run `work` while streaming its events to the browser as NDJSON. The work
+ * keeps going (waitUntil) if the browser goes away; it always ends by saving
+ * the chat, so reopening it shows the outcome.
+ */
+function streamTurn(ectx: ExecutionContext, work: (emit: (ev: StreamEvent) => void) => Promise<void>): Response {
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>()
+  const writer = writable.getWriter()
+  const enc = new TextEncoder()
+  let open = true
+  const emit = (ev: StreamEvent) => {
+    if (!open) return
+    writer.write(enc.encode(JSON.stringify(ev) + '\n')).catch(() => {
+      open = false
+    })
+  }
+  const run = (async () => {
+    try {
+      await work(emit)
+    } catch (e) {
+      console.error('assistant stream failed', e)
+      emit({ t: 'error', message: 'Something went wrong. Reopen the chat to see where it stopped.' })
+    } finally {
+      try {
+        await writer.close()
+      } catch {
+        /* browser already gone */
+      }
+    }
+  })()
+  ectx.waitUntil(run)
+  return new Response(readable, {
+    headers: {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  })
+}
+
+/* ── GETs ─────────────────────────────────────────────────── */
 
 export async function getAssistantState(_req: Request, env: Bindings, sess: Sess): Promise<Response> {
-  const [cfg, conv] = await Promise.all([readConfig(env), store(env, sess).read(sess.record.username)])
+  const [cfg, conversations] = await Promise.all([readConfig(env), store(env, sess.record.username).list()])
   return json({
     config: cfg,
     models: MODELS.map((m) => ({ id: m.id, label: m.label })),
-    conversation: publicView(conv),
+    conversations,
   })
+}
+
+export async function getConversation(_req: Request, env: Bindings, sess: Sess, id: string): Promise<Response> {
+  const cid = convId(id)
+  if (!cid) return error('BAD_ID', 'Unknown conversation', 404)
+  const conv = await store(env, sess.record.username).read(cid)
+  if (!conv) return error('NOT_FOUND', 'Unknown conversation', 404)
+  return json({ conversation: publicView(conv) })
 }
 
 /* ── POST dispatcher ──────────────────────────────────────── */
@@ -145,6 +221,7 @@ export async function assistantPost(
   env: Bindings,
   sess: Sess,
   dispatch: Dispatch,
+  ectx: ExecutionContext,
 ): Promise<Response> {
   switch (action) {
     case 'config':
@@ -155,14 +232,17 @@ export async function assistantPost(
     case 'test':
       return postTest(req, env)
     case 'chat':
-      return postChat(req, env, sess, dispatch)
+      return postChat(req, env, sess, dispatch, ectx)
     case 'approve':
-      return postApprove(req, env, sess, dispatch)
-    case 'reset': {
-      const ok = await store(env, sess).reset(sess.record.username)
-      if (!ok) return error('AI_BUSY', 'Wait for the current step to finish.', 409)
-      return json({ ok: true })
-    }
+      return postApprove(req, env, sess, dispatch, ectx)
+    case 'answer':
+      return postAnswer(req, env, sess, dispatch, ectx)
+    case 'stop':
+      return postStop(req, env, sess)
+    case 'rename':
+      return postRename(req, env, sess)
+    case 'delete':
+      return postDelete(req, env, sess)
     default:
       return error('NOT_FOUND', 'Not found', 404)
   }
@@ -209,52 +289,92 @@ async function postTest(req: Request, env: Bindings): Promise<Response> {
 
 /* ── chat ─────────────────────────────────────────────────── */
 
-async function postChat(req: Request, env: Bindings, sess: Sess, dispatch: Dispatch): Promise<Response> {
-  const body = await readJson<{ message?: unknown; page?: unknown }>(req)
+function titleFrom(text: string): string {
+  const line = text.split('\n').find((l) => l.trim()) ?? 'New chat'
+  const t = line.trim().replace(/\s+/g, ' ')
+  return t.length > 60 ? `${t.slice(0, 57)}…` : t
+}
+
+async function postChat(
+  req: Request,
+  env: Bindings,
+  sess: Sess,
+  dispatch: Dispatch,
+  ectx: ExecutionContext,
+): Promise<Response> {
+  const body = await readJson<{ conversationId?: unknown; message?: unknown; page?: unknown; storeId?: unknown }>(req)
   const text = typeof body.message === 'string' ? body.message.trim() : ''
   if (!text || text.length > MESSAGE_MAX) {
     return error('BAD_MESSAGE', `Message must be 1–${MESSAGE_MAX} characters.`, 400)
   }
+  const requested = body.conversationId == null ? null : convId(body.conversationId)
+  if (body.conversationId != null && !requested) return error('BAD_ID', 'Unknown conversation', 404)
   const page = typeof body.page === 'string' && PAGE_RX.test(body.page) ? body.page : undefined
-  const ctx = await makeCtx(req, env, sess, dispatch)
+  const storeId = typeof body.storeId === 'string' && STORE_ID_RX.test(body.storeId) ? body.storeId : undefined
+  const context = [
+    page ? `The operator is on the dashboard page ${page}` : '',
+    storeId ? `the selected store is ${storeId}` : '',
+  ]
+    .filter(Boolean)
+    .join('; ')
 
-  const s = store(env, sess)
-  const begun = await s.begin(sess.record.username)
-  if (!begun.ok) return error('AI_BUSY', 'The assistant is still working on the last message.', 409)
+  const s = store(env, sess.record.username)
+  const ctx = await makeCtx(req, env, sess, dispatch, s)
+  const begun = await s.begin(requested, sess.record.username, titleFrom(text))
+  if (!begun.ok) {
+    return begun.reason === 'busy'
+      ? error('AI_BUSY', 'The assistant is still working on the last message.', 409)
+      : error('NOT_FOUND', 'Unknown conversation', 404)
+  }
   const conv = begun.conv
   if (conv.pending) {
-    await s.release(sess.record.username)
+    await s.release(conv.id)
     return error('AI_PENDING', 'Approve or decline the pending changes first.', 409)
   }
 
-  repairDangling(conv)
-  appendUserText(conv, text, page)
-  try {
-    await runModel(ctx, conv)
-  } catch (e) {
-    repairDangling(conv)
-    notice(conv, describeFailure(e))
-  }
-  const saved = await s.commit(conv)
-  return json({ conversation: publicView(saved) })
+  return streamTurn(ectx, async (emit) => {
+    ctx.emit = emit
+    ctx.shouldStop = () => s.shouldStop(conv.id)
+    emit({ t: 'start', conversation: metaOf(conv) })
+    // Typing instead of picking an option answers the waiting question.
+    if (conv.question) resolveQuestion(ctx, conv, { replied: true })
+    repairDangling(ctx, conv)
+    appendUserText(ctx, conv, text, context || undefined)
+    try {
+      await runModel(ctx, conv)
+    } catch (e) {
+      repairDangling(ctx, conv)
+      notice(ctx, conv, describeFailure(e))
+    }
+    if (await ctx.shouldStop()) repairDangling(ctx, conv, 'stopped')
+    const saved = await s.commit(conv)
+    emit({ t: 'done', conversation: publicView(saved) })
+  })
 }
 
 /* ── approvals ────────────────────────────────────────────── */
 
-async function postApprove(req: Request, env: Bindings, sess: Sess, dispatch: Dispatch): Promise<Response> {
-  const body = await readJson<{ batchId?: unknown; decisions?: unknown; totp?: unknown }>(req)
+async function postApprove(
+  req: Request,
+  env: Bindings,
+  sess: Sess,
+  dispatch: Dispatch,
+  ectx: ExecutionContext,
+): Promise<Response> {
+  const body = await readJson<{ conversationId?: unknown; batchId?: unknown; decisions?: unknown; totp?: unknown }>(req)
+  const cid = convId(body.conversationId)
   const batchId = typeof body.batchId === 'string' ? body.batchId : ''
-  if (!batchId || !body.decisions || typeof body.decisions !== 'object' || Array.isArray(body.decisions)) {
-    return error('BAD_INPUT', 'batchId and decisions are required', 400)
+  if (!cid || !batchId || !body.decisions || typeof body.decisions !== 'object' || Array.isArray(body.decisions)) {
+    return error('BAD_INPUT', 'conversationId, batchId and decisions are required', 400)
   }
   const decisions: Decisions = {}
   for (const [k, v] of Object.entries(body.decisions as Record<string, unknown>)) {
     if (v === 'approve' || v === 'decline') decisions[k] = v
   }
 
-  const s = store(env, sess)
-  const current = await s.read(sess.record.username)
-  const batch = current.pending
+  const s = store(env, sess.record.username)
+  const current = await s.read(cid)
+  const batch = current?.pending
   if (!batch || batch.id !== batchId) {
     return error('AI_NO_PENDING', 'These changes are no longer waiting for approval.', 409)
   }
@@ -262,10 +382,9 @@ async function postApprove(req: Request, env: Bindings, sess: Sess, dispatch: Di
   // Money moves need a fresh authenticator code, checked before the batch is
   // claimed so a wrong code leaves it waiting. Required whatever the expiry:
   // expiry is decided again inside the store, and two clocks must never be
-  // the only thing between a money move and its 2FA check.
-  // A money action is one the catalog marks as such or one the dashboard's
-  // own money-route gate would ask a code for (shared/moneyRoutes.ts), so the
-  // two lists can't drift into a batch that skips the code.
+  // the only thing between a money move and its 2FA check. A money action is
+  // one the catalog marks as such or one the dashboard's own money-route gate
+  // would ask a code for (shared/moneyRoutes.ts), so the lists can't drift.
   const approvedMoney = batch.actions.some(
     (a) =>
       decisions[a.toolUseId] === 'approve' &&
@@ -280,9 +399,9 @@ async function postApprove(req: Request, env: Bindings, sess: Sess, dispatch: Di
     }
   }
 
-  const ctx = await makeCtx(req, env, sess, dispatch)
+  const ctx = await makeCtx(req, env, sess, dispatch, s)
   // Atomic: only one request can take the batch, so it runs at most once.
-  const claimed = await s.claim(sess.record.username, batchId)
+  const claimed = await s.claim(cid, batchId)
   if (!claimed.ok) {
     return error(
       claimed.reason === 'busy' ? 'AI_BUSY' : 'AI_NO_PENDING',
@@ -305,14 +424,101 @@ async function postApprove(req: Request, env: Bindings, sess: Sess, dispatch: Di
       expired: claimed.expired,
     }),
   )
-  try {
-    // approvedMoney implies the code was verified above (else we returned 401).
-    await executeBatch(ctx, conv, claimed.batch, decisions, claimed.expired, approvedMoney)
-    await runModel(ctx, conv)
-  } catch (e) {
-    repairDangling(conv)
-    notice(conv, describeFailure(e))
+
+  return streamTurn(ectx, async (emit) => {
+    ctx.emit = emit
+    ctx.shouldStop = () => s.shouldStop(conv.id)
+    emit({ t: 'start', conversation: metaOf(conv) })
+    try {
+      // approvedMoney implies the code was verified above (else we returned 401).
+      await executeBatch(ctx, conv, claimed.batch, decisions, claimed.expired, approvedMoney)
+      await runModel(ctx, conv)
+    } catch (e) {
+      repairDangling(ctx, conv)
+      notice(ctx, conv, describeFailure(e))
+    }
+    if (await ctx.shouldStop()) repairDangling(ctx, conv, 'stopped')
+    const saved = await s.commit(conv)
+    emit({ t: 'done', conversation: publicView(saved) })
+  })
+}
+
+/* ── answers to the assistant's questions ─────────────────── */
+
+async function postAnswer(
+  req: Request,
+  env: Bindings,
+  sess: Sess,
+  dispatch: Dispatch,
+  ectx: ExecutionContext,
+): Promise<Response> {
+  const body = await readJson<{ conversationId?: unknown; questionId?: unknown; answers?: unknown; skip?: unknown }>(req)
+  const cid = convId(body.conversationId)
+  const qid = typeof body.questionId === 'string' ? body.questionId : ''
+  if (!cid || !qid) return error('BAD_INPUT', 'conversationId and questionId are required', 400)
+
+  const s = store(env, sess.record.username)
+  const current = await s.read(cid)
+  const q = current?.question
+  if (!q || q.id !== qid) return error('AI_NO_QUESTION', 'That question is no longer waiting for an answer.', 409)
+  const skip = body.skip === true
+  const answers = skip ? null : validateAnswers(q.questions, body.answers)
+  if (!skip && !answers) return error('BAD_ANSWER', 'Pick one of the offered options for each question.', 400)
+
+  const ctx = await makeCtx(req, env, sess, dispatch, s)
+  const claimed = await s.claimQuestion(cid, qid)
+  if (!claimed.ok) {
+    return error(
+      claimed.reason === 'busy' ? 'AI_BUSY' : 'AI_NO_QUESTION',
+      claimed.reason === 'busy' ? 'The assistant is busy. Try again in a moment.' : 'That question is no longer waiting for an answer.',
+      409,
+    )
   }
-  const saved = await s.commit(conv)
-  return json({ conversation: publicView(saved) })
+  const conv = claimed.conv
+
+  return streamTurn(ectx, async (emit) => {
+    ctx.emit = emit
+    ctx.shouldStop = () => s.shouldStop(conv.id)
+    emit({ t: 'start', conversation: metaOf(conv) })
+    resolveQuestion(ctx, conv, answers ? { answers } : { skipped: true })
+    try {
+      await runModel(ctx, conv)
+    } catch (e) {
+      repairDangling(ctx, conv)
+      notice(ctx, conv, describeFailure(e))
+    }
+    if (await ctx.shouldStop()) repairDangling(ctx, conv, 'stopped')
+    const saved = await s.commit(conv)
+    emit({ t: 'done', conversation: publicView(saved) })
+  })
+}
+
+/* ── chat housekeeping ────────────────────────────────────── */
+
+async function postStop(req: Request, env: Bindings, sess: Sess): Promise<Response> {
+  const body = await readJson<{ conversationId?: unknown }>(req)
+  const cid = convId(body.conversationId)
+  if (!cid) return error('BAD_ID', 'Unknown conversation', 404)
+  const stopped = await store(env, sess.record.username).requestStop(cid)
+  return json({ ok: true, stopping: stopped })
+}
+
+async function postRename(req: Request, env: Bindings, sess: Sess): Promise<Response> {
+  const body = await readJson<{ conversationId?: unknown; title?: unknown }>(req)
+  const cid = convId(body.conversationId)
+  const title = typeof body.title === 'string' ? body.title.trim().replace(/\s+/g, ' ') : ''
+  if (!cid) return error('BAD_ID', 'Unknown conversation', 404)
+  if (!title || title.length > TITLE_MAX) return error('BAD_TITLE', `Title must be 1–${TITLE_MAX} characters.`, 400)
+  const ok = await store(env, sess.record.username).rename(cid, title)
+  return ok ? json({ ok: true }) : error('NOT_FOUND', 'Unknown conversation', 404)
+}
+
+async function postDelete(req: Request, env: Bindings, sess: Sess): Promise<Response> {
+  const body = await readJson<{ conversationId?: unknown }>(req)
+  const cid = convId(body.conversationId)
+  if (!cid) return error('BAD_ID', 'Unknown conversation', 404)
+  const r = await store(env, sess.record.username).remove(cid)
+  if (r === 'busy') return error('AI_BUSY', 'Wait for the current step to finish.', 409)
+  if (r === 'not_found') return error('NOT_FOUND', 'Unknown conversation', 404)
+  return json({ ok: true })
 }

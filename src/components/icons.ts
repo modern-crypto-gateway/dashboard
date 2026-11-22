@@ -120,5 +120,18 @@ export {
   // AI assistant
   SparkleIcon as Sparkle,
   PaperPlaneRightIcon as SendRight,
+  ArrowsOutSimpleIcon as Expand,
+  ArrowsInSimpleIcon as Collapse,
+  ClockCounterClockwiseIcon as History,
+  StopIcon as Stop,
+  BrainIcon as Brain,
+  ChatsCircleIcon as Chats,
+  ReceiptIcon as Receipt,
+  StorefrontIcon as Storefront,
+  GasPumpIcon as GasPump,
+  WebhooksLogoIcon as WebhooksLogo,
+  HourglassSimpleIcon as HourglassSimple,
+  ChartBarIcon as ChartBar,
+  NotePencilIcon as NotePencil,
 } from '@phosphor-icons/react'
 export type { Icon as IconType, IconProps } from '@phosphor-icons/react'

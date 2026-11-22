@@ -356,6 +356,14 @@ input[type='radio'] {
   background-clip: padding-box;
 }
 
+/* Scrolls, but shows no scrollbar (the sidebar nav). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 :focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
@@ -453,4 +461,42 @@ textarea:focus-visible,
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
   }
+}
+
+/* ── AI assistant ─────────────────────────────────────────── */
+/* Moving highlight over "Thinking…" / the running step label. */
+@keyframes ai-shimmer {
+  0% { background-position: 120% 0; }
+  100% { background-position: -20% 0; }
+}
+.ai-shimmer {
+  background: linear-gradient(90deg, var(--fg-2) 0%, var(--fg-2) 35%, var(--fg-0) 50%, var(--fg-2) 65%, var(--fg-2) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ai-shimmer 1.8s linear infinite;
+}
+/* Blinking cursor at the end of a streaming answer. */
+@keyframes ai-caret { 0%, 45% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.ai-caret::after,
+.ai-streaming > :last-child:not(ul):not(ol):not(div)::after,
+.ai-streaming > :is(ul, ol):last-child > li:last-child::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.7;
+  animation: ai-caret 1s steps(1) infinite;
+}
+/* Soft pulse ring behind the assistant avatar while it works. */
+@keyframes ai-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 45%, transparent); } 100% { box-shadow: 0 0 0 8px transparent; } }
+.ai-pulse { animation: ai-pulse 1.4s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .ai-shimmer, .ai-caret::after, .ai-streaming *::after, .ai-pulse { animation: none; }
+  .ai-shimmer { color: var(--fg-2); background: none; }
 }
