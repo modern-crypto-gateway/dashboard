@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
+import { ModKey } from './ui/kbd'
 
 type NavIcon = React.ComponentType<{
   className?: string
@@ -67,7 +68,7 @@ export function Sidebar({
           >
             <Search className="size-4" />
             <span className="flex-1">Search</span>
-            <kbd className="font-sans text-2xs text-[var(--fg-3)]">⌘K</kbd>
+            <ModKey k="K" />
           </button>
         </div>
       )}

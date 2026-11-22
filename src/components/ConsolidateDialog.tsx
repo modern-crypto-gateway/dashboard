@@ -2,11 +2,16 @@ import * as React from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  AlertTriangle,
-  CheckCircle2,
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronDown,
+  Hash,
   Layers,
   Loader2,
   RefreshCw,
+  SlidersHorizontal,
+  Target,
 } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
@@ -17,11 +22,17 @@ import type {
   ConsolidationPlanResponse,
   ConsolidationStatusResponse,
 } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
 import { Addr } from '@/components/Addr'
+import { ChainPill } from '@/components/ChainPill'
+import { CopyButton } from '@/components/CopyButton'
+import { ChainIcon, TokenIcon, TokenOnChain } from '@/components/CryptoIcon'
+import { Pager, usePaged } from '@/components/DataTable'
 import { Field } from '@/components/Field'
 import { Callout } from '@/components/States'
-import { Badge } from '@/components/ui/badge'
+import { Status, StatusPill } from '@/components/StatusPill'
+import { SegmentedBar } from '@/components/charts'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -53,6 +64,8 @@ type Props = {
   onPlanned?: (consolidationId: string) => void
 }
 
+type Step = 'plan' | 'review'
+
 export function ConsolidateDialog({
   open,
   onOpenChange,
@@ -70,6 +83,9 @@ export function ConsolidateDialog({
   const [minRaw, setMinRaw] = React.useState<string>('')
   const [maxSources, setMaxSources] = React.useState<string>('')
   const [plan, setPlan] = React.useState<ConsolidationPlanResponse | null>(null)
+  // Client-side review step between filling the form and posting the plan.
+  const [step, setStep] = React.useState<Step>('plan')
+  const [advanced, setAdvanced] = React.useState(false)
 
   // Reset form on every closed → open transition (pulling fresh prefills).
   const syncKey = `${open ? '1' : '0'}|${prefillChainId ?? ''}|${prefillToken ?? ''}`
@@ -83,6 +99,8 @@ export function ConsolidateDialog({
       setMinRaw('')
       setMaxSources('')
       setPlan(null)
+      setStep('plan')
+      setAdvanced(false)
     }
   }
 
@@ -218,33 +236,41 @@ export function ConsolidateDialog({
     },
   })
 
+  // Same gate the submit button always had.
+  const canSubmit =
+    !planMut.isPending && !!chainId && !!token && target.trim().length >= 8
+
+  const usingPicker =
+    targetCandidates.length > 0 &&
+    (target === '' || targetCandidates.some((r) => r.address === target))
+
+  const targetRow = targetCandidates.find((r) => r.address === target)
+  const dec = selectedToken?.decimals
+  const stageIndex = plan ? 2 : step === 'review' ? 1 : 0
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="min-w-0 sm:max-w-xl">
+      <DialogContent className="min-w-0 sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Layers className="size-4" /> Consolidate token balance
+            <Layers className="size-5" /> Consolidate balance
           </DialogTitle>
           <DialogDescription>
-            Account-model chains pick a single sender per payout. When a
-            token is split across many pool addresses no single tx can send
-            the aggregate. This plans one internal sweep per holder into{' '}
-            <span className="font-mono">target</span>; each leg rides the
-            normal executor cron through top-up → broadcast → confirmation.
-            Poll status below; store payouts from <span className="font-mono">target</span>{' '}
-            will succeed once every leg confirms.
+            Sweep a token split across pool addresses into one target.
           </DialogDescription>
         </DialogHeader>
 
-        {!plan && (
+        <Stages current={stageIndex} labels={['Plan', 'Review', 'Track']} />
+
+        {!plan && step === 'plan' && (
           <form
-            className="min-w-0 space-y-4"
+            className="fade-in min-w-0 space-y-5"
             onSubmit={(e) => {
               e.preventDefault()
-              planMut.mutate()
+              if (canSubmit) setStep('review')
             }}
           >
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px]">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Chain">
                 <Select
                   value={chainId}
@@ -265,6 +291,7 @@ export function ConsolidateDialog({
                     {chainOptions.map((c) => (
                       <SelectItem key={c.chainId} value={String(c.chainId)}>
                         <span className="flex items-center gap-2">
+                          <ChainIcon chainId={c.chainId} size={16} />
                           <span>{c.displayName}</span>
                           <span className="font-mono text-2xs text-[var(--fg-3)]">
                             {c.chainId}
@@ -292,8 +319,9 @@ export function ConsolidateDialog({
                     {tokenOptions.map((t) => (
                       <SelectItem key={t.symbol} value={t.symbol}>
                         <span className="flex items-center gap-2">
-                          <span className="font-mono">{t.symbol}</span>
-                          <span className="text-2xs text-[var(--fg-3)]">
+                          <TokenIcon symbol={t.symbol} size={16} />
+                          <span className="font-medium">{t.symbol}</span>
+                          <span className="text-xs text-[var(--fg-3)]">
                             {t.displayName}
                           </span>
                         </span>
@@ -307,15 +335,15 @@ export function ConsolidateDialog({
               label="Target address"
               hint={
                 targetCandidates.length > 0
-                  ? 'Pick a pool address with the most existing token balance (top of the list) to minimize legs.'
-                  : 'Pool address that receives every consolidated balance. MUST already exist in the address pool for this family.'
+                  ? 'Top of the list holds the most — fewest legs.'
+                  : 'Must already be in the address pool for this family.'
               }
               right={
                 targetCandidates.length > 0 ? (
                   <button
                     type="button"
                     onClick={() => setTarget('')}
-                    className="text-xs text-[var(--fg-2)] hover:text-foreground cursor-pointer"
+                    className="cursor-pointer text-xs text-[var(--fg-2)] hover:text-foreground"
                   >
                     {target && !targetCandidates.some((r) => r.address === target)
                       ? 'Use picker'
@@ -324,8 +352,7 @@ export function ConsolidateDialog({
                 ) : null
               }
             >
-              {targetCandidates.length > 0 &&
-              (target === '' || targetCandidates.some((r) => r.address === target)) ? (
+              {usingPicker ? (
                 <Select
                   value={target}
                   onValueChange={setTarget}
@@ -341,7 +368,6 @@ export function ConsolidateDialog({
                   <SelectContent className="max-h-[300px]">
                     {targetCandidates.map((row) => {
                       const has = row.tokenAmountRaw !== '0'
-                      const dec = selectedToken?.decimals
                       const balLabel =
                         has && dec != null
                           ? `${formatUnits(row.tokenAmountRaw, dec)} ${selectedToken!.symbol}`
@@ -349,11 +375,11 @@ export function ConsolidateDialog({
                       return (
                         <SelectItem key={row.address} value={row.address}>
                           <span className="flex items-center gap-2">
-                            <span className="font-mono text-2xs">
+                            <span className="font-mono text-xs">
                               {row.address.slice(0, 10)}…{row.address.slice(-6)}
                             </span>
                             {balLabel && (
-                              <span className="font-mono text-2xs text-success">
+                              <span className="figure text-xs text-[var(--st-ok)]">
                                 {balLabel}
                               </span>
                             )}
@@ -379,43 +405,55 @@ export function ConsolidateDialog({
               )}
             </Field>
 
-            <details className="rounded-md border border-border bg-[var(--bg-2)] open:pb-3">
-              <summary className="flex cursor-pointer select-none items-center justify-between gap-2 px-3 py-2.5 text-xs font-medium text-[var(--fg-2)] hover:text-foreground">
-                <span>Advanced — per-call overrides</span>
-                <span className="text-2xs text-[var(--fg-3)]">
-                  optional
-                </span>
-              </summary>
-              <div className="grid grid-cols-1 gap-3 px-3 pt-1 sm:grid-cols-2">
-                <Field
-                  label="Dust floor (raw)"
-                  hint={
-                    selectedToken?.decimals != null && /^\d+$/.test(minRaw)
-                      ? `≈ ${formatUnits(minRaw, selectedToken.decimals)} ${selectedToken.symbol}`
-                      : "Smallest unit. Empty = server's dynamic floor."
-                  }
-                >
-                  <Input
-                    inputMode="numeric"
-                    value={minRaw}
-                    onChange={(e) => setMinRaw(e.target.value)}
-                    className="h-9 font-mono text-xs"
-                    placeholder="e.g. 10000000"
-                  />
-                </Field>
-                <Field label="Max sources" hint="1–200. Empty = server default.">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={200}
-                    value={maxSources}
-                    onChange={(e) => setMaxSources(e.target.value)}
-                    className="h-9 font-mono text-xs"
-                    placeholder="e.g. 50"
-                  />
-                </Field>
-              </div>
-            </details>
+            <div className="overflow-hidden rounded-xl border border-border">
+              <button
+                type="button"
+                onClick={() => setAdvanced((v) => !v)}
+                aria-expanded={advanced}
+                className="flex w-full cursor-pointer items-center gap-2 px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-[var(--bg-hover)]"
+              >
+                <SlidersHorizontal className="size-4 text-[var(--fg-2)]" />
+                Overrides
+                <span className="text-xs font-normal text-[var(--fg-3)]">optional</span>
+                <ChevronDown
+                  className={cn(
+                    'ml-auto size-4 text-[var(--fg-3)] transition-transform duration-200',
+                    advanced && 'rotate-180',
+                  )}
+                />
+              </button>
+              {advanced && (
+                <div className="fade-in grid grid-cols-1 gap-4 border-t border-border px-4 py-4 sm:grid-cols-2">
+                  <Field
+                    label="Dust floor (raw)"
+                    hint={
+                      selectedToken?.decimals != null && /^\d+$/.test(minRaw)
+                        ? `≈ ${formatUnits(minRaw, selectedToken.decimals)} ${selectedToken.symbol}`
+                        : 'Empty = server floor.'
+                    }
+                  >
+                    <Input
+                      inputMode="numeric"
+                      value={minRaw}
+                      onChange={(e) => setMinRaw(e.target.value)}
+                      className="font-mono"
+                      placeholder="e.g. 10000000"
+                    />
+                  </Field>
+                  <Field label="Max sources" hint="1–200. Empty = default.">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={maxSources}
+                      onChange={(e) => setMaxSources(e.target.value)}
+                      className="figure"
+                      placeholder="e.g. 50"
+                    />
+                  </Field>
+                </div>
+              )}
+            </div>
 
             <DialogFooter>
               <Button
@@ -426,24 +464,88 @@ export function ConsolidateDialog({
               >
                 Cancel
               </Button>
+              <Button type="submit" disabled={!canSubmit}>
+                Review
+                <ArrowRight className="size-4" />
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+
+        {!plan && step === 'review' && (
+          <div className="fade-in min-w-0 space-y-5">
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-[var(--bg-2)] p-4">
+              <TokenOnChain symbol={token} chainId={parseInt(chainId, 10)} size={36} />
+              <div className="min-w-0">
+                <div className="font-semibold">{token.toUpperCase()}</div>
+                <ChainPill chainId={parseInt(chainId, 10)} iconOnly={false} size={14} className="text-xs text-[var(--fg-2)]" />
+              </div>
+            </div>
+
+            <dl className="divide-y divide-border rounded-xl border border-border">
+              <Fact icon={Target} label="Target">
+                <Addr value={target.trim()} chainId={parseInt(chainId, 10)} />
+              </Fact>
+              {targetRow && dec != null && targetRow.tokenAmountRaw !== '0' && (
+                <Fact icon={Layers} label="Already holds">
+                  <span className="figure">
+                    {formatUnits(targetRow.tokenAmountRaw, dec)} {selectedToken?.symbol}
+                  </span>
+                </Fact>
+              )}
+              <Fact icon={SlidersHorizontal} label="Dust floor">
+                {minRaw.trim() ? (
+                  <span className="figure">
+                    {dec != null && /^\d+$/.test(minRaw.trim())
+                      ? `${formatUnits(minRaw.trim(), dec)} ${selectedToken?.symbol ?? ''}`
+                      : minRaw.trim()}
+                  </span>
+                ) : (
+                  <span className="text-[var(--fg-3)]">Server default</span>
+                )}
+              </Fact>
+              <Fact icon={Hash} label="Max sources">
+                {maxSources.trim() ? (
+                  <span className="figure">{maxSources.trim()}</span>
+                ) : (
+                  <span className="text-[var(--fg-3)]">Server default</span>
+                )}
+              </Fact>
+            </dl>
+
+            <Callout tone="info">
+              Account-model chains pick a single sender per payout. When a token
+              is split across many pool addresses no single tx can send the
+              aggregate. This plans one internal sweep per holder into{' '}
+              <span className="font-mono">target</span>; each leg rides the
+              normal executor cron through top-up → broadcast → confirmation.
+              Store payouts from <span className="font-mono">target</span> will
+              succeed once every leg confirms.
+            </Callout>
+
+            <DialogFooter>
               <Button
-                type="submit"
-                disabled={
-                  planMut.isPending ||
-                  !chainId ||
-                  !token ||
-                  target.trim().length < 8
-                }
+                type="button"
+                variant="ghost"
+                onClick={() => setStep('plan')}
+                disabled={planMut.isPending}
+              >
+                <ArrowLeft className="size-4" /> Back
+              </Button>
+              <Button
+                type="button"
+                onClick={() => planMut.mutate()}
+                disabled={!canSubmit}
               >
                 {planMut.isPending ? (
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <Layers className="size-3.5" />
+                  <Layers className="size-4" />
                 )}
                 {planMut.isPending ? 'Planning…' : 'Plan consolidation'}
               </Button>
             </DialogFooter>
-          </form>
+          </div>
         )}
 
         {plan && (
@@ -455,6 +557,57 @@ export function ConsolidateDialog({
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+function Stages({ current, labels }: { current: number; labels: string[] }) {
+  return (
+    <ol className="grid gap-2" style={{ gridTemplateColumns: `repeat(${labels.length}, minmax(0, 1fr))` }}>
+      {labels.map((l, i) => {
+        const done = i < current
+        const on = i === current
+        return (
+          <li key={l} className="min-w-0">
+            <div
+              className={cn(
+                'h-1.5 rounded-full',
+                done ? 'bg-[var(--st-ok-dot)]' : on ? 'bg-foreground' : 'bg-[var(--chart-muted)]',
+              )}
+            />
+            <div
+              className={cn(
+                'mt-1.5 flex items-center gap-1 truncate text-xs',
+                done || on ? 'font-medium text-foreground' : 'text-[var(--fg-3)]',
+              )}
+            >
+              {done && <Check className="size-3.5 text-[var(--st-ok)]" />}
+              {l}
+            </div>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
+/** One row of a details list: icon · label on the left, value on the right. */
+function Fact({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex min-h-11 items-center gap-3 px-4 py-2.5 text-sm">
+      <dt className="flex w-32 shrink-0 items-center gap-2 text-[var(--fg-2)]">
+        <Icon className="size-4 shrink-0" />
+        {label}
+      </dt>
+      <dd className="min-w-0 flex-1 text-right">{children}</dd>
+    </div>
   )
 }
 
@@ -491,109 +644,147 @@ function ConsolidationStatus({
   const fmt = (raw: string) =>
     tokenDecimals != null ? formatUnits(raw, tokenDecimals) : raw
 
-  return (
-    <div className="min-w-0 space-y-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-xs">
-        <span className="eyebrow">Consolidation</span>
-        <span className="font-mono">
-          {plan.consolidationId.slice(0, 8)}…{plan.consolidationId.slice(-6)}
-        </span>
-        <span className="text-[var(--fg-3)]">·</span>
-        <span className="font-mono">
-          chain {plan.chainId} · {plan.token}
-        </span>
-        <span className="ml-auto inline-flex items-center gap-1 text-[var(--fg-2)]">
-          <span>target</span>
-          <Addr value={plan.targetAddress} />
-        </span>
-      </div>
+  const legs = React.useMemo(
+    () =>
+      statusQ.data?.legs ??
+      plan.legs.map((l) => ({
+        ...l,
+        status: 'planned' as const,
+        txHash: null,
+        topUpTxHash: null,
+        lastError: null,
+      })),
+    [statusQ.data, plan.legs],
+  )
+  const paged = usePaged(legs, 25)
+  const total = summary?.total ?? plan.legs.length
 
-      {summary && (
-        <div className="flex flex-wrap items-center gap-2">
-          {done ? (
-            <Badge variant="success">
-              <CheckCircle2 className="size-3" /> all legs confirmed
-            </Badge>
-          ) : summary.pendingOrInFlight > 0 ? (
-            <Badge variant="warn">
-              <Loader2 className="size-3 animate-spin" />{' '}
-              {summary.pendingOrInFlight} in flight
-            </Badge>
-          ) : summary.failed > 0 ? (
-            <Badge variant="danger">
-              <AlertTriangle className="size-3" /> {summary.failed} failed
-            </Badge>
-          ) : null}
-          <span className="text-xs text-[var(--fg-2)]">
-            <span className="font-mono tabular-nums">{summary.confirmed}</span> confirmed ·{' '}
-            <span className="font-mono tabular-nums">{summary.failed}</span> failed ·{' '}
-            <span className="font-mono tabular-nums">{summary.canceled}</span> canceled ·{' '}
-            <span className="font-mono tabular-nums">{summary.total}</span> total
-          </span>
+  return (
+    <div className="fade-in min-w-0 space-y-5">
+      <div className="rounded-xl border border-border bg-[var(--bg-2)] p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <TokenOnChain symbol={plan.token} chainId={plan.chainId} size={36} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1 font-semibold">
+              {plan.token}
+              <span className="font-mono text-xs font-normal text-[var(--fg-3)]">
+                {plan.consolidationId.slice(0, 8)}…{plan.consolidationId.slice(-6)}
+              </span>
+              <CopyButton value={plan.consolidationId} />
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-[var(--fg-2)]">
+              <Target className="size-3.5" />
+              <Addr value={plan.targetAddress} chainId={plan.chainId} />
+            </div>
+          </div>
+          {summary ? (
+            done ? (
+              <StatusPill tone="ok">All confirmed</StatusPill>
+            ) : summary.pendingOrInFlight > 0 ? (
+              <StatusPill tone="run">{summary.pendingOrInFlight} in flight</StatusPill>
+            ) : summary.failed > 0 ? (
+              <StatusPill tone="bad">{summary.failed} failed</StatusPill>
+            ) : null
+          ) : (
+            <StatusPill tone="wait">Planned</StatusPill>
+          )}
+        </div>
+
+        <div className="mt-4 flex items-end justify-between gap-3">
+          <div>
+            <div className="text-xs text-[var(--fg-2)]">Confirmed</div>
+            <div className="figure text-xl font-semibold">
+              {summary?.confirmed ?? 0}
+              <span className="text-base font-medium text-[var(--fg-2)]"> / {total}</span>
+            </div>
+          </div>
           <Button
             type="button"
-            size="sm"
+            size="icon-sm"
             variant="ghost"
-            className="ml-auto"
             onClick={() => statusQ.refetch()}
             disabled={statusQ.isFetching}
+            aria-label="Refresh"
+            title="Refresh"
           >
-            <RefreshCw
-              className={`size-3.5 ${statusQ.isFetching ? 'animate-spin' : ''}`}
-            />
-            Refresh
+            <RefreshCw className={cn('size-4', statusQ.isFetching && 'animate-spin')} />
           </Button>
         </div>
-      )}
+        <SegmentedBar
+          className="mt-3 h-2"
+          parts={[
+            { key: 'ok', name: 'Confirmed', value: summary?.confirmed ?? 0, color: 'var(--st-ok-dot)' },
+            { key: 'run', name: 'In flight', value: summary?.pendingOrInFlight ?? total, color: 'var(--st-run-dot)' },
+            { key: 'bad', name: 'Failed', value: summary?.failed ?? 0, color: 'var(--st-bad-dot)' },
+            { key: 'off', name: 'Canceled', value: summary?.canceled ?? 0, color: 'var(--st-wait-dot)' },
+          ]}
+        />
+        {summary && (
+          <div className="figure mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--fg-2)]">
+            <span>{summary.confirmed} confirmed</span>
+            <span>{summary.pendingOrInFlight} in flight</span>
+            <span>{summary.failed} failed</span>
+            <span>{summary.canceled} canceled</span>
+          </div>
+        )}
+      </div>
 
-      <TableWrap className="rounded-md border border-border">
-        <Table className="min-w-[480px] text-xs">
-          <THead>
-            <tr>
-              <Th>Source</Th>
-              <Th align="right">Amount</Th>
-              <Th>Status</Th>
-              <Th>Tx</Th>
-            </tr>
-          </THead>
-          <TBody>
-            {(statusQ.data?.legs ?? plan.legs.map((l) => ({
-              ...l,
-              status: 'planned' as const,
-              txHash: null,
-              topUpTxHash: null,
-              lastError: null,
-            }))).map((leg) => (
-              <Tr key={leg.payoutId} className="align-top">
-                <Td>
-                  <Addr value={leg.sourceAddress} />
-                </Td>
-                <Td align="right">
-                  {fmt(leg.amountRaw)}
-                </Td>
-                <Td>
-                  <LegStatusBadge status={leg.status} />
-                  {leg.lastError && (
-                    <div
-                      className="mt-1 max-w-[260px] truncate font-mono text-2xs text-destructive"
-                      title={leg.lastError}
-                    >
-                      {leg.lastError}
-                    </div>
-                  )}
-                </Td>
-                <Td>
-                  {leg.txHash ? (
-                    <Addr value={leg.txHash} />
-                  ) : (
-                    <span className="text-[var(--fg-3)]">—</span>
-                  )}
-                </Td>
-              </Tr>
-            ))}
-          </TBody>
-        </Table>
-      </TableWrap>
+      <div className="overflow-hidden rounded-xl border border-border">
+        <TableWrap>
+          <Table className="min-w-[520px]">
+            <THead>
+              <tr>
+                <Th>Source</Th>
+                <Th align="right">Amount</Th>
+                <Th>Status</Th>
+                <Th>Tx</Th>
+              </tr>
+            </THead>
+            <TBody>
+              {paged.rows.map((leg) => (
+                <Tr key={leg.payoutId}>
+                  <Td>
+                    <Addr value={leg.sourceAddress} chainId={plan.chainId} />
+                  </Td>
+                  <Td align="right" className="font-medium">
+                    {fmt(leg.amountRaw)}
+                  </Td>
+                  <Td>
+                    <Status value={leg.status} />
+                    {leg.lastError && (
+                      <div
+                        className="mt-1 max-w-[220px] truncate font-mono text-2xs text-[var(--st-bad)]"
+                        title={leg.lastError}
+                      >
+                        {leg.lastError}
+                      </div>
+                    )}
+                  </Td>
+                  <Td>
+                    {leg.txHash ? (
+                      <Addr value={leg.txHash} chainId={plan.chainId} kind="tx" />
+                    ) : (
+                      <span className="text-[var(--fg-3)]">—</span>
+                    )}
+                  </Td>
+                </Tr>
+              ))}
+            </TBody>
+          </Table>
+        </TableWrap>
+        {paged.total > paged.pageSize && (
+          <div className="border-t border-border px-6 py-3">
+            <Pager
+              page={paged.page}
+              pageSize={paged.pageSize}
+              total={paged.total}
+              hasNext={paged.page < paged.pageCount - 1}
+              onPage={paged.setPage}
+              noun="legs"
+            />
+          </div>
+        )}
+      </div>
 
       {plan.skipped.length > 0 && (
         <Callout
@@ -611,8 +802,8 @@ function ConsolidationStatus({
                 key={s.sourceAddress}
                 className="flex flex-wrap items-center gap-2"
               >
-                <Addr value={s.sourceAddress} />
-                <span className="font-mono tabular-nums text-[var(--fg-2)]">
+                <Addr value={s.sourceAddress} chainId={plan.chainId} />
+                <span className="figure text-[var(--fg-2)]">
                   {fmt(s.amountRaw)}
                 </span>
                 <span className="font-mono text-2xs text-[var(--fg-2)]">
@@ -629,24 +820,4 @@ function ConsolidationStatus({
       </DialogFooter>
     </div>
   )
-}
-
-function LegStatusBadge({
-  status,
-}: {
-  status: ConsolidationStatusResponse['legs'][number]['status']
-}) {
-  switch (status) {
-    case 'confirmed':
-      return <Badge variant="success">{status}</Badge>
-    case 'failed':
-    case 'canceled':
-      return <Badge variant="danger">{status}</Badge>
-    case 'submitted':
-    case 'topping-up':
-    case 'reserved':
-      return <Badge variant="warn">{status}</Badge>
-    default:
-      return <Badge variant="default">{status}</Badge>
-  }
 }

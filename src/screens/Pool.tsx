@@ -3,14 +3,14 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  AlertTriangle,
   ArrowRight,
   CalendarClock,
-  CheckCircle2,
+  Hash,
   Layers,
   LifeBuoy,
   ListChecks,
   Loader2,
+  MoreHorizontal,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -18,7 +18,7 @@ import {
 } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
-import { chainInfo, FAMILY_COLOR } from '@/lib/chains'
+import { chainInfo } from '@/lib/chains'
 import { useHeldQueue } from '@/lib/held'
 import type {
   Family,
@@ -27,21 +27,20 @@ import type {
   PoolAuditResponse,
   PoolStatsRow,
 } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
 import { Addr } from '@/components/Addr'
 import { ConsolidateDialog } from '@/components/ConsolidateDialog'
+import { ChainIcon, FamilyIcon } from '@/components/CryptoIcon'
+import { Pager, TableCard, TableToolbar, usePaged } from '@/components/DataTable'
 import { Field } from '@/components/Field'
 import { PageHeader } from '@/components/PageHeader'
-import { EmptyState, ErrorState } from '@/components/States'
+import { Callout, EmptyState, ErrorState } from '@/components/States'
+import { Status, StatusPill, type StatusTone } from '@/components/StatusPill'
+import { SegmentedBar } from '@/components/charts'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -49,13 +48,24 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TBody, Td, Th, THead, TableWrap, Tr } from '@/components/ui/table'
-import { cn } from '@/lib/utils'
+
+/* Meter colours shared by the tiles, cards and legend. */
+const METER = {
+  available: 'var(--st-ok-dot)',
+  allocated: 'var(--st-run-dot)',
+  quarantined: 'var(--st-wait-dot)',
+} as const
 
 export function PoolPage() {
   const qc = useQueryClient()
@@ -77,29 +87,36 @@ export function PoolPage() {
   const moneroRows: MoneroPoolStatsRow[] = moneroQ.data?.stats ?? []
   const moneroAvailable = moneroQ.isSuccess
   const [consolidateOpen, setConsolidateOpen] = React.useState(false)
+  const [seedOpen, setSeedOpen] = React.useState(false)
+  const [moneroSeedOpen, setMoneroSeedOpen] = React.useState(false)
+
+  const stats = q.data?.stats ?? []
+  const totals = [...stats, ...moneroRows].reduce(
+    (a, s) => ({
+      available: a.available + s.available,
+      allocated: a.allocated + s.allocated,
+      quarantined: a.quarantined + s.quarantined,
+      total: a.total + s.total,
+    }),
+    { available: 0, allocated: 0, quarantined: 0, total: 0 },
+  )
+  const lowFamilies = [...stats, ...moneroRows].filter((s) => s.available < 6).length
 
   return (
-    <div className="fade-in space-y-6">
+    <div className="fade-in space-y-8">
       <PageHeader
-        eyebrow="Treasury"
         title="Address pool"
-        description={
-          <>
-            HD-derived receive addresses per family. Watch availability — a family
-            running dry triggers <span className="font-mono">POOL_EXHAUSTED</span>{' '}
-            on invoice create.
-          </>
-        }
+        description="Receive addresses per family"
         actions={
           <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => q.refetch()}
-              disabled={q.isFetching}
-            >
-              <RefreshCw className={'size-3.5' + (q.isFetching ? ' animate-spin' : '')} />
-              Refresh
+            <Button asChild variant="outline" size="sm">
+              <Link
+                to="/pool/addresses"
+                title="Browse, park, or re-enable individual pool addresses"
+              >
+                <ListChecks className="size-4" />
+                Addresses
+              </Link>
             </Button>
             <Button
               variant="outline"
@@ -107,40 +124,53 @@ export function PoolPage() {
               onClick={() => setConsolidateOpen(true)}
               title="Defragment a token balance scattered across pool addresses"
             >
-              <Layers className="size-3.5" />
+              <Layers className="size-4" />
               Consolidate
             </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link
-                to="/consolidation-schedules"
-                title="Recurring auto-consolidation per (chain, token)"
-              >
-                <CalendarClock className="size-3.5" />
-                Schedules
-              </Link>
+            <Button size="sm" onClick={() => setSeedOpen(true)}>
+              <Plus className="size-4" /> Seed pool
             </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link
-                to="/pool/addresses"
-                title="Browse, park, or re-enable individual pool addresses"
-              >
-                <ListChecks className="size-3.5" />
-                Manage addresses
-              </Link>
-            </Button>
-            <SeedDialog
-              onSuccess={() => qc.invalidateQueries({ queryKey: ['pool-stats'] })}
-            />
-            {moneroAvailable && (
-              <MoneroSeedDialog
-                onSuccess={() =>
-                  qc.invalidateQueries({ queryKey: ['pool-stats', 'monero'] })
-                }
-              />
-            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon-sm" aria-label="More actions" title="More">
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem asChild>
+                  <Link to="/consolidation-schedules">
+                    <CalendarClock /> Schedules
+                  </Link>
+                </DropdownMenuItem>
+                {moneroAvailable && (
+                  <DropdownMenuItem onSelect={() => setMoneroSeedOpen(true)}>
+                    <ChainIcon chainId={1000} size={16} /> Seed Monero
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => q.refetch()} disabled={q.isFetching}>
+                  <RefreshCw /> Refresh
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         }
       />
+
+      <SeedDialog
+        open={seedOpen}
+        onOpenChange={setSeedOpen}
+        onSuccess={() => qc.invalidateQueries({ queryKey: ['pool-stats'] })}
+      />
+      {moneroAvailable && (
+        <MoneroSeedDialog
+          open={moneroSeedOpen}
+          onOpenChange={setMoneroSeedOpen}
+          onSuccess={() =>
+            qc.invalidateQueries({ queryKey: ['pool-stats', 'monero'] })
+          }
+        />
+      )}
 
       <ConsolidateDialog
         open={consolidateOpen}
@@ -152,165 +182,208 @@ export function PoolPage() {
 
       <HeldLegsBanner />
 
-      <PoolAuditCard />
-
       {q.isLoading ? (
-        <div
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
-          aria-busy="true"
-        >
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i} className="space-y-4 p-5">
-              <div className="flex items-center justify-between">
-                <Skeleton className="h-3.5 w-14" />
-                <Skeleton className="h-5 w-16" />
-              </div>
-              <Skeleton className="h-7 w-24" />
-              <Skeleton className="h-1.5 w-full" />
-              <div className="grid grid-cols-3 gap-2">
-                <Skeleton className="h-10" />
-                <Skeleton className="h-10" />
-                <Skeleton className="h-10" />
-              </div>
-            </Card>
-          ))}
-        </div>
+        <PoolSkeleton />
       ) : q.isError ? (
         <ErrorState
           title="Could not load pool stats"
           message={q.error instanceof Error ? q.error.message : 'Error'}
         />
-      ) : (q.data?.stats.length ?? 0) === 0 ? (
+      ) : stats.length === 0 ? (
         <EmptyState
           framed
           icon={Waypoints}
-          title="No pool families configured"
+          title="No pool families"
           description="Seed a family to get started."
+          action={
+            <Button size="sm" onClick={() => setSeedOpen(true)}>
+              <Plus className="size-4" /> Seed pool
+            </Button>
+          }
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {(q.data?.stats ?? []).map((s) => (
-            <PoolFamilyCard key={s.family} s={s} />
-          ))}
-          {moneroRows.map((row) => (
-            <MoneroPoolCard key={row.chainId} stats={row} />
-          ))}
-        </div>
+        <>
+          <div className="stagger grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+            <Tile label="Available" value={totals.available} sub={`of ${totals.total} addresses`}>
+              <SegmentedBar
+                parts={[
+                  { key: 'a', name: 'Available', value: totals.available, color: METER.available },
+                  { key: 'l', name: 'Allocated', value: totals.allocated, color: METER.allocated },
+                  { key: 'q', name: 'Parked', value: totals.quarantined, color: METER.quarantined },
+                ]}
+              />
+            </Tile>
+            <Tile label="Allocated" value={totals.allocated} sub="Serving invoices" />
+            <Tile label="Parked" value={totals.quarantined} sub="Quarantined" />
+            <Tile
+              label="Running low"
+              value={lowFamilies}
+              sub={lowFamilies ? 'Families under 6 free' : 'All families healthy'}
+              tone={lowFamilies ? 'warn' : undefined}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+            {stats.map((s) => (
+              <PoolMeterCard
+                key={s.family}
+                icon={<FamilyIcon family={s.family} size={28} />}
+                name={s.family.toUpperCase()}
+                row={s}
+              />
+            ))}
+            {moneroRows.map((row) => (
+              <PoolMeterCard
+                key={row.chainId}
+                icon={<ChainIcon chainId={row.chainId} size={28} />}
+                name={chainInfo(row.chainId).short || 'XMR'}
+                tag="Subaddress"
+                row={row}
+              />
+            ))}
+          </div>
+        </>
       )}
+
+      <PoolAuditSection />
     </div>
   )
 }
 
-function PoolFamilyCard({ s }: { s: PoolStatsRow }) {
-  const pct = s.total ? (s.available / s.total) * 100 : 0
-  const tone = s.available < 3 ? 'danger' : s.available < 6 ? 'warn' : 'success'
-  const indicator =
-    tone === 'danger'
-      ? 'bg-destructive'
-      : tone === 'warn'
-        ? 'bg-warn'
-        : 'bg-success'
+/* ── tiles + family cards ────────────────────────────────── */
+
+function Tile({
+  label,
+  value,
+  sub,
+  tone,
+  children,
+}: {
+  label: string
+  value: React.ReactNode
+  sub?: React.ReactNode
+  tone?: 'warn'
+  children?: React.ReactNode
+}) {
   return (
-    <Card className="p-5">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className="size-2 rounded-full"
-            style={{ background: FAMILY_COLOR[s.family] }}
-          />
-          <span className="text-sm font-semibold uppercase tracking-[0.06em]">
-            {s.family}
-          </span>
-        </div>
-        <Badge
-          variant={
-            tone === 'danger' ? 'danger' : tone === 'warn' ? 'warn' : 'success'
-          }
-        >
-          {s.available} avail
-        </Badge>
+    <Card className="flex flex-col p-5">
+      <div className="text-sm text-[var(--fg-2)]">{label}</div>
+      <div className={cn('figure mt-2 text-xl font-semibold', tone === 'warn' && 'text-[var(--st-warn)]')}>
+        {value}
       </div>
-      <div className="mt-4 font-mono text-2xl font-semibold leading-none tracking-[-0.02em] tabular-nums">
-        {s.available}
-        <span className="ml-1 text-base font-medium text-[var(--fg-2)]">/ {s.total}</span>
-      </div>
-      <div className="mt-3">
-        <Progress value={pct} indicatorClassName={indicator} />
-      </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-        <MetricCell label="allocated" value={s.allocated} />
-        <MetricCell label="quarantined" value={s.quarantined} />
-        <MetricCell label="highest idx" value={s.highestIndex ?? 0} />
-      </div>
+      {sub && <div className="mt-1 truncate text-xs text-[var(--fg-2)]">{sub}</div>}
+      {children && <div className="mt-auto pt-4">{children}</div>}
     </Card>
   )
 }
 
-function MetricCell({ label, value }: { label: string; value: number }) {
+function healthOf(available: number): { tone: StatusTone; label: string } {
+  if (available < 3) return { tone: 'bad', label: 'Critical' }
+  if (available < 6) return { tone: 'warn', label: 'Low' }
+  return { tone: 'ok', label: 'Healthy' }
+}
+
+function PoolMeterCard({
+  icon,
+  name,
+  tag,
+  row,
+}: {
+  icon: React.ReactNode
+  name: string
+  tag?: string
+  row: { available: number; allocated: number; quarantined: number; total: number; highestIndex?: number }
+}) {
+  const h = healthOf(row.available)
+  const parts = [
+    { key: 'available', name: 'Available', value: row.available, color: METER.available },
+    { key: 'allocated', name: 'Allocated', value: row.allocated, color: METER.allocated },
+    { key: 'quarantined', name: 'Parked', value: row.quarantined, color: METER.quarantined },
+  ]
   return (
-    <div className="min-w-0 rounded-md border border-border bg-[var(--bg-2)] px-2 py-1.5">
-      <div className="truncate text-2xs uppercase tracking-[0.06em] text-[var(--fg-2)]">
-        {label}
+    <Card className="flex flex-col p-6">
+      <div className="flex items-center gap-3">
+        {icon}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate font-semibold">{name}</span>
+            {tag && (
+              <Badge variant="outline" title="Monero uses subaddress derivation, not an HD pool">
+                {tag}
+              </Badge>
+            )}
+          </div>
+        </div>
+        <StatusPill tone={h.tone} size="sm">
+          {h.label}
+        </StatusPill>
       </div>
-      <div className="mt-0.5 font-mono font-semibold tabular-nums">{value}</div>
+
+      <div className="mt-5 flex items-baseline gap-1.5">
+        <span className="figure text-2xl font-semibold tracking-[-0.03em]">{row.available}</span>
+        <span className="figure text-sm text-[var(--fg-2)]">free of {row.total}</span>
+      </div>
+
+      <SegmentedBar className="mt-4 h-2" parts={parts} />
+
+      <ul className="mt-4 space-y-2 text-sm">
+        {parts.map((p) => (
+          <li key={p.key} className="flex items-center gap-2">
+            <span className="size-2.5 rounded-[3px]" style={{ background: p.color }} />
+            <span className="text-[var(--fg-1)]">{p.name}</span>
+            <span className="figure ml-auto font-medium">{p.value}</span>
+          </li>
+        ))}
+        <li className="flex items-center gap-2 border-t border-border pt-2 text-[var(--fg-2)]">
+          <Hash className="size-3.5" />
+          <span>Highest index</span>
+          <span className="figure ml-auto">{row.highestIndex ?? 0}</span>
+        </li>
+      </ul>
+    </Card>
+  )
+}
+
+function PoolSkeleton() {
+  return (
+    <div className="space-y-8" aria-busy="true">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i} className="space-y-3 p-5">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-7 w-16" />
+            <Skeleton className="h-3 w-24" />
+          </Card>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i} className="space-y-4 p-6">
+            <div className="flex items-center gap-3">
+              <Skeleton className="size-7 rounded-full" />
+              <Skeleton className="h-4 w-16" />
+            </div>
+            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-2 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </Card>
+        ))}
+      </div>
     </div>
   )
 }
 
-function MoneroPoolCard({ stats }: { stats: MoneroPoolStatsRow }) {
-  const { chainId, total, available, allocated, quarantined } = stats
-  const info = chainInfo(chainId)
-  const pct = total ? (available / total) * 100 : 0
-  const tone = available < 3 ? 'danger' : available < 6 ? 'warn' : 'success'
-  const indicator =
-    tone === 'danger'
-      ? 'bg-destructive'
-      : tone === 'warn'
-        ? 'bg-warn'
-        : 'bg-success'
-  return (
-    <Card className="p-5">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            aria-hidden
-            className="size-2 shrink-0 rounded-full"
-            style={{ background: FAMILY_COLOR.monero }}
-          />
-          <span className="truncate text-sm font-semibold uppercase tracking-[0.06em]">
-            {info.short || 'monero'}
-          </span>
-          <Badge variant="outline" className="text-2xs" title="Monero uses subaddress derivation, not an HD pool">
-            subaddress
-          </Badge>
-        </div>
-        <Badge
-          variant={
-            tone === 'danger' ? 'danger' : tone === 'warn' ? 'warn' : 'success'
-          }
-        >
-          {available} avail
-        </Badge>
-      </div>
-      <div className="mt-4 font-mono text-2xl font-semibold leading-none tracking-[-0.02em] tabular-nums">
-        {available}
-        <span className="ml-1 text-base font-medium text-[var(--fg-2)]">/ {total}</span>
-      </div>
-      <div className="mt-3">
-        <Progress value={pct} indicatorClassName={indicator} />
-      </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-        <MetricCell label="allocated" value={allocated} />
-        <MetricCell label="quarantined" value={quarantined} />
-        <MetricCell label="highest idx" value={stats.highestIndex ?? 0} />
-      </div>
-    </Card>
-  )
-}
+/* ── seed dialogs ────────────────────────────────────────── */
 
-function SeedDialog({ onSuccess }: { onSuccess: () => void }) {
-  const [open, setOpen] = React.useState(false)
+function SeedDialog({
+  open,
+  onOpenChange,
+  onSuccess,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  onSuccess: () => void
+}) {
   // UTXO omitted on purpose: BTC/LTC derive fresh addresses per invoice
   // (privacy requirement) and don't use a pool. Backend accepts `utxo`
   // here but returns zero rows, which would only confuse operators.
@@ -341,7 +414,7 @@ function SeedDialog({ onSuccess }: { onSuccess: () => void }) {
         description: summary,
       })
       onSuccess()
-      setOpen(false)
+      onOpenChange(false)
     },
     onError: (e: ApiError) => toast.error(e.message || 'Seed failed'),
   })
@@ -352,64 +425,66 @@ function SeedDialog({ onSuccess }: { onSuccess: () => void }) {
     )
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm">
-          <Plus className="size-3.5" /> Seed pool
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Seed address pool</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Plus className="size-5" /> Seed address pool
+          </DialogTitle>
           <DialogDescription>
-            Idempotent. Families already at or above the target return{' '}
-            <span className="font-mono">already-sufficient</span>.
+            Idempotent — families at target are left alone.
           </DialogDescription>
         </DialogHeader>
         <form
-          className="space-y-4"
+          className="space-y-5"
           onSubmit={(e) => {
             e.preventDefault()
             seed.mutate()
           }}
         >
           <Field label="Families">
-            <div className="flex flex-wrap gap-2">
-              {(['evm', 'tron', 'solana'] as const).map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  onClick={() => toggle(f)}
-                  className={cn(
-                    'h-8 rounded-md border px-3 text-xs font-medium uppercase tracking-[0.06em] transition-colors cursor-pointer',
-                    families.includes(f)
-                      ? 'border-[var(--accent-border)] bg-[var(--accent-bg)] text-primary'
-                      : 'border-border text-[var(--fg-2)] hover:bg-[var(--bg-hover)]',
-                  )}
-                >
-                  {f}
-                </button>
-              ))}
+            <div className="grid grid-cols-3 gap-2">
+              {(['evm', 'tron', 'solana'] as const).map((f) => {
+                const on = families.includes(f)
+                return (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => toggle(f)}
+                    aria-pressed={on}
+                    className={cn(
+                      'flex h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] border text-sm font-medium uppercase transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                      on
+                        ? 'border-foreground bg-[var(--bg-active)] text-foreground'
+                        : 'border-border text-[var(--fg-2)] hover:bg-[var(--bg-hover)]',
+                    )}
+                  >
+                    <FamilyIcon family={f} size={18} />
+                    {f}
+                  </button>
+                )
+              })}
             </div>
           </Field>
-          <Field label="Target size" hint="Each selected family is topped up to this count.">
+          <Field label="Target size" hint="Each family is topped up to this count.">
             <Input
               type="number"
               min={1}
               max={500}
               value={initialSize}
               onChange={(e) => setInitialSize(e.target.value)}
-              className="font-mono"
+              className="figure"
             />
           </Field>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={seed.isPending || families.length === 0}
             >
+              {seed.isPending && <Loader2 className="size-4 animate-spin" />}
               {seed.isPending ? 'Seeding…' : 'Seed'}
             </Button>
           </DialogFooter>
@@ -419,8 +494,15 @@ function SeedDialog({ onSuccess }: { onSuccess: () => void }) {
   )
 }
 
-function MoneroSeedDialog({ onSuccess }: { onSuccess: () => void }) {
-  const [open, setOpen] = React.useState(false)
+function MoneroSeedDialog({
+  open,
+  onOpenChange,
+  onSuccess,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  onSuccess: () => void
+}) {
   const [initialSize, setInitialSize] = React.useState('20')
 
   const seed = useMutation({
@@ -443,7 +525,7 @@ function MoneroSeedDialog({ onSuccess }: { onSuccess: () => void }) {
           : undefined,
       )
       onSuccess()
-      setOpen(false)
+      onOpenChange(false)
     },
     onError: (e: ApiError) =>
       toast.error(e.message || 'Monero seed failed'),
@@ -453,68 +535,45 @@ function MoneroSeedDialog({ onSuccess }: { onSuccess: () => void }) {
   const sizeValid = Number.isFinite(sizeNum) && sizeNum >= 1 && sizeNum <= 500
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="outline"
-          title="Monero uses subaddress derivation, not an HD pool"
-        >
-          <span
-            aria-hidden
-            className="size-2 shrink-0 rounded-full"
-            style={{ background: FAMILY_COLOR.monero }}
-          />
-          Seed Monero
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <span
-              aria-hidden
-              className="size-2 rounded-full"
-              style={{ background: FAMILY_COLOR.monero }}
-            />
-            Seed Monero subaddress pool
+            <ChainIcon chainId={1000} size={20} />
+            Seed Monero subaddresses
           </DialogTitle>
           <DialogDescription>
-            Reserves additional subaddresses derived from the gateway's Monero
-            primary key. Distinct from the HD address pool — Monero invoices
-            use a single view-key with per-invoice subaddress indices.
-            Idempotent: a pool already at or above the target is left alone.
+            Separate from the HD pool. Idempotent — a pool at target is left alone.
           </DialogDescription>
         </DialogHeader>
         <form
-          className="space-y-4"
+          className="space-y-5"
           onSubmit={(e) => {
             e.preventDefault()
             seed.mutate()
           }}
         >
-          <Field
-            label="Target size"
-            hint="The pool is topped up to this many spare subaddresses. Cap 500."
-          >
+          <Field label="Target size" hint="Spare subaddresses to keep. Max 500.">
             <Input
               type="number"
               min={1}
               max={500}
               value={initialSize}
               onChange={(e) => setInitialSize(e.target.value)}
-              className="font-mono"
+              className="figure"
             />
           </Field>
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
-              onClick={() => setOpen(false)}
+              onClick={() => onOpenChange(false)}
               disabled={seed.isPending}
             >
               Cancel
             </Button>
             <Button type="submit" disabled={seed.isPending || !sizeValid}>
+              {seed.isPending && <Loader2 className="size-4 animate-spin" />}
               {seed.isPending ? 'Seeding…' : 'Seed'}
             </Button>
           </DialogFooter>
@@ -536,29 +595,36 @@ function HeldLegsBanner() {
   const count = held.data?.count ?? 0
   if (count === 0) return null
   return (
-    <Link
-      to="/held-payouts"
-      className="group flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-[var(--warn-border)] bg-[var(--warn-bg)] px-4 py-3 text-sm transition-colors hover:border-warn focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    <Callout
+      tone="warn"
+      icon={LifeBuoy}
+      title={
+        <>
+          <span className="figure">{count}</span> payout leg{count === 1 ? '' : 's'} held for
+          recovery
+        </>
+      }
+      action={
+        <Button asChild size="sm" variant="outline">
+          <Link to="/held-payouts">
+            Review <ArrowRight className="size-4" />
+          </Link>
+        </Button>
+      }
     >
-      <LifeBuoy className="size-4 shrink-0 text-warn" />
-      <span className="font-medium text-foreground">
-        <span className="font-mono font-semibold tabular-nums">{count}</span> payout leg
-        {count === 1 ? '' : 's'} held for recovery
-      </span>
-      <span className="text-[var(--fg-2)]">
-        — a consolidation sweep may have stalled mid-broadcast.
-      </span>
-      <span className="ml-auto inline-flex items-center gap-1 font-medium text-warn">
-        Review
-        <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-      </span>
-    </Link>
+      A consolidation sweep may have stalled mid-broadcast.
+    </Callout>
   )
+}
+
+/** Explorer chain for a family address — only where the family maps to one chain. */
+function explorerChainOf(f: Family): number | undefined {
+  return f === 'tron' ? 728 : f === 'solana' ? 900 : undefined
 }
 
 /* ── pool audit ──────────────────────────────────────────── */
 
-function PoolAuditCard() {
+function PoolAuditSection() {
   const audit = useMutation({
     mutationFn: () => api<PoolAuditResponse>('/api/gw/admin/pool/audit'),
     onSuccess: (res) => {
@@ -582,167 +648,142 @@ function PoolAuditCard() {
   const data = audit.data
   const totalMismatches =
     data?.reports.reduce((n, r) => n + r.mismatches.length, 0) ?? 0
-  const totalUnscanned =
-    data?.reports.reduce((n, r) => n + r.unscannedBeyondLimit, 0) ?? 0
 
   return (
-    <Card>
-      <CardHeader className="border-b">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <CardTitle className="flex items-center gap-2">
-              <ShieldCheck className="size-4 text-[var(--fg-2)]" />
-              Seed-derivation audit
-            </CardTitle>
-            <CardDescription className="mt-1 max-w-2xl">
-              Re-derives every pool row's expected address from the current{' '}
-              <span className="font-mono">MASTER_SEED</span> and reports
-              mismatches. Run before funding a fresh pool, after any deploy
-              that might have rotated the seed, or when a payout fails with a
-              signer-mismatch error. Read-only.
-            </CardDescription>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => audit.mutate()}
-            disabled={audit.isPending}
+    <div className="space-y-5">
+      <TableCard
+        toolbar={
+          <TableToolbar
+            title={
+              <span
+                className="inline-flex items-center gap-2"
+                title="Re-derives every pool row's expected address from the current MASTER_SEED and reports mismatches. Run before funding a fresh pool, after any deploy that might have rotated the seed, or when a payout fails with a signer-mismatch error. Read-only."
+              >
+                <ShieldCheck className="size-4 text-[var(--fg-2)]" />
+                Seed audit
+              </span>
+            }
           >
-            {audit.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <ShieldCheck className="size-3.5" />
+            {data && <Status value={data.status} />}
+            {data && (
+              <span className="figure text-xs text-[var(--fg-2)]">
+                scan limit {data.scanLimit}
+              </span>
             )}
-            {audit.isPending ? 'Auditing…' : 'Run audit'}
-          </Button>
-        </div>
-      </CardHeader>
-      {data && (
-        <CardContent className="pt-4">
-          <div className="flex flex-wrap items-center gap-3">
-            {data.status === 'healthy' ? (
-              <Badge variant="success">
-                <CheckCircle2 className="size-3" /> healthy
-              </Badge>
-            ) : (
-              <Badge variant="warn">
-                <AlertTriangle className="size-3" /> mismatches detected
-              </Badge>
-            )}
-            <span className="text-xs text-[var(--fg-2)]">
-              <span className="font-mono tabular-nums">{totalMismatches}</span> mismatch
-              {totalMismatches === 1 ? '' : 'es'} ·{' '}
-              <span className="font-mono">scanLimit {data.scanLimit}</span>
-              {totalUnscanned > 0 && (
-                <>
-                  {' '}
-                  ·{' '}
-                  <span className="text-warn">
-                    {totalUnscanned} row{totalUnscanned === 1 ? '' : 's'}{' '}
-                    beyond limit
-                  </span>
-                </>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => audit.mutate()}
+              disabled={audit.isPending}
+            >
+              {audit.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ShieldCheck className="size-4" />
               )}
-            </span>
-          </div>
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-            {data.reports.map((r) => (
-              <FamilyAuditCard key={r.family} report={r} />
-            ))}
-          </div>
-          {totalMismatches > 0 && <MismatchList data={data} />}
-        </CardContent>
-      )}
-    </Card>
-  )
-}
-
-function FamilyAuditCard({
-  report,
-}: {
-  report: PoolAuditResponse['reports'][number]
-}) {
-  const ok = report.mismatches.length === 0
-  return (
-    <div
-      className={cn(
-        'rounded-md border p-3',
-        ok
-          ? 'border-border bg-[var(--bg-2)]'
-          : 'border-[var(--warn-border)] bg-[var(--warn-bg)]',
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className="size-2 rounded-full"
-            style={{ background: FAMILY_COLOR[report.family] }}
-          />
-          <span className="text-xs font-semibold uppercase tracking-[0.06em]">
-            {report.family}
-          </span>
-        </div>
-        {ok ? (
-          <Badge variant="success">
-            <CheckCircle2 className="size-3" /> clean
-          </Badge>
-        ) : (
-          <Badge variant="warn">
-            {report.mismatches.length} bad
-          </Badge>
-        )}
-      </div>
-      <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-        <AuditCell label="scanned" value={report.scanned} />
-        <AuditCell label="matches" value={report.matches} tone="success" />
-        <AuditCell
-          label="beyond"
-          value={report.unscannedBeyondLimit}
-          tone={report.unscannedBeyondLimit > 0 ? 'warn' : undefined}
-        />
-      </div>
-    </div>
-  )
-}
-
-function AuditCell({
-  label,
-  value,
-  tone,
-}: {
-  label: string
-  value: number
-  tone?: 'success' | 'warn'
-}) {
-  return (
-    <div className="min-w-0 rounded-md border border-border bg-card px-2 py-1.5">
-      <div className="truncate text-2xs uppercase tracking-[0.06em] text-[var(--fg-2)]">
-        {label}
-      </div>
-      <div
-        className={cn(
-          'mt-0.5 font-mono text-sm font-semibold tabular-nums',
-          tone === 'success' && 'text-success',
-          tone === 'warn' && 'text-warn',
-        )}
+              {audit.isPending ? 'Auditing…' : data ? 'Re-run' : 'Run audit'}
+            </Button>
+          </TableToolbar>
+        }
       >
-        {value}
-      </div>
+        {!data ? (
+          <EmptyState
+            compact
+            icon={ShieldCheck}
+            title="Not run yet"
+            description="Checks every row against MASTER_SEED. Read-only."
+          />
+        ) : (
+          <TableWrap className="fade-in">
+            <Table className="min-w-[620px]">
+              <THead>
+                <tr>
+                  <Th>Family</Th>
+                  <Th>Status</Th>
+                  <Th align="right">Scanned</Th>
+                  <Th align="right">Matches</Th>
+                  <Th align="right">Mismatches</Th>
+                  <Th align="right">Beyond limit</Th>
+                </tr>
+              </THead>
+              <TBody>
+                {data.reports.map((r) => {
+                  const ok = r.mismatches.length === 0
+                  return (
+                    <Tr key={r.family}>
+                      <Td>
+                        <span className="inline-flex items-center gap-2.5 font-medium uppercase">
+                          <FamilyIcon family={r.family} size={24} />
+                          {r.family}
+                        </span>
+                      </Td>
+                      <Td>
+                        {ok ? (
+                          <StatusPill tone="ok">Clean</StatusPill>
+                        ) : (
+                          <StatusPill tone="bad">{r.mismatches.length} bad</StatusPill>
+                        )}
+                      </Td>
+                      <Td align="right">{r.scanned}</Td>
+                      <Td align="right" className="text-[var(--st-ok)]">
+                        {r.matches}
+                      </Td>
+                      <Td
+                        align="right"
+                        className={ok ? 'text-[var(--fg-3)]' : 'font-semibold text-[var(--st-bad)]'}
+                      >
+                        {r.mismatches.length}
+                      </Td>
+                      <Td
+                        align="right"
+                        className={
+                          r.unscannedBeyondLimit > 0 ? 'text-[var(--st-warn)]' : 'text-[var(--fg-3)]'
+                        }
+                      >
+                        {r.unscannedBeyondLimit}
+                      </Td>
+                    </Tr>
+                  )
+                })}
+              </TBody>
+            </Table>
+          </TableWrap>
+        )}
+      </TableCard>
+
+      {data && totalMismatches > 0 && <MismatchTable data={data} />}
     </div>
   )
 }
 
-function MismatchList({ data }: { data: PoolAuditResponse }) {
-  const rows = data.reports.flatMap((r) =>
-    r.mismatches.map((m) => ({ ...m, family: r.family })),
+function MismatchTable({ data }: { data: PoolAuditResponse }) {
+  const rows = React.useMemo(
+    () =>
+      data.reports.flatMap((r) =>
+        r.mismatches.map((m) => ({ ...m, family: r.family })),
+      ),
+    [data],
   )
-  if (rows.length === 0) return null
+  const paged = usePaged(rows, 25)
   return (
-    <div className="mt-5">
-      <div className="eyebrow mb-2">Mismatched rows</div>
-      <TableWrap className="rounded-md border border-border">
-        <Table className="min-w-[520px]">
+    <TableCard
+      className="fade-in"
+      toolbar={<TableToolbar title="Mismatched rows" count={rows.length} />}
+      footer={
+        paged.total > paged.pageSize ? (
+          <Pager
+            page={paged.page}
+            pageSize={paged.pageSize}
+            total={paged.total}
+            hasNext={paged.page < paged.pageCount - 1}
+            onPage={paged.setPage}
+            noun="rows"
+          />
+        ) : undefined
+      }
+    >
+      <TableWrap>
+        <Table className="min-w-[620px]">
           <THead>
             <tr>
               <Th>Family</Th>
@@ -752,27 +793,27 @@ function MismatchList({ data }: { data: PoolAuditResponse }) {
             </tr>
           </THead>
           <TBody>
-            {rows.map((m) => (
+            {paged.rows.map((m) => (
               <Tr key={`${m.family}-${m.addressIndex}`}>
                 <Td>
-                  <Badge variant="outline" className="uppercase">
-                    {m.family}
-                  </Badge>
+                  <FamilyIcon family={m.family} size={20} />
                 </Td>
-                <Td align="right" className="text-xs">
+                <Td align="right" className="text-[var(--fg-2)]">
                   {m.addressIndex}
                 </Td>
                 <Td>
-                  <Addr value={m.storedAddress} />
+                  <span className="text-[var(--st-bad)]">
+                    <Addr value={m.storedAddress} chainId={explorerChainOf(m.family)} />
+                  </span>
                 </Td>
                 <Td>
-                  <Addr value={m.expectedAddress} />
+                  <Addr value={m.expectedAddress} chainId={explorerChainOf(m.family)} />
                 </Td>
               </Tr>
             ))}
           </TBody>
         </Table>
       </TableWrap>
-    </div>
+    </TableCard>
   )
 }

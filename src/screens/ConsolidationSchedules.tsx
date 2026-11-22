@@ -1,22 +1,32 @@
 import * as React from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   AlertTriangle,
+  ArrowsLeftRight,
   CalendarClock,
-  CheckCircle2,
-  ExternalLink,
+  ChevronDown,
+  Clock,
+  Fuel,
+  Hash,
   Layers,
+  ListBullets,
   Loader2,
+  MoreHorizontal,
   Pause,
   Pencil,
   Play,
   Plus,
   RefreshCw,
+  SlidersHorizontal,
+  Target,
+  Timer,
   Trash2,
 } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
+import { chainInfo } from '@/lib/chains'
 import { fmtLocal, formatUnits, useNow } from '@/lib/format'
 import type {
   AutoConsolidationSchedule,
@@ -25,15 +35,20 @@ import type {
   ChainToken,
   ConsolidationStatusResponse,
 } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
 import { Addr } from '@/components/Addr'
 import { ChainPill } from '@/components/ChainPill'
+import { CopyButton } from '@/components/CopyButton'
+import { ChainIcon, TokenIcon, TokenOnChain } from '@/components/CryptoIcon'
+import { Pager, TableCard, TableToolbar, usePaged } from '@/components/DataTable'
 import { Field } from '@/components/Field'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState, ErrorState, ListSkeleton } from '@/components/States'
-import { Badge } from '@/components/ui/badge'
+import { Status, StatusPill } from '@/components/StatusPill'
+import { SegmentedBar } from '@/components/charts'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -41,8 +56,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -51,8 +72,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetFooter,
+  SheetHero,
+  SheetSection,
+  SheetTabs,
+} from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TBody, Td, Th, THead, TableWrap, Tr } from '@/components/ui/table'
-import { cn } from '@/lib/utils'
 
 /**
  * Per-chain suggested per-source dust floor for USDT/USDC consolidation.
@@ -98,133 +128,30 @@ const BALANCES_Q = {
   staleTime: 30_000,
 }
 
-export function ConsolidationSchedulesPage() {
-  const qc = useQueryClient()
-  const q = useQuery(SCHEDULES_Q)
-  const [editing, setEditing] = React.useState<AutoConsolidationSchedule | null>(
-    null,
-  )
-  const [createOpen, setCreateOpen] = React.useState(false)
-
-  return (
-    <div className="fade-in space-y-6">
-      <PageHeader
-        eyebrow="Treasury"
-        title="Auto-consolidation"
-        description={
-          <>
-            Recurring sweeps of fragmented (chain, token) balances into a
-            single pool address. Each schedule fires every{' '}
-            <span className="font-mono">intervalHours</span>; sources below{' '}
-            <span className="font-mono">minSourceBalanceRaw</span> are silently
-            skipped so the cron doesn't burn more in gas than it recovers.
-          </>
-        }
-        actions={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => q.refetch()}
-              disabled={q.isFetching}
-            >
-              <RefreshCw
-                className={'size-3.5' + (q.isFetching ? ' animate-spin' : '')}
-              />
-              Refresh
-            </Button>
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              <Plus className="size-3.5" /> New schedule
-            </Button>
-          </>
-        }
-      />
-
-      <ScheduleFormDialog
-        mode="create"
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onSaved={() =>
-          qc.invalidateQueries({ queryKey: ['gw', 'consolidation-schedules'] })
-        }
-      />
-      {editing && (
-        <ScheduleFormDialog
-          mode="edit"
-          open={editing != null}
-          onOpenChange={(v) => !v && setEditing(null)}
-          schedule={editing}
-          onSaved={() => {
-            qc.invalidateQueries({
-              queryKey: ['gw', 'consolidation-schedules'],
-            })
-            setEditing(null)
-          }}
-        />
-      )}
-
-      {q.isLoading ? (
-        <ListSkeleton rows={3} />
-      ) : q.isError ? (
-        <ErrorState
-          title="Could not load schedules"
-          message={q.error instanceof Error ? q.error.message : 'Error'}
-        />
-      ) : (q.data?.schedules.length ?? 0) === 0 ? (
-        <NoSchedules onCreate={() => setCreateOpen(true)} />
-      ) : (
-        <div className="grid grid-cols-1 gap-4">
-          {q.data!.schedules.map((s) => (
-            <ScheduleCard
-              key={s.id}
-              schedule={s}
-              onEdit={() => setEditing(s)}
-              onChanged={() =>
-                qc.invalidateQueries({
-                  queryKey: ['gw', 'consolidation-schedules'],
-                })
-              }
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  )
+/** Same request as before; shared cache between table row and sheet. */
+function useLastRun(id: string | null) {
+  return useQuery({
+    enabled: id != null,
+    queryKey: ['gw', 'consolidations', id ?? ''] as const,
+    queryFn: () =>
+      api<ConsolidationStatusResponse>(
+        `/api/gw/admin/pool/consolidations/${encodeURIComponent(id!)}`,
+      ),
+    staleTime: 60_000,
+  })
 }
 
-function NoSchedules({ onCreate }: { onCreate: () => void }) {
-  return (
-    <EmptyState
-      framed
-      icon={CalendarClock}
-      title="No auto-consolidation schedules yet"
-      description="Schedule one per (chain, token) pair to keep balances pooled into a single address without operator action."
-      action={
-        <Button size="sm" onClick={onCreate}>
-          <Plus className="size-3.5" /> Create schedule
-        </Button>
-      }
-    />
-  )
-}
-
-function ScheduleCard({
-  schedule,
-  onEdit,
-  onChanged,
-}: {
-  schedule: AutoConsolidationSchedule
-  onEdit: () => void
-  onChanged: () => void
-}) {
+function useTokenDecimals(schedule: AutoConsolidationSchedule): number | null {
   const chainsQ = useQuery(CHAINS_Q)
   const chain = chainsQ.data?.chains.find((c) => c.chainId === schedule.chainId)
   const tokenMeta = chain?.tokens.find(
     (t) => t.symbol.toUpperCase() === schedule.token.toUpperCase(),
   )
-  const dec = tokenMeta?.decimals ?? null
+  return tokenMeta?.decimals ?? null
+}
 
-  const togglePending = useMutation({
+function useToggleSchedule(schedule: AutoConsolidationSchedule, onChanged: () => void) {
+  return useMutation({
     mutationFn: () =>
       api<{ schedule: AutoConsolidationSchedule }>(
         `/api/gw/admin/consolidation-schedules/${encodeURIComponent(schedule.id)}`,
@@ -239,211 +166,788 @@ function ScheduleCard({
     },
     onError: (e: ApiError) => toast.error(e.message || 'Update failed'),
   })
-
-  const now = useNow(15_000)
-  const dueIn = schedule.nextRunDue - now
-  const overdue = schedule.enabled && dueIn < 0
-  const lastRunAge =
-    schedule.lastRunAt != null ? now - schedule.lastRunAt : null
-
-  return (
-    <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-5 py-4">
-        <ChainPill
-          chainId={schedule.chainId}
-          className="text-base font-semibold text-foreground"
-        />
-        <Badge variant="outline" className="font-mono">
-          {schedule.token}
-        </Badge>
-        {schedule.enabled ? (
-          <Badge variant="success">
-            <Play className="size-3" /> enabled
-          </Badge>
-        ) : (
-          <Badge variant="default">
-            <Pause className="size-3" /> disabled
-          </Badge>
-        )}
-        {overdue && (
-          <Badge variant="warn">
-            <AlertTriangle className="size-3" /> overdue
-          </Badge>
-        )}
-
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => togglePending.mutate()}
-            disabled={togglePending.isPending}
-            title="Soft on/off — preserves last-run snapshot"
-          >
-            {schedule.enabled ? (
-              <Pause className="size-3.5" />
-            ) : (
-              <Play className="size-3.5" />
-            )}
-            {schedule.enabled ? 'Disable' : 'Enable'}
-          </Button>
-          <Button size="sm" variant="outline" onClick={onEdit}>
-            <Pencil className="size-3.5" /> Edit
-          </Button>
-          <DeleteScheduleButton schedule={schedule} onChanged={onChanged} />
-        </div>
-      </div>
-      <CardContent className="grid grid-cols-1 gap-x-6 gap-y-3 pt-4 md:grid-cols-2">
-        <div className="space-y-3">
-          <KeyVal label="Target address">
-            <span className="break-all">
-              <Addr value={schedule.targetAddress} truncated={false} />
-            </span>
-          </KeyVal>
-          <KeyVal label="Interval">
-            <span className="font-mono tabular-nums">
-              every {schedule.intervalHours}h
-            </span>
-          </KeyVal>
-          <KeyVal label="Per-source dust floor">
-            <span className="font-mono tabular-nums">
-              {dec != null
-                ? `${formatUnits(schedule.minSourceBalanceRaw, dec)} ${schedule.token}`
-                : `${schedule.minSourceBalanceRaw} (raw)`}
-            </span>
-          </KeyVal>
-          <KeyVal label="Max sources / run">
-            <span className="font-mono tabular-nums">{schedule.maxSourcesPerRun}</span>
-          </KeyVal>
-          <KeyVal label="Gas ceiling">
-            {schedule.maxFeeUsd ? (
-              <span className="font-mono tabular-nums">
-                ≤ ${schedule.maxFeeUsd}
-                <span className="ml-1.5 font-sans text-xs text-[var(--fg-3)]">
-                  defers above this
-                </span>
-              </span>
-            ) : (
-              <span className="text-[var(--fg-3)]">— no ceiling</span>
-            )}
-          </KeyVal>
-        </div>
-        <div className="space-y-3">
-          <KeyVal label="Next firing">
-            <span
-              className={cn(
-                'font-mono',
-                overdue ? 'text-warn' : 'text-foreground',
-              )}
-            >
-              {fmtLocal(schedule.nextRunDue)}
-              <span className="ml-1.5 text-[var(--fg-3)]">
-                ({fmtRelDelta(dueIn)})
-              </span>
-            </span>
-          </KeyVal>
-          <KeyVal label="Last firing">
-            {schedule.lastRunAt ? (
-              <span className="font-mono">
-                {fmtLocal(schedule.lastRunAt)}
-                <span className="ml-1.5 text-[var(--fg-3)]">
-                  ({fmtRelDelta(-lastRunAge!)})
-                </span>
-              </span>
-            ) : (
-              <span className="text-[var(--fg-3)]">never</span>
-            )}
-          </KeyVal>
-          <KeyVal label="Last result">
-            {schedule.lastConsolidationId ? (
-              <LastRunSummary
-                schedule={schedule}
-                tokenDecimals={dec}
-              />
-            ) : (
-              <span className="text-[var(--fg-3)]">—</span>
-            )}
-          </KeyVal>
-        </div>
-      </CardContent>
-    </Card>
-  )
 }
 
-function KeyVal({ label, children }: { label: string; children: React.ReactNode }) {
+export function ConsolidationSchedulesPage() {
+  const qc = useQueryClient()
+  const q = useQuery(SCHEDULES_Q)
+  const [editing, setEditing] = React.useState<AutoConsolidationSchedule | null>(
+    null,
+  )
+  const [createOpen, setCreateOpen] = React.useState(false)
+  const [deleting, setDeleting] = React.useState<AutoConsolidationSchedule | null>(null)
+  const [detailId, setDetailId] = React.useState<string | null>(null)
+  const now = useNow(15_000)
+
+  const refresh = () =>
+    qc.invalidateQueries({ queryKey: ['gw', 'consolidation-schedules'] })
+
+  const schedules = React.useMemo(() => q.data?.schedules ?? [], [q.data])
+  const paged = usePaged(schedules, 25)
+  const detail = schedules.find((s) => s.id === detailId) ?? null
+
+  const enabledCount = schedules.filter((s) => s.enabled).length
+  const overdueCount = schedules.filter((s) => s.enabled && s.nextRunDue - now < 0).length
+  const nextDue = schedules
+    .filter((s) => s.enabled)
+    .reduce<AutoConsolidationSchedule | null>(
+      (a, s) => (a == null || s.nextRunDue < a.nextRunDue ? s : a),
+      null,
+    )
+
   return (
-    <div className="grid grid-cols-1 items-start gap-1 text-sm sm:grid-cols-[160px_1fr] sm:gap-3">
-      <span className="pt-0.5 text-xs text-[var(--fg-2)]">
-        {label}
-      </span>
-      <div className="min-w-0">{children}</div>
+    <div className="fade-in space-y-8">
+      <PageHeader
+        title="Auto-consolidation"
+        description="Recurring sweeps per chain and token"
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              onClick={() => q.refetch()}
+              disabled={q.isFetching}
+              aria-label="Refresh"
+              title="Refresh"
+            >
+              <RefreshCw className={cn('size-4', q.isFetching && 'animate-spin')} />
+            </Button>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" /> New schedule
+            </Button>
+          </>
+        }
+      />
+
+      <ScheduleFormDialog
+        mode="create"
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onSaved={refresh}
+      />
+      {editing && (
+        <ScheduleFormDialog
+          mode="edit"
+          open={editing != null}
+          onOpenChange={(v) => !v && setEditing(null)}
+          schedule={editing}
+          onSaved={() => {
+            refresh()
+            setEditing(null)
+          }}
+        />
+      )}
+      {deleting && (
+        <DeleteScheduleDialog
+          schedule={deleting}
+          open={deleting != null}
+          onOpenChange={(v) => !v && setDeleting(null)}
+          onDeleted={() => {
+            if (detailId === deleting.id) setDetailId(null)
+            setDeleting(null)
+            refresh()
+          }}
+        />
+      )}
+
+      {q.isLoading ? (
+        <ListSkeleton rows={4} />
+      ) : q.isError ? (
+        <ErrorState
+          title="Could not load schedules"
+          message={q.error instanceof Error ? q.error.message : 'Error'}
+        />
+      ) : schedules.length === 0 ? (
+        <NoSchedules onCreate={() => setCreateOpen(true)} />
+      ) : (
+        <>
+          <div className="stagger grid grid-cols-2 gap-5 xl:grid-cols-4">
+            <Tile label="Schedules" value={schedules.length}>
+              <SegmentedBar
+                parts={[
+                  { key: 'on', name: 'Enabled', value: enabledCount, color: 'var(--st-ok-dot)' },
+                  { key: 'off', name: 'Disabled', value: schedules.length - enabledCount, color: 'var(--chart-muted)' },
+                ]}
+              />
+            </Tile>
+            <Tile label="Enabled" value={enabledCount} sub={`${schedules.length - enabledCount} disabled`} />
+            <Tile
+              label="Overdue"
+              value={overdueCount}
+              tone={overdueCount > 0 ? 'warn' : undefined}
+              sub={overdueCount > 0 ? 'Past due' : 'On time'}
+            />
+            <Tile
+              label="Next run"
+              value={nextDue ? fmtRelDelta(nextDue.nextRunDue - now) : '—'}
+              sub={nextDue ? `${nextDue.token} · ${chainInfo(nextDue.chainId).name}` : 'None enabled'}
+            />
+          </div>
+
+          <TableCard
+            toolbar={<TableToolbar title="Schedules" count={schedules.length} />}
+            footer={
+              paged.total > paged.pageSize ? (
+                <Pager
+                  page={paged.page}
+                  pageSize={paged.pageSize}
+                  total={paged.total}
+                  hasNext={paged.page < paged.pageCount - 1}
+                  onPage={paged.setPage}
+                  noun="schedules"
+                />
+              ) : undefined
+            }
+          >
+            <TableWrap>
+              <Table className="min-w-[900px]">
+                <THead>
+                  <tr>
+                    <Th>Schedule</Th>
+                    <Th>Status</Th>
+                    <Th>Target</Th>
+                    <Th align="right">Every</Th>
+                    <Th align="right">Next run</Th>
+                    <Th align="right">Last run</Th>
+                    <Th className="w-12">
+                      <span className="sr-only">Actions</span>
+                    </Th>
+                  </tr>
+                </THead>
+                <TBody>
+                  {paged.rows.map((s) => (
+                    <ScheduleRow
+                      key={s.id}
+                      schedule={s}
+                      now={now}
+                      onOpen={() => setDetailId(s.id)}
+                      onEdit={() => setEditing(s)}
+                      onDelete={() => setDeleting(s)}
+                      onChanged={refresh}
+                    />
+                  ))}
+                </TBody>
+              </Table>
+            </TableWrap>
+          </TableCard>
+        </>
+      )}
+
+      <ScheduleSheet
+        schedule={detail}
+        now={now}
+        onOpenChange={(v) => !v && setDetailId(null)}
+        onEdit={() => detail && setEditing(detail)}
+        onDelete={() => detail && setDeleting(detail)}
+        onChanged={refresh}
+      />
     </div>
   )
 }
 
-function LastRunSummary({
+function Tile({
+  label,
+  value,
+  sub,
+  tone,
+  children,
+}: {
+  label: string
+  value: React.ReactNode
+  sub?: React.ReactNode
+  tone?: 'warn'
+  children?: React.ReactNode
+}) {
+  return (
+    <Card className="flex flex-col p-5">
+      <div className="text-sm text-[var(--fg-2)]">{label}</div>
+      <div className={cn('figure mt-2 text-xl font-semibold', tone === 'warn' && 'text-[var(--st-warn)]')}>
+        {value}
+      </div>
+      {sub && <div className="mt-1 truncate text-xs text-[var(--fg-2)]">{sub}</div>}
+      {children && <div className="mt-auto pt-4">{children}</div>}
+    </Card>
+  )
+}
+
+function NoSchedules({ onCreate }: { onCreate: () => void }) {
+  return (
+    <EmptyState
+      framed
+      icon={CalendarClock}
+      title="No schedules yet"
+      description="One per chain and token keeps balances pooled automatically."
+      action={
+        <Button size="sm" onClick={onCreate}>
+          <Plus className="size-4" /> Create schedule
+        </Button>
+      }
+    />
+  )
+}
+
+function ScheduleStatus({ schedule, now }: { schedule: AutoConsolidationSchedule; now: number }) {
+  const overdue = schedule.enabled && schedule.nextRunDue - now < 0
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {schedule.enabled ? (
+        <StatusPill tone="ok">Enabled</StatusPill>
+      ) : (
+        <StatusPill tone="off" icon={Pause}>
+          Disabled
+        </StatusPill>
+      )}
+      {overdue && (
+        <StatusPill tone="warn" size="sm">
+          Overdue
+        </StatusPill>
+      )}
+    </span>
+  )
+}
+
+/* ── table row ───────────────────────────────────────────── */
+
+function ScheduleRow({
+  schedule,
+  now,
+  onOpen,
+  onEdit,
+  onDelete,
+  onChanged,
+}: {
+  schedule: AutoConsolidationSchedule
+  now: number
+  onOpen: () => void
+  onEdit: () => void
+  onDelete: () => void
+  onChanged: () => void
+}) {
+  const toggle = useToggleSchedule(schedule, onChanged)
+  const dueIn = schedule.nextRunDue - now
+  const overdue = schedule.enabled && dueIn < 0
+  const info = chainInfo(schedule.chainId)
+
+  return (
+    <Tr
+      interactive
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen()
+        }
+      }}
+      className="focus-visible:bg-[var(--bg-hover)] focus-visible:outline-none"
+    >
+      <Td>
+        <div className="flex min-w-0 items-center gap-3">
+          <TokenOnChain symbol={schedule.token} chainId={schedule.chainId} size={32} />
+          <div className="min-w-0">
+            <div className="truncate font-medium">{schedule.token}</div>
+            <div className="truncate text-xs text-[var(--fg-2)]">{info.name}</div>
+          </div>
+        </div>
+      </Td>
+      <Td>
+        <ScheduleStatus schedule={schedule} now={now} />
+      </Td>
+      <Td>
+        <Addr value={schedule.targetAddress} chainId={schedule.chainId} />
+      </Td>
+      <Td align="right" className="text-[var(--fg-1)]">
+        {schedule.intervalHours}h
+      </Td>
+      <Td
+        align="right"
+        className={cn('text-sm whitespace-nowrap', overdue ? 'text-[var(--st-warn)]' : 'text-[var(--fg-2)]')}
+      >
+        <span title={fmtLocal(schedule.nextRunDue)}>{fmtRelDelta(dueIn)}</span>
+      </Td>
+      <Td align="right" className="whitespace-nowrap">
+        <LastRunCell schedule={schedule} now={now} />
+      </Td>
+      <Td className="text-right" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label="Schedule actions">
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem
+              onSelect={() => toggle.mutate()}
+              disabled={toggle.isPending}
+              title="Soft on/off — preserves last-run snapshot"
+            >
+              {schedule.enabled ? <Pause /> : <Play />}
+              {schedule.enabled ? 'Disable' : 'Enable'}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onEdit}>
+              <Pencil /> Edit
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:text-destructive">
+              <Trash2 /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </Td>
+    </Tr>
+  )
+}
+
+function LastRunCell({ schedule, now }: { schedule: AutoConsolidationSchedule; now: number }) {
+  const q = useLastRun(schedule.lastConsolidationId)
+  if (schedule.lastRunAt == null) return <span className="text-sm text-[var(--fg-3)]">Never</span>
+  const summary = q.data?.summary
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <span className="text-sm text-[var(--fg-2)]" title={fmtLocal(schedule.lastRunAt)}>
+        {fmtRelDelta(schedule.lastRunAt - now)}
+      </span>
+      {summary ? (
+        <RunPill summary={summary} size="sm" />
+      ) : schedule.lastLegCount != null ? (
+        <span className="figure text-xs text-[var(--fg-3)]">{schedule.lastLegCount} legs</span>
+      ) : null}
+    </div>
+  )
+}
+
+function RunPill({
+  summary,
+  size,
+}: {
+  summary: ConsolidationStatusResponse['summary']
+  size?: 'sm' | 'md'
+}) {
+  if (summary.failed > 0)
+    return (
+      <StatusPill tone="bad" size={size}>
+        {summary.failed} failed
+      </StatusPill>
+    )
+  if (summary.pendingOrInFlight > 0)
+    return (
+      <StatusPill tone="run" size={size}>
+        {summary.pendingOrInFlight} in flight
+      </StatusPill>
+    )
+  if (summary.total > 0 && summary.confirmed === summary.total)
+    return (
+      <StatusPill tone="ok" size={size}>
+        {summary.total} confirmed
+      </StatusPill>
+    )
+  return (
+    <StatusPill tone="wait" size={size}>
+      {summary.total} legs
+    </StatusPill>
+  )
+}
+
+/* ── detail sheet ────────────────────────────────────────── */
+
+type Tab = 'overview' | 'lastrun'
+
+function ScheduleSheet({
+  schedule,
+  now,
+  onOpenChange,
+  onEdit,
+  onDelete,
+  onChanged,
+}: {
+  schedule: AutoConsolidationSchedule | null
+  now: number
+  onOpenChange: (v: boolean) => void
+  onEdit: () => void
+  onDelete: () => void
+  onChanged: () => void
+}) {
+  const [tab, setTab] = React.useState<Tab>('overview')
+  const id = schedule?.id ?? null
+  const [prevId, setPrevId] = React.useState<string | null>(id)
+  if (prevId !== id) {
+    setPrevId(id)
+    if (id) setTab('overview')
+  }
+  return (
+    <Sheet open={schedule != null} onOpenChange={onOpenChange}>
+      <SheetContent>
+        {schedule && (
+          <ScheduleSheetBody
+            schedule={schedule}
+            now={now}
+            tab={tab}
+            onTab={setTab}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onChanged={onChanged}
+          />
+        )}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function ScheduleSheetBody({
+  schedule,
+  now,
+  tab,
+  onTab,
+  onEdit,
+  onDelete,
+  onChanged,
+}: {
+  schedule: AutoConsolidationSchedule
+  now: number
+  tab: Tab
+  onTab: (t: Tab) => void
+  onEdit: () => void
+  onDelete: () => void
+  onChanged: () => void
+}) {
+  const dec = useTokenDecimals(schedule)
+  const toggle = useToggleSchedule(schedule, onChanged)
+  const lastQ = useLastRun(schedule.lastConsolidationId)
+  const info = chainInfo(schedule.chainId)
+  const dueIn = schedule.nextRunDue - now
+  const overdue = schedule.enabled && dueIn < 0
+  const summary = lastQ.data?.summary
+
+  return (
+    <>
+      <SheetHero
+        icon={CalendarClock}
+        title={`${schedule.token} on ${info.name}`}
+        meta={
+          <>
+            <ScheduleStatus schedule={schedule} now={now} />
+            <ChainPill chainId={schedule.chainId} size={16} />
+          </>
+        }
+        actions={<CopyButton value={schedule.id} />}
+      >
+        <div className="mt-5 rounded-2xl border border-border bg-[var(--bg-2)] p-4">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <div className="text-xs text-[var(--fg-2)]">Next run</div>
+              <div
+                className={cn(
+                  'figure mt-0.5 text-2xl font-semibold',
+                  overdue && 'text-[var(--st-warn)]',
+                )}
+                title={fmtLocal(schedule.nextRunDue)}
+              >
+                {schedule.enabled ? fmtRelDelta(dueIn) : 'Paused'}
+              </div>
+            </div>
+            <div className="text-right text-xs text-[var(--fg-2)]">
+              <div>Every</div>
+              <div className="figure text-base font-semibold text-foreground">
+                {schedule.intervalHours}h
+              </div>
+            </div>
+          </div>
+          {summary && summary.total > 0 && (
+            <div className="mt-4">
+              <div className="mb-1.5 flex items-center justify-between text-xs text-[var(--fg-2)]">
+                <span>Last run</span>
+                <span className="figure">
+                  {summary.confirmed} / {summary.total} confirmed
+                </span>
+              </div>
+              <LegsBar summary={summary} />
+            </div>
+          )}
+        </div>
+      </SheetHero>
+
+      <SheetTabs<Tab>
+        value={tab}
+        onChange={onTab}
+        tabs={[
+          { value: 'overview', label: 'Overview', icon: ListBullets },
+          {
+            value: 'lastrun',
+            label: 'Last run',
+            icon: ArrowsLeftRight,
+            count: lastQ.data?.legs.length ?? schedule.lastLegCount ?? undefined,
+          },
+        ]}
+      />
+
+      <SheetBody key={tab} className="fade-in">
+        {tab === 'overview' ? (
+          <div className="space-y-6">
+            <SheetSection title="Settings">
+              <dl className="divide-y divide-border rounded-xl border border-border">
+                <Fact icon={Target} label="Target">
+                  <Addr value={schedule.targetAddress} chainId={schedule.chainId} />
+                </Fact>
+                <Fact icon={Timer} label="Interval">
+                  <span className="figure">every {schedule.intervalHours}h</span>
+                </Fact>
+                <Fact icon={SlidersHorizontal} label="Dust floor">
+                  <span className="figure inline-flex items-center gap-1.5">
+                    {dec != null ? (
+                      <>
+                        <TokenIcon symbol={schedule.token} size={14} />
+                        {formatUnits(schedule.minSourceBalanceRaw, dec)} {schedule.token}
+                      </>
+                    ) : (
+                      `${schedule.minSourceBalanceRaw} (raw)`
+                    )}
+                  </span>
+                </Fact>
+                <Fact icon={Hash} label="Max sources">
+                  <span className="figure">{schedule.maxSourcesPerRun}</span>
+                </Fact>
+                <Fact icon={Fuel} label="Gas ceiling">
+                  {schedule.maxFeeUsd ? (
+                    <span className="figure" title="Firing defers while gas is above this">
+                      ≤ ${schedule.maxFeeUsd}
+                    </span>
+                  ) : (
+                    <span className="text-[var(--fg-3)]">None</span>
+                  )}
+                </Fact>
+              </dl>
+            </SheetSection>
+            <SheetSection title="Timing">
+              <dl className="divide-y divide-border rounded-xl border border-border">
+                <Fact icon={Clock} label="Next run">
+                  <span className={overdue ? 'text-[var(--st-warn)]' : undefined}>
+                    {fmtLocal(schedule.nextRunDue)}
+                    <span className="ml-1.5 text-[var(--fg-3)]">({fmtRelDelta(dueIn)})</span>
+                  </span>
+                </Fact>
+                <Fact icon={CalendarClock} label="Last run">
+                  {schedule.lastRunAt ? (
+                    <span>
+                      {fmtLocal(schedule.lastRunAt)}
+                      <span className="ml-1.5 text-[var(--fg-3)]">
+                        ({fmtRelDelta(schedule.lastRunAt - now)})
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-[var(--fg-3)]">Never</span>
+                  )}
+                </Fact>
+              </dl>
+            </SheetSection>
+          </div>
+        ) : (
+          <LastRunTab schedule={schedule} tokenDecimals={dec} query={lastQ} />
+        )}
+      </SheetBody>
+
+      <SheetFooter className="justify-between">
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-destructive hover:bg-[var(--danger-bg)] hover:text-destructive"
+          onClick={onDelete}
+        >
+          <Trash2 className="size-4" /> Delete
+        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => toggle.mutate()}
+            disabled={toggle.isPending}
+            title="Soft on/off — preserves last-run snapshot"
+          >
+            {toggle.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : schedule.enabled ? (
+              <Pause className="size-4" />
+            ) : (
+              <Play className="size-4" />
+            )}
+            {schedule.enabled ? 'Disable' : 'Enable'}
+          </Button>
+          <Button size="sm" onClick={onEdit}>
+            <Pencil className="size-4" /> Edit
+          </Button>
+        </div>
+      </SheetFooter>
+    </>
+  )
+}
+
+function LegsBar({ summary }: { summary: ConsolidationStatusResponse['summary'] }) {
+  return (
+    <SegmentedBar
+      className="h-2"
+      parts={[
+        { key: 'ok', name: 'Confirmed', value: summary.confirmed, color: 'var(--st-ok-dot)' },
+        { key: 'run', name: 'In flight', value: summary.pendingOrInFlight, color: 'var(--st-run-dot)' },
+        { key: 'bad', name: 'Failed', value: summary.failed, color: 'var(--st-bad-dot)' },
+        { key: 'off', name: 'Canceled', value: summary.canceled, color: 'var(--st-wait-dot)' },
+      ]}
+    />
+  )
+}
+
+/** One row of a details list: icon · label on the left, value on the right. */
+function Fact({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex min-h-11 items-center gap-3 px-4 py-2.5 text-sm">
+      <dt className="flex w-32 shrink-0 items-center gap-2 text-[var(--fg-2)]">
+        <Icon className="size-4 shrink-0" />
+        {label}
+      </dt>
+      <dd className="min-w-0 flex-1 text-right">{children}</dd>
+    </div>
+  )
+}
+
+function LastRunTab({
   schedule,
   tokenDecimals,
+  query,
 }: {
   schedule: AutoConsolidationSchedule
   tokenDecimals: number | null
+  query: ReturnType<typeof useLastRun>
 }) {
-  // Lightweight peek into the last consolidation — no polling, just one
-  // fetch on render so operators can see how the most recent firing went.
-  const id = schedule.lastConsolidationId!
-  const q = useQuery({
-    queryKey: ['gw', 'consolidations', id] as const,
-    queryFn: () =>
-      api<ConsolidationStatusResponse>(
-        `/api/gw/admin/pool/consolidations/${encodeURIComponent(id)}`,
-      ),
-    staleTime: 60_000,
-  })
-  const summary = q.data?.summary
-
+  if (!schedule.lastConsolidationId) {
+    return (
+      <EmptyState
+        compact
+        framed
+        icon={CalendarClock}
+        title="No runs yet"
+        description={schedule.enabled ? 'The first firing will show here.' : 'Enable the schedule to start.'}
+      />
+    )
+  }
+  const status = query.data
   return (
-    <div className="space-y-1.5">
-      <div className="flex flex-wrap items-center gap-1.5 text-xs">
-        <Badge variant="outline">
-          legs: <span className="font-mono">{schedule.lastLegCount ?? '?'}</span>
-        </Badge>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center gap-2">
+        {status && <RunPill summary={status.summary} />}
         {schedule.lastSkippedCount != null && schedule.lastSkippedCount > 0 && (
-          <Badge variant="warn">
-            skipped:{' '}
-            <span className="font-mono">{schedule.lastSkippedCount}</span>
-          </Badge>
+          <StatusPill tone="warn">{schedule.lastSkippedCount} skipped</StatusPill>
         )}
-        {summary && summary.confirmed === summary.total && summary.total > 0 && (
-          <Badge variant="success">
-            <CheckCircle2 className="size-3" /> all confirmed
-          </Badge>
-        )}
-        {summary && summary.pendingOrInFlight > 0 && (
-          <Badge variant="warn">
-            <Loader2 className="size-3 animate-spin" />{' '}
-            {summary.pendingOrInFlight} in flight
-          </Badge>
-        )}
-        {summary && summary.failed > 0 && (
-          <Badge variant="danger">
-            <AlertTriangle className="size-3" /> {summary.failed} failed
-          </Badge>
-        )}
+        <span className="ml-auto inline-flex items-center gap-1 font-mono text-xs text-[var(--fg-3)]">
+          {schedule.lastConsolidationId.slice(0, 8)}…
+          <CopyButton value={schedule.lastConsolidationId} />
+        </span>
       </div>
-      {summary && (
-        <LastRunLegs
-          status={q.data!}
-          tokenDecimals={tokenDecimals}
-          token={schedule.token}
-        />
-      )}
-      {schedule.lastSkippedReasons &&
-        schedule.lastSkippedReasons.length > 0 && (
-          <SkippedReasonsList
-            reasons={schedule.lastSkippedReasons}
+
+      <SheetSection title="Legs" icon={ArrowsLeftRight}>
+        {query.isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-11 w-full rounded-xl" />
+            ))}
+          </div>
+        ) : query.isError ? (
+          <ErrorState
+            title="Could not load last run"
+            message={query.error instanceof Error ? query.error.message : undefined}
+          />
+        ) : status && status.legs.length > 0 ? (
+          <LegsTable
+            status={status}
             tokenDecimals={tokenDecimals}
             token={schedule.token}
+            chainId={schedule.chainId}
           />
+        ) : (
+          <EmptyState compact framed icon={ArrowsLeftRight} title="No legs" />
         )}
+      </SheetSection>
+
+      {schedule.lastSkippedReasons && schedule.lastSkippedReasons.length > 0 && (
+        <SkippedReasonsList
+          reasons={schedule.lastSkippedReasons}
+          tokenDecimals={tokenDecimals}
+          token={schedule.token}
+          chainId={schedule.chainId}
+        />
+      )}
+    </div>
+  )
+}
+
+function LegsTable({
+  status,
+  tokenDecimals,
+  token,
+  chainId,
+}: {
+  status: ConsolidationStatusResponse
+  tokenDecimals: number | null
+  token: string
+  chainId: number
+}) {
+  const paged = usePaged(status.legs, 25)
+  return (
+    <div className="overflow-hidden rounded-xl border border-border">
+      <TableWrap>
+        <Table className="min-w-[440px]">
+          <THead>
+            <tr>
+              <Th>Source</Th>
+              <Th align="right">Amount</Th>
+              <Th>Status</Th>
+              <Th>Tx</Th>
+            </tr>
+          </THead>
+          <TBody>
+            {paged.rows.map((leg) => (
+              <Tr key={leg.payoutId}>
+                <Td>
+                  <Addr value={leg.sourceAddress} chainId={chainId} />
+                </Td>
+                <Td align="right" className="whitespace-nowrap">
+                  {tokenDecimals != null
+                    ? `${formatUnits(leg.amountRaw, tokenDecimals)} ${token}`
+                    : leg.amountRaw}
+                </Td>
+                <Td>
+                  <Status value={leg.status} size="sm" />
+                </Td>
+                <Td>
+                  {leg.txHash ? (
+                    <Addr value={leg.txHash} chainId={chainId} kind="tx" />
+                  ) : (
+                    <span className="text-[var(--fg-3)]">—</span>
+                  )}
+                </Td>
+              </Tr>
+            ))}
+          </TBody>
+        </Table>
+      </TableWrap>
+      {paged.total > paged.pageSize && (
+        <div className="border-t border-border px-6 py-3">
+          <Pager
+            page={paged.page}
+            pageSize={paged.pageSize}
+            total={paged.total}
+            hasNext={paged.page < paged.pageCount - 1}
+            onPage={paged.setPage}
+            noun="legs"
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -452,12 +956,14 @@ function SkippedReasonsList({
   reasons,
   tokenDecimals,
   token,
+  chainId,
 }: {
   reasons: NonNullable<AutoConsolidationSchedule['lastSkippedReasons']>
   tokenDecimals: number | null
   token: string
+  chainId: number
 }) {
-  const [open, setOpen] = React.useState(false)
+  const [open, setOpen] = React.useState<string | null>(null)
   // Group by reason code (the prefix before the `:`) so a long tail of dust
   // skips collapses into one line instead of dozens.
   const groups = React.useMemo(() => {
@@ -471,128 +977,60 @@ function SkippedReasonsList({
     return [...m.entries()].sort((a, b) => b[1].length - a[1].length)
   }, [reasons])
   return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 text-xs text-warn hover:underline cursor-pointer"
-      >
-        <AlertTriangle className="size-3" />
-        {open ? 'Hide' : 'Show'} skipped breakdown · {reasons.length} entr
-        {reasons.length === 1 ? 'y' : 'ies'}
-      </button>
-      {open && (
-        <div className="mt-1.5 space-y-2 rounded-md border border-[var(--warn-border)] bg-[var(--warn-bg)] p-3">
-          {groups.map(([code, rows]) => (
-            <details key={code} className="text-xs">
-              <summary className="cursor-pointer select-none font-mono text-2xs font-semibold text-warn">
-                {code} · {rows.length}
-              </summary>
-              <ul className="mt-1.5 space-y-1">
-                {rows.slice(0, 50).map((r) => (
-                  <li
-                    key={r.sourceAddress + r.amountRaw}
-                    className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--warn-border)] bg-card px-2.5 py-1.5"
-                  >
-                    <Addr value={r.sourceAddress} />
-                    <span className="font-mono text-2xs tabular-nums text-[var(--fg-2)]">
-                      {tokenDecimals != null
-                        ? `${formatUnits(r.amountRaw, tokenDecimals)} ${token}`
-                        : r.amountRaw}
-                    </span>
-                    <span
-                      className="ml-auto max-w-[260px] truncate font-mono text-2xs text-[var(--fg-3)]"
-                      title={r.reason}
+    <SheetSection title={`Skipped · ${reasons.length}`} icon={AlertTriangle}>
+      <div className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+        {groups.map(([code, rows]) => {
+          const isOpen = open === code
+          return (
+            <div key={code}>
+              <button
+                type="button"
+                onClick={() => setOpen(isOpen ? null : code)}
+                aria-expanded={isOpen}
+                className="flex w-full cursor-pointer items-center gap-2 px-4 py-3 text-left text-sm transition-colors hover:bg-[var(--bg-hover)]"
+              >
+                <span className="font-mono text-xs font-medium text-[var(--st-warn)]">{code}</span>
+                <span className="figure rounded-full bg-[var(--bg-active)] px-1.5 text-2xs text-[var(--fg-1)]">
+                  {rows.length}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    'ml-auto size-4 text-[var(--fg-3)] transition-transform duration-200',
+                    isOpen && 'rotate-180',
+                  )}
+                />
+              </button>
+              {isOpen && (
+                <ul className="fade-in divide-y divide-border border-t border-border bg-[var(--bg-2)]">
+                  {rows.slice(0, 50).map((r) => (
+                    <li
+                      key={r.sourceAddress + r.amountRaw}
+                      className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5"
                     >
-                      {r.reason.includes(':')
-                        ? r.reason.slice(r.reason.indexOf(':') + 1).trim()
-                        : ''}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ))}
-        </div>
-      )}
-    </div>
+                      <Addr value={r.sourceAddress} chainId={chainId} />
+                      <span className="figure text-xs text-[var(--fg-2)]">
+                        {tokenDecimals != null
+                          ? `${formatUnits(r.amountRaw, tokenDecimals)} ${token}`
+                          : r.amountRaw}
+                      </span>
+                      <span
+                        className="ml-auto max-w-[220px] truncate font-mono text-2xs text-[var(--fg-3)]"
+                        title={r.reason}
+                      >
+                        {r.reason.includes(':')
+                          ? r.reason.slice(r.reason.indexOf(':') + 1).trim()
+                          : ''}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </SheetSection>
   )
-}
-
-function LastRunLegs({
-  status,
-  tokenDecimals,
-  token,
-}: {
-  status: ConsolidationStatusResponse
-  tokenDecimals: number | null
-  token: string
-}) {
-  const [open, setOpen] = React.useState(false)
-  if (status.legs.length === 0) return null
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="text-xs text-primary hover:underline cursor-pointer"
-      >
-        {open ? 'Hide' : 'Show'} {status.legs.length} leg
-        {status.legs.length === 1 ? '' : 's'}
-      </button>
-      {open && (
-        <TableWrap className="mt-1.5 rounded-md border border-border">
-          <Table className="min-w-[440px] text-xs">
-            <THead>
-              <tr>
-                <Th className="px-3">Source</Th>
-                <Th align="right" className="px-3">Amount</Th>
-                <Th className="px-3">Status</Th>
-                <Th className="px-3">Tx</Th>
-              </tr>
-            </THead>
-            <TBody>
-              {status.legs.map((leg) => (
-                <Tr key={leg.payoutId}>
-                  <Td className="px-3 py-2">
-                    <Addr value={leg.sourceAddress} />
-                  </Td>
-                  <Td align="right" className="px-3 py-2">
-                    {tokenDecimals != null
-                      ? `${formatUnits(leg.amountRaw, tokenDecimals)} ${token}`
-                      : leg.amountRaw}
-                  </Td>
-                  <Td className="px-3 py-2">
-                    <LegBadge status={leg.status} />
-                  </Td>
-                  <Td className="px-3 py-2">
-                    {leg.txHash ? (
-                      <Addr value={leg.txHash} />
-                    ) : (
-                      <span className="text-[var(--fg-3)]">—</span>
-                    )}
-                  </Td>
-                </Tr>
-              ))}
-            </TBody>
-          </Table>
-        </TableWrap>
-      )}
-    </div>
-  )
-}
-
-function LegBadge({
-  status,
-}: {
-  status: ConsolidationStatusResponse['legs'][number]['status']
-}) {
-  if (status === 'confirmed') return <Badge variant="success">{status}</Badge>
-  if (status === 'failed' || status === 'canceled')
-    return <Badge variant="danger">{status}</Badge>
-  if (status === 'submitted' || status === 'topping-up' || status === 'reserved')
-    return <Badge variant="warn">{status}</Badge>
-  return <Badge variant="default">{status}</Badge>
 }
 
 function fmtRelDelta(deltaMs: number): string {
@@ -607,14 +1045,19 @@ function fmtRelDelta(deltaMs: number): string {
   return future ? `in ${body}` : `${body} ago`
 }
 
-function DeleteScheduleButton({
+/* ── delete confirm ──────────────────────────────────────── */
+
+function DeleteScheduleDialog({
   schedule,
-  onChanged,
+  open,
+  onOpenChange,
+  onDeleted,
 }: {
   schedule: AutoConsolidationSchedule
-  onChanged: () => void
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  onDeleted: () => void
 }) {
-  const [open, setOpen] = React.useState(false)
   const del = useMutation({
     mutationFn: () =>
       api<{ deleted: true }>(
@@ -623,22 +1066,17 @@ function DeleteScheduleButton({
       ),
     onSuccess: () => {
       toast.success('Schedule deleted')
-      setOpen(false)
-      onChanged()
+      onOpenChange(false)
+      onDeleted()
     },
     onError: (e: ApiError) => toast.error(e.message || 'Delete failed'),
   })
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant="outline" className="text-destructive">
-          <Trash2 className="size-3.5" /> Delete
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Trash2 className="size-4" /> Delete schedule
+            <Trash2 className="size-5" /> Delete schedule
           </DialogTitle>
           <DialogDescription>
             Permanently removes the schedule and its last-run snapshot. Prefer{' '}
@@ -646,18 +1084,21 @@ function DeleteScheduleButton({
             it later — disabling preserves the forensic record of past firings.
           </DialogDescription>
         </DialogHeader>
-        <div className="rounded-md border border-border bg-[var(--bg-2)] px-3 py-2.5 text-sm">
-          <div className="font-mono text-xs">
-            chain {schedule.chainId} · {schedule.token}
-          </div>
-          <div className="mt-1 text-xs text-[var(--fg-2)]">
-            target: <Addr value={schedule.targetAddress} />
+        <div className="flex items-center gap-3 rounded-xl border border-border bg-[var(--bg-2)] px-4 py-3 text-sm">
+          <TokenOnChain symbol={schedule.token} chainId={schedule.chainId} size={32} />
+          <div className="min-w-0">
+            <div className="font-mono text-xs">
+              chain {schedule.chainId} · {schedule.token}
+            </div>
+            <div className="mt-1 flex items-center gap-1 text-xs text-[var(--fg-2)]">
+              target: <Addr value={schedule.targetAddress} chainId={schedule.chainId} />
+            </div>
           </div>
         </div>
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={() => setOpen(false)}
+            onClick={() => onOpenChange(false)}
             disabled={del.isPending}
           >
             Cancel
@@ -668,9 +1109,9 @@ function DeleteScheduleButton({
             disabled={del.isPending}
           >
             {del.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
+              <Loader2 className="size-4 animate-spin" />
             ) : (
-              <Trash2 className="size-3.5" />
+              <Trash2 className="size-4" />
             )}
             Delete
           </Button>
@@ -869,27 +1310,27 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="min-w-0 sm:max-w-xl">
+      <DialogContent className="min-w-0 sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <CalendarClock className="size-4" />
-            {isEdit ? 'Edit schedule' : 'New auto-consolidation schedule'}
+            <CalendarClock className="size-5" />
+            {isEdit ? 'Edit schedule' : 'New schedule'}
           </DialogTitle>
           <DialogDescription>
             {isEdit
-              ? 'Changing intervalHours recomputes nextRunDue from the existing baseline (lastRunAt or createdAt) — it does not reset the cycle.'
-              : 'One schedule per (chain, token) pair. The cron uses the same consolidation_sweep flow as the manual endpoint, just on a fixed cadence.'}
+              ? 'Interval changes keep the current cycle — nextRunDue is recomputed from lastRunAt (or createdAt).'
+              : 'One schedule per chain and token.'}
           </DialogDescription>
         </DialogHeader>
 
         <form
-          className="min-w-0 space-y-4"
+          className="min-w-0 space-y-5"
           onSubmit={(e) => {
             e.preventDefault()
             save.mutate()
           }}
         >
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px]">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Chain">
               <Select
                 value={chainId}
@@ -912,6 +1353,7 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
                   {chainOptions.map((c) => (
                     <SelectItem key={c.chainId} value={String(c.chainId)}>
                       <span className="flex items-center gap-2">
+                        <ChainIcon chainId={c.chainId} size={16} />
                         <span>{c.displayName}</span>
                         <span className="font-mono text-2xs text-[var(--fg-3)]">
                           {c.chainId}
@@ -937,8 +1379,9 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
                   {tokenOptions.map((t) => (
                     <SelectItem key={t.symbol} value={t.symbol}>
                       <span className="flex items-center gap-2">
-                        <span className="font-mono">{t.symbol}</span>
-                        <span className="text-2xs text-[var(--fg-3)]">
+                        <TokenIcon symbol={t.symbol} size={16} />
+                        <span className="font-medium">{t.symbol}</span>
+                        <span className="text-xs text-[var(--fg-3)]">
                           {t.displayName}
                         </span>
                       </span>
@@ -953,15 +1396,15 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
             label="Target pool address"
             hint={
               targetCandidates.length > 0
-                ? 'Pick the pool address with the most existing balance (top of the list) to minimize legs.'
-                : 'Must already exist in address_pool for this family.'
+                ? 'Top of the list holds the most — fewest legs.'
+                : 'Must already be in the address pool for this family.'
             }
             right={
               targetCandidates.length > 0 ? (
                 <button
                   type="button"
                   onClick={() => setTarget('')}
-                  className="text-xs text-[var(--fg-2)] hover:text-foreground cursor-pointer"
+                  className="cursor-pointer text-xs text-[var(--fg-2)] hover:text-foreground"
                 >
                   {usingPicker ? 'Custom address' : 'Use picker'}
                 </button>
@@ -991,11 +1434,11 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
                     return (
                       <SelectItem key={row.address} value={row.address}>
                         <span className="flex items-center gap-2">
-                          <span className="font-mono text-2xs">
+                          <span className="font-mono text-xs">
                             {row.address.slice(0, 10)}…{row.address.slice(-6)}
                           </span>
                           {balLabel && (
-                            <span className="font-mono text-2xs text-success">
+                            <span className="figure text-xs text-[var(--st-ok)]">
                               {balLabel}
                             </span>
                           )}
@@ -1017,106 +1460,98 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
             )}
           </Field>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field
-              label="Interval (hours)"
-              hint="1–720 (max 30 days)"
-            >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Interval (hours)" hint="1–720">
               <Input
                 type="number"
                 min={1}
                 max={720}
                 value={intervalHours}
                 onChange={(e) => setIntervalHours(e.target.value)}
-                className="font-mono"
+                className="figure"
               />
             </Field>
-            <Field label="Max sources per run" hint="Cap on legs per cron tick.">
+            <Field label="Max sources per run" hint="1–200">
               <Input
                 type="number"
                 min={1}
                 max={200}
                 value={maxSources}
                 onChange={(e) => setMaxSources(e.target.value)}
-                className="font-mono"
+                className="figure"
               />
             </Field>
           </div>
 
-          <Field
-            label="Per-source dust floor (raw)"
-            hint={
-              <>
-                Smallest unit. Sources holding less than this are silently
-                skipped at fire time so the cron doesn't burn more in gas than
-                it recovers. {previewMin && (
-                  <span className="font-mono text-[var(--fg-2)]">{previewMin}</span>
-                )}
-              </>
-            }
-            right={
-              suggestion ? (
-                <button
-                  type="button"
-                  onClick={() => setMinRaw(suggestion.raw)}
-                  className="text-xs text-primary hover:underline cursor-pointer"
-                  title={`Suggested: ${suggestion.label}`}
-                >
-                  Use suggested ({suggestion.label})
-                </button>
-              ) : null
-            }
-          >
-            <Input
-              value={minRaw}
-              onChange={(e) => setMinRaw(e.target.value)}
-              className="font-mono"
-              placeholder="e.g. 50000000"
-            />
-          </Field>
-
-          <Field
-            label="Gas ceiling (USD, optional)"
-            hint={
-              <>
-                When set, the cron compares the live low-tier fee against
-                this ceiling and <span className="font-medium">defers</span>{' '}
-                the firing while the fee exceeds it — clustering sweeps into
-                cheap-gas windows. Mostly an EVM L1 tool.{' '}
-                {isEdit && (
-                  <span className="text-[var(--fg-2)]">
-                    Leave empty to clear the ceiling.
-                  </span>
-                )}
-              </>
-            }
-            right={
-              maxFeeUsd ? (
-                <button
-                  type="button"
-                  onClick={() => setMaxFeeUsd('')}
-                  className="text-xs text-[var(--fg-2)] hover:text-foreground cursor-pointer"
-                >
-                  Clear
-                </button>
-              ) : null
-            }
-          >
-            <div className="relative">
-              <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-xs text-[var(--fg-3)]">
-                $
-              </span>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field
+              label="Dust floor (raw)"
+              hint={
+                previewMin ? (
+                  <span className="figure">{previewMin}</span>
+                ) : (
+                  'Smaller sources are skipped.'
+                )
+              }
+              right={
+                suggestion ? (
+                  <button
+                    type="button"
+                    onClick={() => setMinRaw(suggestion.raw)}
+                    className="cursor-pointer text-xs font-medium text-foreground hover:underline"
+                    title={`Suggested: ${suggestion.label}`}
+                  >
+                    Use suggested
+                  </button>
+                ) : null
+              }
+            >
               <Input
-                inputMode="decimal"
-                value={maxFeeUsd}
-                onChange={(e) => setMaxFeeUsd(e.target.value)}
-                className="pl-6 font-mono"
-                placeholder="e.g. 4.00 — empty = no ceiling"
+                value={minRaw}
+                onChange={(e) => setMinRaw(e.target.value)}
+                className="font-mono"
+                placeholder="e.g. 50000000"
               />
-            </div>
-          </Field>
+            </Field>
 
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-border bg-card px-3 py-2.5">
+            <Field
+              label="Gas ceiling (USD)"
+              hint={
+                isEdit
+                  ? 'Defers firing above this. Empty clears it.'
+                  : 'Defers firing above this. Optional.'
+              }
+              right={
+                maxFeeUsd ? (
+                  <button
+                    type="button"
+                    onClick={() => setMaxFeeUsd('')}
+                    className="cursor-pointer text-xs text-[var(--fg-2)] hover:text-foreground"
+                  >
+                    Clear
+                  </button>
+                ) : null
+              }
+            >
+              <div className="relative">
+                <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm text-[var(--fg-3)]">
+                  $
+                </span>
+                <Input
+                  inputMode="decimal"
+                  value={maxFeeUsd}
+                  onChange={(e) => setMaxFeeUsd(e.target.value)}
+                  className="figure pl-7"
+                  placeholder="No ceiling"
+                />
+              </div>
+            </Field>
+          </div>
+
+          <label
+            htmlFor="schedule-enabled"
+            className="flex cursor-pointer items-center gap-3 rounded-xl border border-border px-4 py-3"
+          >
             <input
               id="schedule-enabled"
               type="checkbox"
@@ -1124,52 +1559,50 @@ function ScheduleFormDialog(props: ScheduleFormProps) {
               onChange={(e) => setEnabled(e.target.checked)}
               className="size-4 accent-[var(--primary)]"
             />
-            <label
-              htmlFor="schedule-enabled"
-              className="cursor-pointer text-sm"
-            >
-              Enabled
-            </label>
+            <span className="text-sm font-medium">Enabled</span>
             <span className="ml-auto text-xs text-[var(--fg-2)]">
-              Disabled schedules are skipped by the cron entirely.
+              Disabled schedules never fire.
             </span>
-          </div>
+          </label>
 
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => props.onOpenChange(false)}
-              disabled={save.isPending}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={save.isPending}>
-              {save.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : isEdit ? (
-                <Pencil className="size-3.5" />
-              ) : (
-                <Layers className="size-3.5" />
-              )}
-              {save.isPending
-                ? 'Saving…'
-                : isEdit
-                  ? 'Save changes'
-                  : 'Create schedule'}
-            </Button>
+          <DialogFooter className="items-center sm:justify-between">
+            {!isEdit ? (
+              <Link
+                to="/pool"
+                className="inline-flex items-center gap-1 text-xs text-[var(--fg-2)] hover:text-foreground"
+                title="Use the manual flow on Address pool for one-shot consolidations"
+              >
+                <Layers className="size-3.5" /> One-off sweep
+              </Link>
+            ) : (
+              <span />
+            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => props.onOpenChange(false)}
+                disabled={save.isPending}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={save.isPending}>
+                {save.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : isEdit ? (
+                  <Pencil className="size-4" />
+                ) : (
+                  <Layers className="size-4" />
+                )}
+                {save.isPending
+                  ? 'Saving…'
+                  : isEdit
+                    ? 'Save changes'
+                    : 'Create schedule'}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
-
-        {!isEdit && (
-          <p className="text-xs text-[var(--fg-2)]">
-            Use the manual flow on{' '}
-            <a href="/pool" className="inline-flex items-center gap-0.5 text-primary hover:underline">
-              Address pool <ExternalLink className="size-3" />
-            </a>{' '}
-            for one-shot consolidations.
-          </p>
-        )}
       </DialogContent>
     </Dialog>
   )

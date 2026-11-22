@@ -26,6 +26,7 @@ import {
 } from '@/components/icons'
 
 import { useTheme } from '@/lib/theme'
+import { Kbd } from '@/components/ui/kbd'
 import {
   CommandDialog,
   CommandEmpty,
@@ -162,14 +163,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         <span className="inline-flex items-center gap-1.5"><Kbd>esc</Kbd> close</span>
       </div>
     </CommandDialog>
-  )
-}
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="grid h-5 min-w-5 place-items-center rounded-md border border-border bg-card px-1 font-sans text-2xs text-[var(--fg-2)]">
-      {children}
-    </kbd>
   )
 }
 

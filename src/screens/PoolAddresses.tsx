@@ -6,17 +6,15 @@ import {
   ArrowLeft,
   CheckCircle2,
   ExternalLink,
+  Info,
   Loader2,
   Pause,
   Play,
   RefreshCw,
-  Search,
   Waypoints,
-  X,
 } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
-import { FAMILY_COLOR } from '@/lib/chains'
 import { fmtLocal, fmtUsd } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type {
@@ -29,14 +27,24 @@ import type {
 } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
+import { FamilyIcon } from '@/components/CryptoIcon'
+import { Pager, TableCard, TableSearch, TableToolbar, usePaged } from '@/components/DataTable'
 import { PageHeader } from '@/components/PageHeader'
 import { Callout, EmptyState, ErrorState } from '@/components/States'
-import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/StatusPill'
+import { Segmented, SegmentedBar } from '@/components/charts'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TBody, Td, Th, THead, TableWrap, Tr } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 type AdminFamily = Exclude<Family, 'monero'>
 
@@ -44,29 +52,46 @@ const ADMIN_FAMILIES: AdminFamily[] = ['evm', 'tron', 'solana', 'utxo']
 
 type StatusFilter = 'all' | 'available' | 'allocated' | 'quarantined' | 'disabled'
 
+/** Server chunk size — unchanged `limit` on the list request. */
 const PAGE_SIZE = 100
+/** Rows shown per table page (client view over the server chunk). */
+const VIEW_SIZE = 25
+const VIEWS_PER_CHUNK = PAGE_SIZE / VIEW_SIZE
 
 const STATUS_FILTERS: ReadonlyArray<{ value: StatusFilter; label: string }> = [
-  { value: 'all', label: 'All' },
+  { value: 'all', label: 'All statuses' },
   { value: 'available', label: 'Available' },
   { value: 'allocated', label: 'Allocated' },
   { value: 'quarantined', label: 'Parked' },
   { value: 'disabled', label: 'Disabled (incl. on-loan)' },
 ]
 
+const METER = {
+  available: 'var(--st-ok-dot)',
+  allocated: 'var(--st-run-dot)',
+  quarantined: 'var(--st-wait-dot)',
+} as const
+
 export function PoolAddressesPage() {
   const [family, setFamily] = React.useState<AdminFamily>('evm')
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all')
   const [search, setSearch] = React.useState('')
-  const [offset, setOffset] = React.useState(0)
+  // View page (25 rows). The server is still asked for 100-row chunks with
+  // the same limit/offset; the chunk is derived from the view page.
+  const [page, setPage] = React.useState(0)
 
   // Reset paging whenever the cursor moves to a different (family, status).
   const cursor = `${family}|${statusFilter}`
   const [prevCursor, setPrevCursor] = React.useState(cursor)
   if (prevCursor !== cursor) {
     setPrevCursor(cursor)
-    setOffset(0)
+    setPage(0)
   }
+
+  const isDisabledView = statusFilter === 'disabled'
+  const offset = isDisabledView
+    ? 0
+    : Math.floor(page / VIEWS_PER_CHUNK) * PAGE_SIZE
 
   const statsQ = useQuery({
     queryKey: ['pool-stats'] as const,
@@ -115,29 +140,36 @@ export function PoolAddressesPage() {
         : rows,
     [rows, searchLower],
   )
+  // Searching filters the loaded chunk; page through the matches locally.
+  const searchPaged = usePaged(filtered, VIEW_SIZE)
 
-  const total =
-    statusFilter === 'disabled'
-      ? rows.length
-      : (listQ.data as PoolAddressListResponse | undefined)?.total ?? null
-  const hasMore =
-    statusFilter !== 'disabled' &&
-    rows.length === PAGE_SIZE &&
-    total != null &&
-    offset + PAGE_SIZE < total
+  const total: number | null = isDisabledView
+    ? rows.length
+    : (listQ.data as PoolAddressListResponse | undefined)?.total ?? null
+
+  const localStart = page * VIEW_SIZE - offset
+  const visible = searchLower
+    ? searchPaged.rows
+    : rows.slice(localStart, localStart + VIEW_SIZE)
+  const hasNext = searchLower
+    ? searchPaged.page < searchPaged.pageCount - 1
+    : total != null
+      ? (page + 1) * VIEW_SIZE < total
+      : localStart + VIEW_SIZE < rows.length || rows.length === PAGE_SIZE
+
+  const fam = statsByFamily.get(family)
 
   return (
-    <div className="fade-in space-y-5">
-      <div className="space-y-2">
+    <div className="fade-in space-y-8">
+      <div className="space-y-3">
         <Button asChild variant="ghost" size="sm" className="-ml-2 h-7 px-2 text-xs text-[var(--fg-2)]">
           <Link to="/pool">
             <ArrowLeft className="size-3.5" /> Address pool
           </Link>
         </Button>
         <PageHeader
-          eyebrow="Treasury"
           title="Pool addresses"
-          description="Browse individual addresses across families. Park empty / idle ones to keep the active set small and detection light. Reversible — never risks funds."
+          description="Park or re-enable addresses"
           actions={
             <Button
               variant="outline"
@@ -151,7 +183,7 @@ export function PoolAddressesPage() {
             >
               <RefreshCw
                 className={cn(
-                  'size-3.5',
+                  'size-4',
                   (listQ.isFetching || balancesQ.isFetching) && 'animate-spin',
                 )}
               />
@@ -161,71 +193,87 @@ export function PoolAddressesPage() {
         />
       </div>
 
+      <div className="stagger grid grid-cols-2 gap-5 xl:grid-cols-4">
+        <Tile
+          label="Total"
+          value={fam?.total ?? 0}
+          loading={statsQ.isLoading}
+          icon={<FamilyIcon family={family} size={18} />}
+        >
+          <SegmentedBar
+            parts={[
+              { key: 'a', name: 'Available', value: fam?.available ?? 0, color: METER.available },
+              { key: 'l', name: 'Allocated', value: fam?.allocated ?? 0, color: METER.allocated },
+              { key: 'q', name: 'Parked', value: fam?.quarantined ?? 0, color: METER.quarantined },
+            ]}
+          />
+        </Tile>
+        <Tile label="Available" value={fam?.available ?? 0} loading={statsQ.isLoading} dot={METER.available} />
+        <Tile label="Allocated" value={fam?.allocated ?? 0} loading={statsQ.isLoading} dot={METER.allocated} />
+        <Tile label="Parked" value={fam?.quarantined ?? 0} loading={statsQ.isLoading} dot={METER.quarantined} />
+      </div>
+
       <CaveatBanner />
 
-      <FamilyTabs
-        active={family}
-        onChange={setFamily}
-        statsByFamily={statsByFamily}
-        loading={statsQ.isLoading}
-      />
-
-      <Card className="overflow-hidden">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-card px-4 py-3">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {STATUS_FILTERS.map((s) => (
-              <button
-                key={s.value}
-                type="button"
-                onClick={() => setStatusFilter(s.value)}
-                aria-pressed={statusFilter === s.value}
-                className={cn(
-                  'h-7 cursor-pointer rounded-md border px-2.5 text-xs font-medium transition-colors',
-                  statusFilter === s.value
-                    ? 'border-[var(--accent-border)] bg-[var(--accent-bg)] text-primary'
-                    : 'border-border text-[var(--fg-2)] hover:bg-[var(--bg-hover)] hover:text-foreground',
-                )}
+      <TableCard
+        toolbar={
+          <TableToolbar title="Addresses" count={total ?? undefined}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Segmented<AdminFamily>
+                ariaLabel="Family"
+                value={family}
+                onChange={setFamily}
+                options={ADMIN_FAMILIES.map((f) => ({ value: f, label: f.toUpperCase() }))}
+              />
+              <Select
+                value={statusFilter}
+                onValueChange={(v) => setStatusFilter(v as StatusFilter)}
               >
-                {s.label}
-              </button>
-            ))}
-          </div>
-          <div className="relative ml-auto w-full min-w-0 sm:w-auto sm:min-w-[200px] sm:max-w-xs sm:flex-1">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[var(--fg-3)]" />
-            <Input
+                <SelectTrigger className="h-8 w-auto min-w-[150px] rounded-[10px] text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_FILTERS.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <TableSearch
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={setSearch}
               placeholder="Filter loaded by address…"
-              className="h-9 pl-8"
             />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer text-[var(--fg-3)] hover:text-foreground"
-                aria-label="Clear search"
-              >
-                <X className="size-3.5" />
-              </button>
-            )}
-          </div>
-          <div className="hidden whitespace-nowrap font-mono text-xs text-[var(--fg-2)] sm:block">
-            {listQ.isFetching && !listQ.isFetched ? (
-              <Loader2 className="size-3.5 animate-spin" />
+          </TableToolbar>
+        }
+        footer={
+          !listQ.isLoading && !listQ.isError && visible.length > 0 ? (
+            searchLower ? (
+              <Pager
+                page={searchPaged.page}
+                pageSize={VIEW_SIZE}
+                total={searchPaged.total}
+                hasNext={hasNext}
+                onPage={searchPaged.setPage}
+                noun="matches"
+              />
             ) : (
-              <>
-                <span className="tabular-nums">{filtered.length}</span>
-                {total != null && (
-                  <>
-                    {' '}
-                    of <span className="tabular-nums">{total}</span>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-
+              <Pager
+                page={page}
+                pageSize={VIEW_SIZE}
+                total={total ?? undefined}
+                shown={visible.length}
+                hasNext={hasNext}
+                onPage={setPage}
+                loading={listQ.isFetching}
+                noun="addresses"
+              />
+            )
+          ) : undefined
+        }
+      >
         {listQ.isLoading ? (
           <TableSkeleton />
         ) : listQ.isError ? (
@@ -234,34 +282,17 @@ export function PoolAddressesPage() {
               listQ.error instanceof Error ? listQ.error.message : 'Error'
             }
           />
-        ) : filtered.length === 0 ? (
-          <NoAddresses statusFilter={statusFilter} family={family} />
+        ) : visible.length === 0 ? (
+          <NoAddresses statusFilter={statusFilter} family={family} searching={!!searchLower} />
         ) : (
           <AddressTable
-            rows={filtered}
+            rows={visible}
             balanceByAddress={balanceByAddress}
             balancesLoading={balancesQ.isLoading}
             family={family}
           />
         )}
-
-        {hasMore && (
-          <div className="flex justify-center border-t border-border px-4 py-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setOffset((o) => o + PAGE_SIZE)}
-              disabled={listQ.isFetching}
-            >
-              {listQ.isFetching ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : null}
-              Load more
-            </Button>
-          </div>
-        )}
-      </Card>
+      </TableCard>
     </div>
   )
 }
@@ -304,106 +335,64 @@ function useListQuery({
 
 /* ── header pieces ───────────────────────────────────────── */
 
-function CaveatBanner() {
-  return (
-    <Callout tone="info" title="Park is safe and reversible.">
-      <div className="space-y-1">
-        <p>
-          A parked address stays in the pool, is still swept by consolidation,
-          and late payments follow the usual cooldown path. The allocator may
-          borrow it if the family pool is exhausted, then auto-re-park on
-          release.
-        </p>
-        <p className="text-[var(--fg-2)]">
-          Parking does <span className="font-medium">not</span> save gas
-          (there's no on-chain destroy for EVM/Tron EOAs). It reduces detection
-          overhead and helps keep stranded dust contained.
-        </p>
-      </div>
-    </Callout>
-  )
-}
-
-function FamilyTabs({
-  active,
-  onChange,
-  statsByFamily,
-  loading,
-}: {
-  active: AdminFamily
-  onChange: (f: AdminFamily) => void
-  statsByFamily: Map<Family, PoolStatsRow>
-  loading: boolean
-}) {
-  return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      {ADMIN_FAMILIES.map((f) => {
-        const s = statsByFamily.get(f)
-        const isActive = f === active
-        return (
-          <button
-            key={f}
-            type="button"
-            onClick={() => onChange(f)}
-            aria-pressed={isActive}
-            className={cn(
-              'group flex min-w-0 flex-col gap-2 rounded-lg border bg-card px-4 py-3 text-left transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              isActive
-                ? 'border-[var(--accent-border)] ring-1 ring-[var(--accent-border)]'
-                : 'border-border hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)]',
-            )}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span
-                  aria-hidden
-                  className="size-2 rounded-full"
-                  style={{ background: FAMILY_COLOR[f] }}
-                />
-                <span className="text-xs font-semibold uppercase tracking-[0.06em]">
-                  {f}
-                </span>
-              </div>
-              {loading && !s ? (
-                <Skeleton className="h-3.5 w-10" />
-              ) : (
-                <span className="font-mono text-2xs tabular-nums text-[var(--fg-3)]">
-                  total {s?.total ?? 0}
-                </span>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-1">
-              <FamilyMetric label="avail" value={s?.available ?? 0} tone="success" />
-              <FamilyMetric label="alloc" value={s?.allocated ?? 0} tone="warn" />
-              <FamilyMetric label="parked" value={s?.quarantined ?? 0} />
-            </div>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-function FamilyMetric({
+function Tile({
   label,
   value,
-  tone,
+  loading,
+  icon,
+  dot,
+  children,
 }: {
   label: string
   value: number
-  tone?: 'success' | 'warn'
+  loading?: boolean
+  icon?: React.ReactNode
+  dot?: string
+  children?: React.ReactNode
 }) {
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 rounded-md border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-2xs',
-        tone === 'success' && 'text-success',
-        tone === 'warn' && 'text-warn',
-      )}
+    <Card className="flex flex-col p-5">
+      <div className="flex items-center gap-2 text-sm text-[var(--fg-2)]">
+        {dot && <span className="size-2.5 rounded-[3px]" style={{ background: dot }} />}
+        {label}
+        {icon && <span className="ml-auto">{icon}</span>}
+      </div>
+      <div className="figure mt-2 text-xl font-semibold">
+        {loading ? <Skeleton className="h-7 w-12" /> : value}
+      </div>
+      {children && <div className="mt-auto pt-4">{children}</div>}
+    </Card>
+  )
+}
+
+function CaveatBanner() {
+  return (
+    <Callout
+      tone="info"
+      title="Park is safe and reversible."
+      action={
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label="About parking"
+              className="grid size-7 cursor-pointer place-items-center rounded-full text-[var(--fg-2)] hover:bg-[var(--bg-hover)] hover:text-foreground"
+            >
+              <Info className="size-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs text-pretty font-normal">
+            The allocator may borrow a parked address if the family pool is
+            exhausted, then auto-re-park on release. Parking does not save gas
+            (there's no on-chain destroy for EVM/Tron EOAs); it reduces detection
+            overhead and helps keep stranded dust contained.
+          </TooltipContent>
+        </Tooltip>
+      }
     >
-      <span className="font-mono tabular-nums font-semibold">{value}</span>
-      <span className="text-[var(--fg-3)]">{label}</span>
-    </span>
+      Parked addresses stay in the pool, are still swept by consolidation, and
+      late payments follow the usual cooldown path.
+    </Callout>
   )
 }
 
@@ -422,15 +411,16 @@ function AddressTable({
 }) {
   return (
     <TableWrap>
-      <Table className="min-w-[760px]">
+      <Table className="min-w-[780px]">
         <THead>
           <tr>
             <Th>Address</Th>
-            <Th align="right">Index</Th>
-            <Th>State</Th>
+            <Th>Status</Th>
             <Th align="right">Balance</Th>
-            <Th>Allocation</Th>
-            <Th align="right">Action</Th>
+            <Th>Invoice</Th>
+            <Th align="right">
+              <span className="sr-only">Action</span>
+            </Th>
           </tr>
         </THead>
         <TBody>
@@ -469,43 +459,43 @@ function AddressRow({
   const onLoan = isDisabled && row.status === 'allocated'
   return (
     <Tr>
-      <Td className="align-top">
-        <Addr value={row.address} truncated />
+      <Td>
+        <div className="flex items-center gap-3">
+          <span
+            className="figure grid h-8 min-w-8 shrink-0 place-items-center rounded-full bg-[var(--bg-2)] px-1.5 text-2xs font-semibold text-[var(--fg-1)] ring-1 ring-border"
+            title={`Derivation index ${row.addressIndex}`}
+          >
+            {row.addressIndex}
+          </span>
+          <Addr value={row.address} truncated chainId={explorerChainOf(family)} />
+        </div>
       </Td>
-      <Td align="right" className="align-top text-xs text-[var(--fg-2)]">
-        {row.addressIndex}
-      </Td>
-      <Td className="align-top">
+      <Td>
         <StateCell row={row} onLoan={onLoan} />
       </Td>
-      <Td align="right" className="align-top">
+      <Td align="right">
         {balancesLoading ? (
-          <Skeleton className="ml-auto h-3 w-12" />
+          <Skeleton className="ml-auto h-3.5 w-14" />
         ) : (
-          <span
-            className={cn(
-              'font-mono text-xs tabular-nums',
-              usd > 0 ? 'text-foreground' : 'text-[var(--fg-3)]',
-            )}
-          >
+          <span className={usd > 0 ? 'font-medium text-foreground' : 'text-[var(--fg-3)]'}>
             {usd > 0 ? fmtUsd(usd) : '—'}
           </span>
         )}
       </Td>
-      <Td className="align-top font-mono text-xs text-[var(--fg-2)]">
+      <Td>
         {row.allocatedToInvoiceId ? (
           <Link
             to={`/invoices?id=${encodeURIComponent(row.allocatedToInvoiceId)}`}
-            className="inline-flex items-center gap-1 text-primary hover:underline"
+            className="inline-flex items-center gap-1 font-mono text-xs text-foreground hover:underline"
           >
             {row.allocatedToInvoiceId.slice(0, 8)}…
-            <ExternalLink className="size-3" />
+            <ExternalLink className="size-3.5 text-[var(--fg-3)]" />
           </Link>
         ) : (
           <span className="text-[var(--fg-3)]">—</span>
         )}
       </Td>
-      <Td className="text-right align-top">
+      <Td className="text-right">
         <ParkButton row={row} family={family} usd={usd} />
       </Td>
     </Tr>
@@ -519,30 +509,30 @@ function StateCell({
   row: PoolAddressAdminView
   onLoan: boolean
 }) {
-  const liveVariant: 'success' | 'warn' | 'default' =
-    row.status === 'available' ? 'success' : row.status === 'allocated' ? 'warn' : 'default'
-  const liveLabel = row.status === 'quarantined' ? 'parked' : row.status
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex flex-wrap items-center gap-1">
-        <Badge variant={liveVariant}>{liveLabel}</Badge>
-        {row.disabledAt != null && (
-          <Badge
-            variant={onLoan ? 'warn' : 'default'}
-            className="text-2xs uppercase"
-            title={
-              onLoan
-                ? 'Operator-disabled but currently serving an invoice. Will auto-park on release.'
-                : 'Operator-disabled'
-            }
-          >
-            {onLoan ? 'on-loan' : 'disabled'}
-          </Badge>
-        )}
-      </div>
+    <div className="flex flex-wrap items-center gap-1.5">
+      {row.status === 'available' ? (
+        <StatusPill tone="ok">Available</StatusPill>
+      ) : row.status === 'allocated' ? (
+        <StatusPill tone="info" icon={Play}>
+          Allocated
+        </StatusPill>
+      ) : (
+        <StatusPill tone="off" icon={Pause}>
+          Parked
+        </StatusPill>
+      )}
       {row.disabledAt != null && (
-        <span className="text-2xs text-[var(--fg-3)]">
-          disabled {fmtLocal(row.disabledAt)}
+        <span
+          title={
+            (onLoan
+              ? 'Operator-disabled but currently serving an invoice. Will auto-park on release.'
+              : 'Operator-disabled') + ` · disabled ${fmtLocal(row.disabledAt)}`
+          }
+        >
+          <StatusPill tone={onLoan ? 'warn' : 'off'} size="sm">
+            {onLoan ? 'On loan' : 'Disabled'}
+          </StatusPill>
         </span>
       )}
     </div>
@@ -603,12 +593,11 @@ function ParkButton({
         size="sm"
         onClick={() => mut.mutate()}
         disabled={mut.isPending}
-        className="border-[var(--accent-border)] text-primary hover:bg-[var(--accent-bg)]"
       >
         {mut.isPending ? (
-          <Loader2 className="size-3.5 animate-spin" />
+          <Loader2 className="size-4 animate-spin" />
         ) : (
-          <Play className="size-3.5" />
+          <Play className="size-4" />
         )}
         Re-enable
       </Button>
@@ -618,7 +607,7 @@ function ParkButton({
   return (
     <Button
       type="button"
-      variant="outline"
+      variant="ghost"
       size="sm"
       onClick={() => mut.mutate()}
       disabled={mut.isPending}
@@ -629,13 +618,21 @@ function ParkButton({
       }
     >
       {mut.isPending ? (
-        <Loader2 className="size-3.5 animate-spin" />
+        <Loader2 className="size-4 animate-spin" />
       ) : (
-        <Pause className="size-3.5" />
+        <Pause className="size-4" />
       )}
       Park
     </Button>
   )
+}
+
+/**
+ * Explorer chain for a family address — only where the family maps to a
+ * single chain (EVM addresses span many chains; UTXO spans BTC/LTC).
+ */
+function explorerChainOf(f: AdminFamily): number | undefined {
+  return f === 'tron' ? 728 : f === 'solana' ? 900 : undefined
 }
 
 /* ── empty / loading / error ──────────────────────────────── */
@@ -643,15 +640,15 @@ function ParkButton({
 function TableSkeleton() {
   return (
     <div aria-busy="true">
-      <div className="h-9 border-b border-border bg-[var(--bg-2)]" />
+      <div className="h-11 border-b border-border" />
       {Array.from({ length: 8 }).map((_, i) => (
         <div
           key={i}
-          className="flex items-center gap-4 border-b border-border px-4 py-3 last:border-0"
+          className="flex h-14 items-center gap-4 border-b border-border px-6 last:border-0"
         >
+          <Skeleton className="size-8 rounded-full" />
           <Skeleton className="h-3.5 w-36" />
-          <Skeleton className="hidden h-3.5 w-8 sm:block" />
-          <Skeleton className="h-5 w-16" />
+          <Skeleton className="h-6 w-20 rounded-full" />
           <div className="flex-1" />
           <Skeleton className="hidden h-3.5 w-14 sm:block" />
           <Skeleton className="h-8 w-20" />
@@ -664,26 +661,39 @@ function TableSkeleton() {
 function NoAddresses({
   statusFilter,
   family,
+  searching,
 }: {
   statusFilter: StatusFilter
   family: AdminFamily
+  searching: boolean
 }) {
+  if (searching) {
+    return <EmptyState icon={Waypoints} title="No matches" description="Nothing in the loaded rows matches." />
+  }
+  const fam = family.toUpperCase()
   return (
     <EmptyState
       icon={statusFilter === 'disabled' ? CheckCircle2 : Waypoints}
       title={
         statusFilter === 'disabled'
-          ? `No disabled ${family} addresses`
+          ? `No disabled ${fam} addresses`
           : statusFilter === 'all'
-            ? `No ${family} pool addresses yet`
-            : `No ${statusFilter} addresses on ${family}`
+            ? `No ${fam} pool addresses yet`
+            : `No ${STATUS_FILTERS.find((s) => s.value === statusFilter)?.label.toLowerCase()} ${fam} addresses`
       }
       description={
-        statusFilter === 'disabled'
-          ? 'Every address in this family is in normal rotation.'
-          : statusFilter === 'all'
-            ? 'Seed the pool from Address pool to get started.'
-            : 'Try a different filter or chain family.'
+        statusFilter === 'all'
+          ? 'Seed the pool from Address pool.'
+          : statusFilter === 'disabled'
+            ? 'Every address is in rotation.'
+            : 'Try another filter.'
+      }
+      action={
+        statusFilter === 'all' ? (
+          <Button asChild size="sm" variant="outline">
+            <Link to="/pool">Address pool</Link>
+          </Button>
+        ) : undefined
       }
     />
   )
@@ -691,7 +701,7 @@ function NoAddresses({
 
 function ErrorRow({ message }: { message: string }) {
   return (
-    <div className="p-4">
+    <div className="p-6">
       <ErrorState title="Could not load addresses" message={message} />
     </div>
   )
