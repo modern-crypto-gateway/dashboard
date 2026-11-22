@@ -18,7 +18,6 @@ import {
 } from 'lucide-react'
 
 import { api, ApiError } from '@/lib/api'
-import { chainInfo } from '@/lib/chains'
 import {
   fmtCountdown,
   fmtLocal,
@@ -55,6 +54,9 @@ import { MerchantSwitcher } from '@/components/MerchantSwitcher'
 import { MetadataEditor } from '@/components/MetadataEditor'
 import { QrCode } from '@/components/QrCode'
 import { Badge } from '@/components/ui/badge'
+import { ChainPill } from '@/components/ChainPill'
+import { PageHeader } from '@/components/PageHeader'
+import { EmptyState as SharedEmptyState, ErrorState } from '@/components/States'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -171,7 +173,7 @@ export function StatusBadge({
         {effectiveExtra && (
           <span
             className={
-              'text-[10px] font-medium uppercase tracking-wider ' +
+              'text-2xs font-medium uppercase tracking-wider ' +
               (effectiveExtra === 'overpaid' ? 'text-primary' : 'text-warn')
             }
           >
@@ -187,7 +189,7 @@ export function StatusBadge({
       {effectiveExtra && (
         <Badge
           variant={effectiveExtra === 'overpaid' ? 'accent' : 'warn'}
-          className="text-[9.5px]"
+          className="text-2xs"
         >
           {effectiveExtra}
         </Badge>
@@ -403,22 +405,19 @@ export function InvoicesPage() {
 
   return (
     <div className="fade-in space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow">Money</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Invoices</h1>
-          <p className="mt-1 text-sm text-[var(--fg-2)]">
-            Every invoice the selected merchant has issued, straight from the
-            gateway.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <MerchantSwitcher />
-          <Button size="sm" disabled={!canList} onClick={() => setCreateOpen(true)}>
-            <Plus className="size-3.5" /> New invoice
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Payments"
+        title="Invoices"
+        description="Every invoice the selected merchant has issued, straight from the gateway."
+        actions={
+          <>
+            <MerchantSwitcher />
+            <Button size="sm" disabled={!canList} onClick={() => setCreateOpen(true)}>
+              <Plus className="size-3.5" /> New invoice
+            </Button>
+          </>
+        }
+      />
 
       {!canList && active ? (
         <NoApiKeyCard merchant={active} />
@@ -500,7 +499,7 @@ function InvoiceList({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="hidden grid-cols-[1fr_120px_180px_110px_90px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-5 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)] sm:grid">
+      <div className="hidden h-9 grid-cols-[1fr_120px_180px_110px_90px] items-center gap-4 border-b border-border bg-[var(--bg-2)] px-4 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)] sm:grid">
         <div>Invoice</div>
         <div>Chain</div>
         <div>Amount</div>
@@ -551,11 +550,11 @@ function InvoiceRow({
             onOpen()
           }
         }}
-        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-5 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1fr_120px_180px_110px_90px] sm:gap-4"
+        className="grid w-full cursor-pointer grid-cols-1 items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-[var(--bg-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[1fr_120px_180px_110px_90px] sm:gap-4"
       >
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="truncate font-mono text-[12.5px]">
+            <span className="truncate font-mono text-xs">
               {truncateAddr(inv.id, 8, 6)}
             </span>
             <span onClick={(e) => e.stopPropagation()}>
@@ -571,7 +570,7 @@ function InvoiceRow({
             )}
           </div>
           {inv.externalId && (
-            <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--fg-3)]">
+            <div className="mt-0.5 truncate font-mono text-2xs text-[var(--fg-3)]">
               ext · {inv.externalId}
             </div>
           )}
@@ -582,7 +581,7 @@ function InvoiceRow({
             {families.map((f) => (
               <span
                 key={f}
-                className="rounded border border-border bg-[var(--bg-2)] px-1 py-0 text-[9.5px] uppercase tracking-wider text-[var(--fg-2)]"
+                className="rounded-sm border border-border bg-[var(--bg-2)] px-1 text-2xs font-medium uppercase tracking-[0.06em] text-[var(--fg-2)]"
               >
                 {f}
               </span>
@@ -593,10 +592,10 @@ function InvoiceRow({
         )}
 
         <div className="min-w-0">
-          <div className="truncate font-mono text-[12.5px]">
+          <div className="truncate font-mono text-xs">
             {amountSpecOf(inv)}
           </div>
-          <div className="flex items-center gap-1 font-mono text-[11px] text-[var(--fg-3)]">
+          <div className="flex items-center gap-1 font-mono text-2xs text-[var(--fg-3)]">
             {showPaid ? (
               <>
                 <span
@@ -633,19 +632,6 @@ function InvoiceRow({
         </div>
       </div>
     </li>
-  )
-}
-
-function ChainPill({ chainId }: { chainId: number }) {
-  const info = chainInfo(chainId)
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[var(--fg-2)]">
-      <span
-        className="size-[7px] shrink-0 rounded-full"
-        style={{ background: info.color }}
-      />
-      <span className="truncate">{info.name}</span>
-    </span>
   )
 }
 
@@ -855,7 +841,7 @@ function OverviewTab({ data }: { data: InvoiceDetails }) {
                 </Badge>
               ))}
               {families.length > 1 && (
-                <span className="text-[10.5px] text-[var(--fg-3)]">
+                <span className="text-2xs text-[var(--fg-3)]">
                   payable from any · USD-aggregated
                 </span>
               )}
@@ -878,7 +864,7 @@ function OverviewTab({ data }: { data: InvoiceDetails }) {
                   {bpsLabel(invoice.paymentToleranceOverBps)}
                 </span>
               </span>
-              <span className="text-[10.5px] text-[var(--fg-3)]">
+              <span className="text-2xs text-[var(--fg-3)]">
                 snapshotted at create time
               </span>
             </div>
@@ -893,13 +879,13 @@ function OverviewTab({ data }: { data: InvoiceDetails }) {
                 href={invoice.webhookUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-[12.5px] text-primary hover:underline"
+                className="inline-flex min-w-0 items-center gap-1 truncate font-mono text-xs text-primary hover:underline"
               >
                 <span className="truncate">{invoice.webhookUrl}</span>
                 <ExternalLink className="size-3 shrink-0" />
               </a>
               <CopyButton value={invoice.webhookUrl} />
-              <Badge variant="outline" className="shrink-0 text-[9.5px]">
+              <Badge variant="outline" className="shrink-0 text-2xs">
                 per-invoice override
               </Badge>
             </div>
@@ -921,7 +907,7 @@ function OverviewTab({ data }: { data: InvoiceDetails }) {
       {invoice.metadata && Object.keys(invoice.metadata).length > 0 && (
         <div className="space-y-2">
           <div className="eyebrow">Metadata</div>
-          <pre className="overflow-x-auto rounded-md border border-border bg-secondary px-3 py-2 text-[11.5px] font-mono">
+          <pre className="overflow-x-auto rounded-md border border-border bg-secondary px-3 py-2 text-2xs font-mono">
             {JSON.stringify(invoice.metadata, null, 2)}
           </pre>
         </div>
@@ -960,7 +946,7 @@ function RatesSnapshot({
       >
         <div className="flex min-w-0 items-center gap-2">
           <span className="eyebrow shrink-0">Pinned rates</span>
-          <span className="shrink-0 text-[11px] text-[var(--fg-3)]">
+          <span className="shrink-0 text-2xs text-[var(--fg-3)]">
             {sortedEntries.length} token
             {sortedEntries.length === 1 ? '' : 's'}
           </span>
@@ -969,7 +955,7 @@ function RatesSnapshot({
           {windowExpiresAt && (
             <span
               className={
-                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px] font-medium ' +
+                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-2xs font-medium ' +
                 (expired
                   ? 'border-[var(--warn-border)] bg-[var(--warn-bg)] text-warn'
                   : 'border-border bg-[var(--bg-2)] text-[var(--fg-2)]')
@@ -1001,7 +987,7 @@ function RatesSnapshot({
                   (lastInCol ? '' : 'border-b border-border')
                 }
               >
-                <span className="rounded bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-[10.5px] uppercase tracking-wider text-[var(--fg-2)]">
+                <span className="rounded bg-[var(--bg-2)] px-1.5 py-0.5 font-mono text-2xs uppercase tracking-wider text-[var(--fg-2)]">
                   {sym}
                 </span>
                 <span className="font-mono text-sm tabular-nums">
@@ -1065,17 +1051,17 @@ function AddressesTab({ data }: { data: InvoiceDetails }) {
           className="flex flex-col items-center gap-2.5 rounded-md border border-border bg-card p-3"
         >
           <div className="flex w-full items-center justify-between gap-2">
-            <span className="rounded-full border border-border bg-[var(--bg-2)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--fg-2)]">
+            <span className="rounded-full border border-border bg-[var(--bg-2)] px-2 py-0.5 text-2xs font-semibold uppercase tracking-wider text-[var(--fg-2)]">
               {r.family}
             </span>
             <CopyButton value={r.address} />
           </div>
           <QrCode value={r.address} size={152} />
-          <div className="w-full break-all text-center font-mono text-[11px] text-[var(--fg-2)]">
+          <div className="w-full break-all text-center font-mono text-2xs text-[var(--fg-2)]">
             {r.address}
           </div>
           {r.poolAddressId && (
-            <div className="flex w-full items-center justify-between gap-2 border-t border-border pt-2 text-[10.5px] text-[var(--fg-3)]">
+            <div className="flex w-full items-center justify-between gap-2 border-t border-border pt-2 text-2xs text-[var(--fg-3)]">
               <span className="uppercase tracking-wider">pool row</span>
               <span className="inline-flex items-center gap-1 font-mono">
                 {truncateAddr(r.poolAddressId, 6, 4)}
@@ -1140,7 +1126,7 @@ function TransactionsTab({ data }: { data: InvoiceDetails }) {
                 <Td>
                   <Addr value={t.txHash} />
                 </Td>
-                <Td className="text-[12.5px]">
+                <Td className="text-xs">
                   <ChainPill chainId={t.chainId} />
                 </Td>
                 <Td>
@@ -1149,22 +1135,22 @@ function TransactionsTab({ data }: { data: InvoiceDetails }) {
                 <Td>
                   <Addr value={t.fromAddress} />
                 </Td>
-                <Td className="font-mono text-[12.5px]">
+                <Td className="font-mono text-xs">
                   <span className="inline-flex items-center gap-1.5">
                     {t.token}
                     {uncounted && (
-                      <span className="rounded border border-border bg-[var(--bg-2)] px-1 py-0 text-[9.5px] uppercase tracking-wider text-[var(--fg-3)]">
+                      <span className="rounded border border-border bg-[var(--bg-2)] px-1 py-0 text-2xs uppercase tracking-wider text-[var(--fg-3)]">
                         uncounted
                       </span>
                     )}
                   </span>
                 </Td>
-                <Td className="font-mono text-[12.5px]">{fmtNum(t.amount)}</Td>
-                <Td className="font-mono text-[12.5px] text-[var(--fg-2)]">
+                <Td className="font-mono text-xs">{fmtNum(t.amount)}</Td>
+                <Td className="font-mono text-xs text-[var(--fg-2)]">
                   {t.amountUsd ? fmtUsd(t.amountUsd) : '—'}
                 </Td>
-                <Td className="font-mono text-[12.5px]">{t.confirmations}</Td>
-                <Td className="font-mono text-[11px] text-[var(--fg-3)] whitespace-nowrap">
+                <Td className="font-mono text-xs">{t.confirmations}</Td>
+                <Td className="font-mono text-2xs text-[var(--fg-3)] whitespace-nowrap">
                   {fmtRel(unixOf(t.detectedAt))}
                 </Td>
               </tr>
@@ -1178,7 +1164,7 @@ function TransactionsTab({ data }: { data: InvoiceDetails }) {
 
 function Th({ children }: { children?: React.ReactNode }) {
   return (
-    <th className="border-b border-border px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--fg-3)]">
+    <th className="border-b border-border px-3 py-2 text-left text-2xs font-medium uppercase tracking-wider text-[var(--fg-3)]">
       {children}
     </th>
   )
@@ -1353,7 +1339,7 @@ function ListSkeleton() {
       {Array.from({ length: 4 }).map((_, i) => (
         <div
           key={i}
-          className="grid grid-cols-[1fr_120px_180px_110px_90px] items-center gap-4 border-b border-border px-5 py-3 last:border-0"
+          className="grid grid-cols-[1fr_120px_180px_110px_90px] items-center gap-4 border-b border-border px-4 py-3.5 last:border-0"
         >
           <div className="space-y-1.5">
             <Skeleton className="h-3 w-40" />
@@ -1391,10 +1377,7 @@ function DetailSkeleton() {
 function PageSkeleton({ title }: { title: string }) {
   return (
     <div className="fade-in space-y-5">
-      <div>
-        <div className="eyebrow">Money</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
-      </div>
+      <PageHeader eyebrow="Payments" title={title} />
       <ListSkeleton />
     </div>
   )
@@ -1402,88 +1385,78 @@ function PageSkeleton({ title }: { title: string }) {
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-14 text-center">
-      <div className="flex size-11 items-center justify-center rounded-full bg-[var(--bg-2)]">
-        <FileText className="size-5 text-[var(--fg-2)]" />
-      </div>
-      <div>
-        <div className="text-sm font-medium">No invoices yet</div>
-        <p className="mt-1 text-xs text-[var(--fg-2)]">
-          Create your first invoice to start collecting payments.
-        </p>
-      </div>
-      <Button size="sm" onClick={onCreate}>
-        <Plus className="size-3.5" /> Create invoice
-      </Button>
-    </div>
+    <SharedEmptyState
+      framed
+      icon={FileText}
+      title="No invoices yet"
+      description="Create the first invoice for this merchant to start collecting payments."
+      action={
+        <Button size="sm" onClick={onCreate}>
+          <Plus className="size-3.5" /> Create invoice
+        </Button>
+      }
+    />
   )
 }
 
 function NoMatch({ onClear }: { onClear: () => void }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-[var(--fg-2)]">
-      <span>No invoices match the current filters.</span>
-      <Button variant="outline" size="sm" onClick={onClear}>
-        <X className="size-3.5" /> Clear filters
-      </Button>
-    </div>
+    <SharedEmptyState
+      framed
+      compact
+      title="No invoices match these filters"
+      action={
+        <Button variant="outline" size="sm" onClick={onClear}>
+          <X className="size-3.5" /> Clear filters
+        </Button>
+      }
+    />
   )
 }
 
 function ErrorCard({ message }: { message: string }) {
-  return (
-    <div className="rounded-lg border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-destructive">
-      {message}
-    </div>
-  )
+  return <ErrorState title="Could not load invoices" message={message} />
 }
 
 function NoApiKeyCard({ merchant }: { merchant: Merchant }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-14 text-center">
-      <div className="flex size-11 items-center justify-center rounded-full bg-[var(--bg-2)]">
-        <KeyRound className="size-5 text-[var(--fg-2)]" />
-      </div>
-      <div>
-        <div className="text-sm font-medium">
-          No API key for <span className="font-mono text-xs">{merchant.name}</span>
-        </div>
-        <p className="mt-1 max-w-sm text-xs text-[var(--fg-2)]">
-          The gateway sees this merchant, but no sealed API key is held here.
-          Rotate or import the key from Merchants to list invoices.
-        </p>
-      </div>
-      <Button size="sm" asChild>
-        <Link to="/merchants">
-          <KeyRound className="size-3.5" /> Set up API key
-        </Link>
-      </Button>
-    </div>
+    <SharedEmptyState
+      framed
+      icon={KeyRound}
+      title={
+        <>
+          No API key for <span className="font-mono">{merchant.name}</span>
+        </>
+      }
+      description="The gateway sees this merchant, but no sealed API key is held here. Rotate or import the key from Merchants to list invoices."
+      action={
+        <Button size="sm" asChild>
+          <Link to="/merchants">
+            <KeyRound className="size-3.5" /> Set up API key
+          </Link>
+        </Button>
+      }
+    />
   )
 }
 
 function NoMerchants() {
   return (
-    <div className="fade-in space-y-6">
-      <div>
-        <div className="eyebrow">Money</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Invoices</h1>
-      </div>
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card px-6 py-14 text-center">
-        <div className="flex size-11 items-center justify-center rounded-full bg-[var(--bg-2)]">
-          <FileText className="size-5 text-[var(--fg-2)]" />
-        </div>
-        <div className="text-sm font-medium">Add a merchant first</div>
-        <p className="text-xs text-[var(--fg-2)]">
-          Invoices are issued against a merchant's API key — head to Merchants
-          to create or import one.
-        </p>
-        <Button size="sm" asChild>
-          <Link to="/merchants">
-            <ChevronDown className="size-3.5 -rotate-90" /> Go to Merchants
-          </Link>
-        </Button>
-      </div>
+    <div className="fade-in space-y-5">
+      <PageHeader eyebrow="Payments" title="Invoices" />
+      <SharedEmptyState
+        framed
+        icon={FileText}
+        title="Add a merchant first"
+        description="Invoices are issued against a merchant's API key. Create or import one in Merchants."
+        action={
+          <Button size="sm" asChild>
+            <Link to="/merchants">
+              Go to Merchants <ChevronDown className="size-3.5 -rotate-90" />
+            </Link>
+          </Button>
+        }
+      />
     </div>
   )
 }
@@ -1792,7 +1765,7 @@ function CreateInvoiceDialog({
                 />
               </Field>
               {webhookMismatch && (
-                <div className="-mt-1 text-[11.5px] text-destructive">
+                <div className="-mt-1 text-2xs text-destructive">
                   Webhook URL and secret must be provided together.
                 </div>
               )}
@@ -1867,7 +1840,7 @@ function InvoiceCreatedView({
       </DialogHeader>
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2 text-xs">
-          <span className="font-mono text-[11.5px] text-[var(--fg-2)]">
+          <span className="font-mono text-2xs text-[var(--fg-2)]">
             {truncateAddr(invoice.id, 10, 8)}
           </span>
           <CopyButton value={invoice.id} />
@@ -1897,13 +1870,13 @@ function InvoiceCreatedView({
               className="flex flex-col items-center gap-2 rounded-md border border-border bg-card p-3"
             >
               <div className="flex w-full items-center justify-between gap-2">
-                <span className="rounded-full border border-border bg-[var(--bg-2)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--fg-2)]">
+                <span className="rounded-full border border-border bg-[var(--bg-2)] px-2 py-0.5 text-2xs font-semibold uppercase tracking-wider text-[var(--fg-2)]">
                   {a.family}
                 </span>
                 <CopyButton value={a.address} />
               </div>
               <QrCode value={a.address} size={152} />
-              <div className="w-full overflow-hidden font-mono text-[11px] break-all text-[var(--fg-2)]">
+              <div className="w-full overflow-hidden font-mono text-2xs break-all text-[var(--fg-2)]">
                 {a.address}
               </div>
             </div>
