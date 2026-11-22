@@ -328,6 +328,11 @@ h3 {
   text-wrap: balance;
 }
 
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--fg-0);
+}
+
 ::selection {
   background: color-mix(in oklch, var(--accent) 45%, transparent);
   color: inherit;

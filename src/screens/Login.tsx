@@ -8,6 +8,7 @@ import { api, ApiError } from '@/lib/api'
 import { sessionQuery, useSetupStatus } from '@/lib/session'
 
 import { AuthSide } from '@/components/AuthSide'
+import { LogoMark } from '@/components/Logo'
 import { Field } from '@/components/Field'
 import { OtpInput } from '@/components/OtpInput'
 import { PasswordField } from '@/components/PasswordField'
@@ -58,21 +59,29 @@ export function LoginScreen() {
   })
 
   return (
-    <div className="fade-in flex min-h-dvh flex-col bg-background">
+    <div className="fade-in relative flex min-h-dvh flex-col overflow-hidden bg-[var(--canvas)]">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 -top-40 mx-auto h-[420px] max-w-3xl rounded-full bg-signal opacity-25 blur-[120px] dark:opacity-15"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.5] [background-image:radial-gradient(var(--border-strong)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_75%)]"
+      />
       <AuthSide mode="login" />
-      <div className="flex flex-1 items-start justify-center px-4 pt-[6vh] pb-16 sm:items-center sm:pt-0">
-        <div className="w-full max-w-[400px] space-y-6 rounded-xl border border-border bg-card p-6 sm:p-8">
-          <div>
-            <div className="eyebrow mb-2">Sign in</div>
-            <h1 className="text-xl font-semibold tracking-[-0.015em]">
-              Welcome back, operator
+      <div className="relative flex flex-1 items-start justify-center px-4 pt-[6vh] pb-16 sm:items-center sm:pt-0">
+        <div className="w-full max-w-[400px] space-y-6 rounded-[24px] border border-border bg-card p-7 shadow-[var(--shadow-md)] sm:p-9">
+          <div className="flex flex-col items-center text-center">
+            <LogoMark size={44} />
+            <h1 className="mt-5 text-xl font-semibold tracking-[-0.02em]">
+              {stage === 'creds' ? 'Sign in' : stage === 'totp' ? 'Two-step check' : 'Recovery code'}
             </h1>
-            <p className="mt-1.5 text-sm text-[var(--fg-2)]">
+            <p className="mt-1 text-sm text-[var(--fg-2)]">
               {stage === 'creds'
-                ? 'Enter your credentials to continue.'
+                ? 'Operator console'
                 : stage === 'totp'
-                  ? 'Enter the 6-digit code from your authenticator app.'
-                  : 'Enter a single-use recovery code.'}
+                  ? '6-digit code from your authenticator'
+                  : 'Each code works once'}
             </p>
           </div>
 

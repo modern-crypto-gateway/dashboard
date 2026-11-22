@@ -125,10 +125,18 @@ export function SetupScreen() {
   const pwScore = scorePassword(password)
 
   return (
-    <div className="fade-in flex min-h-dvh flex-col bg-background">
+    <div className="fade-in relative flex min-h-dvh flex-col overflow-hidden bg-[var(--canvas)]">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 -top-40 mx-auto h-[420px] max-w-3xl rounded-full bg-signal opacity-25 blur-[120px] dark:opacity-15"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.5] [background-image:radial-gradient(var(--border-strong)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_75%)]"
+      />
       <AuthSide mode="setup" />
-      <div className="flex flex-1 items-start justify-center px-4 pt-[6vh] pb-16 sm:items-center sm:pt-0">
-        <div className="w-full max-w-[460px] space-y-6 rounded-xl border border-border bg-card p-6 sm:p-8">
+      <div className="relative flex flex-1 items-start justify-center px-4 pt-[6vh] pb-16 sm:items-center sm:pt-0">
+        <div className="w-full max-w-[460px] space-y-6 rounded-[24px] border border-border bg-card p-7 shadow-[var(--shadow-md)] sm:p-9">
           <Stepper steps={4} current={Math.min(step, 3)} />
 
           <div>

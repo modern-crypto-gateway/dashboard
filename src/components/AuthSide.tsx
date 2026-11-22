@@ -7,7 +7,7 @@ import { Logo } from './Logo'
  */
 export function AuthSide({ mode }: { mode: 'login' | 'setup' }) {
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between px-5 sm:px-8">
+    <header className="relative flex h-16 shrink-0 items-center justify-between px-5 sm:px-8">
       <Logo />
       <span className="inline-flex items-center gap-1.5 text-xs text-[var(--fg-2)]">
         <ShieldCheck className="size-3.5" />
