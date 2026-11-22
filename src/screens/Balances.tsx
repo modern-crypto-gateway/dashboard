@@ -15,11 +15,10 @@ import { api } from '@/lib/api'
 import { chainInfo } from '@/lib/chains'
 import { fmtLocal, fmtNum, fmtRel, fmtUsd } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import type { BalancesSnapshot, Family } from '@/lib/types'
+import type { BalancesSnapshot } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
-import { ChainPill } from '@/components/ChainPill'
-import { FamilyIcon, TokenIcon, TokenOnChain } from '@/components/CryptoIcon'
+import { ChainIcon, FamilyIcon, TokenIcon, TokenOnChain } from '@/components/CryptoIcon'
 import { Pager, TableCard, TableToolbar, usePaged } from '@/components/DataTable'
 import { PageHeader } from '@/components/PageHeader'
 import { ReconcileDialog } from '@/components/ReconcileDialog'
@@ -116,10 +115,7 @@ export function BalancesPage() {
         />
       ) : !snap ? null : (
         <>
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-            <TotalHero snapshot={snap} cached={q.data!.cached} />
-            <ChainMix snapshot={snap} />
-          </div>
+          <PortfolioCard snapshot={snap} cached={q.data!.cached} />
 
           {snap.families.length === 0 ? (
             <EmptyState
@@ -139,11 +135,13 @@ export function BalancesPage() {
 
 /* ── hero ─────────────────────────────────────────────────── */
 
-function TotalHero({ snapshot, cached }: { snapshot: BalancesSnapshot; cached: boolean }) {
+/**
+ * One portfolio card: the headline number with its provenance, where the
+ * money sits (pool vs fee wallets), what it's held in (asset mix) and on
+ * which networks (donut). No duplicated family/chain breakdowns.
+ */
+function PortfolioCard({ snapshot, cached }: { snapshot: BalancesSnapshot; cached: boolean }) {
   const total = num(snapshot.totalUsd)
-  const fams = snapshot.families
-    .map((f) => ({ f, usd: num(f.totalUsd) }))
-    .sort((a, b) => b.usd - a.usd)
   let pool = 0
   let fee = 0
   let addrCount = 0
@@ -157,82 +155,147 @@ function TotalHero({ snapshot, cached }: { snapshot: BalancesSnapshot; cached: b
   const generated = Math.floor(Date.parse(snapshot.generatedAt) / 1000)
   const chainCount = snapshot.families.reduce((a, f) => a + f.chains.length, 0)
 
+  // Asset mix: same token across chains folds together.
+  const byToken = new Map<string, number>()
+  for (const f of snapshot.families)
+    for (const c of f.chains)
+      for (const t of c.tokens) byToken.set(t.token, (byToken.get(t.token) ?? 0) + num(t.usd))
+  const tokensSorted = [...byToken.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])
+  const tokenHead = tokensSorted.slice(0, 5)
+  const tokenRest = tokensSorted.slice(5).reduce((a, [, v]) => a + v, 0)
+  const tokenColors = ['var(--chart-1-fill)', 'var(--chart-2)', 'var(--chart-3)', '#3ba7c9', '#e87ba4']
+  const assetParts = [
+    ...tokenHead.map(([sym, v], i) => ({ key: sym, name: sym, value: v, color: tokenColors[i] })),
+    ...(tokenRest > 0 ? [{ key: 'other', name: 'Other', value: tokenRest, color: 'var(--chart-muted)' }] : []),
+  ]
+
+  const [whole, cents] = fmtUsd(total).split('.')
+  const slices = chainSlices(snapshot)
+  const sliceTotal = slices.reduce((a, s) => a + s.value, 0)
+  const pct = (v: number, of: number) => (of ? Math.round((v / of) * 100) : 0)
+  const pctLabel = (v: number, of: number) => {
+    const p = of ? (v / of) * 100 : 0
+    return p > 0 && p < 1 ? '<1%' : p > 99 && p < 100 ? '>99%' : `${Math.round(p)}%`
+  }
+
   return (
-    <Card className="flex flex-col p-6">
-      <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--fg-2)]">
-        <span className="font-medium">Total balance</span>
-        <span className="ml-auto inline-flex items-center gap-1.5 text-xs">
-          {snapshot.source === 'rpc' ? (
-            <Satellite className="size-3.5" />
-          ) : (
-            <Database className="size-3.5" />
-          )}
-          <span>{snapshot.source === 'rpc' ? 'Live RPC' : 'Ledger'}</span>
-          {cached && <span className="text-[var(--fg-3)]">· cached</span>}
-          <span className="text-[var(--fg-3)]" title={fmtLocal(snapshot.generatedAt, { seconds: true })}>
-            · {fmtRel(generated)}
-          </span>
-        </span>
-      </div>
-      <div className="figure mt-3 text-2xl font-semibold tracking-[-0.03em]">{fmtUsd(total)}</div>
-      <div className="mt-1.5 text-xs text-[var(--fg-2)]">
-        <span className="figure">{chainCount}</span> chains ·{' '}
-        <span className="figure">{addrCount}</span> addresses
-      </div>
-
-      <div className="mt-6 grid grid-cols-2 gap-3">
-        <MiniStat icon={Wallet} label="Pool" value={fmtUsd(pool)} />
-        <MiniStat icon={Fuel} label="Fee wallets" value={fmtUsd(fee)} />
-      </div>
-
-      <div className="mt-auto pt-6">
-        <SegmentedBar
-          className="h-2"
-          parts={fams.map(({ f, usd }) => ({
-            key: f.family,
-            name: f.family.toUpperCase(),
-            value: usd,
-            color: familyColor(f.family),
-          }))}
-        />
-        <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
-          {fams.map(({ f, usd }) => (
-            <li key={f.family} className="flex items-center gap-2 text-sm">
-              <FamilyIcon family={f.family} size={16} />
-              <span className="figure font-medium">{compactUsd(usd)}</span>
-              <span className="figure text-xs text-[var(--fg-3)]">
-                {total ? Math.round((usd / total) * 100) : 0}%
+    <Card className="overflow-hidden p-0">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+        {/* Left: the number and the asset mix */}
+        <div className="flex flex-col p-6 sm:p-7">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-[var(--fg-2)]">Total balance</span>
+            <StatusPill
+              tone={snapshot.source === 'rpc' ? 'info' : 'wait'}
+              size="sm"
+              icon={snapshot.source === 'rpc' ? Satellite : Database}
+            >
+              <span title={fmtLocal(snapshot.generatedAt, { seconds: true })}>
+                {snapshot.source === 'rpc' ? 'Live' : 'Ledger'} · {fmtRel(generated)}
+                {cached ? ' · cached' : ''}
               </span>
-            </li>
-          ))}
-        </ul>
+            </StatusPill>
+          </div>
+
+          <div className="figure mt-3 text-3xl font-semibold tracking-[-0.035em]">
+            {whole}
+            <span className="text-[var(--fg-3)]">.{cents ?? '00'}</span>
+          </div>
+          <div className="mt-1 text-sm text-[var(--fg-2)]">
+            <span className="figure">{addrCount}</span> addresses on{' '}
+            <span className="figure">{chainCount}</span> chains
+          </div>
+
+          <dl className="mt-6 grid grid-cols-2 divide-x divide-border rounded-xl border border-border">
+            <Split icon={Wallet} label="Pool" value={pool} share={pctLabel(pool, pool + fee)} />
+            <Split icon={Fuel} label="Fee wallets" value={fee} share={pctLabel(fee, pool + fee)} />
+          </dl>
+
+          <div className="mt-6">
+            <div className="mb-2.5 flex items-center justify-between text-sm">
+              <span className="font-medium">Held in</span>
+              <span className="text-xs text-[var(--fg-3)]">{byToken.size} assets</span>
+            </div>
+            <SegmentedBar className="h-2.5" parts={assetParts} />
+            <ul className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
+              {assetParts.map((p) => (
+                <li key={p.key} className="flex min-w-0 items-center gap-2 text-sm">
+                  {p.key === 'other' ? (
+                    <span className="size-4 shrink-0 rounded-full bg-[var(--chart-muted)]" />
+                  ) : (
+                    <TokenIcon symbol={p.key} size={16} />
+                  )}
+                  <span className="truncate text-[var(--fg-1)]">{p.name}</span>
+                  <span className="figure ml-auto font-medium">{compactUsd(p.value)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        {/* Right: networks */}
+        <div className="border-t border-border bg-[var(--bg-2)]/50 p-6 sm:p-7 lg:border-t-0 lg:border-l">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium">By network</span>
+            <span className="text-xs text-[var(--fg-3)]">{chainCount} chains</span>
+          </div>
+          <div className="mt-5 flex flex-col items-center gap-6 sm:flex-row lg:flex-col xl:flex-row">
+            <Donut
+              slices={slices}
+              size={152}
+              thickness={16}
+              center={
+                <div>
+                  <div className="figure text-base font-semibold">{compactUsd(sliceTotal)}</div>
+                  <div className="text-2xs text-[var(--fg-3)]">{slices.length} networks</div>
+                </div>
+              }
+            />
+            <ul className="w-full min-w-0 space-y-2.5">
+              {slices.map((s) => (
+                <li key={s.key} className="flex items-center gap-2.5 text-sm">
+                  {s.key === 'other' ? (
+                    <span className="size-4 shrink-0 rounded-full bg-[var(--chart-muted)]" />
+                  ) : (
+                    <ChainIcon chainId={Number(s.key)} size={16} />
+                  )}
+                  <span className="truncate text-[var(--fg-1)]">{s.name}</span>
+                  <span className="ml-auto h-1 w-10 shrink-0 overflow-hidden rounded-full bg-[var(--chart-muted)]">
+                    <span
+                      className="block h-full rounded-full"
+                      style={{ width: `${pct(s.value, sliceTotal)}%`, background: s.color }}
+                    />
+                  </span>
+                  <span className="figure w-14 text-right font-medium">{compactUsd(s.value)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       </div>
     </Card>
   )
 }
 
-function familyColor(f: Family): string {
-  // Chain colour of the family's flagship network.
-  const id = f === 'evm' ? 1 : f === 'tron' ? 728 : f === 'solana' ? 900 : f === 'utxo' ? 800 : 1000
-  return chainInfo(id).color
-}
-
-function MiniStat({
+function Split({
   icon: Icon,
   label,
   value,
+  share,
 }: {
   icon: React.ComponentType<{ className?: string }>
   label: string
-  value: string
+  value: number
+  share: string
 }) {
   return (
-    <div className="rounded-xl border border-border bg-[var(--bg-2)] px-4 py-3">
-      <div className="flex items-center gap-1.5 text-xs text-[var(--fg-2)]">
+    <div className="px-4 py-3.5">
+      <dt className="flex items-center gap-1.5 text-xs text-[var(--fg-2)]">
         <Icon className="size-3.5" />
         {label}
-      </div>
-      <div className="figure mt-1 text-lg font-semibold">{value}</div>
+        <span className="figure ml-auto text-[var(--fg-3)]">{share}</span>
+      </dt>
+      <dd className="figure mt-1 text-lg font-semibold">{fmtUsd(value)}</dd>
     </div>
   )
 }
@@ -251,48 +314,6 @@ function chainSlices(snapshot: BalancesSnapshot): Slice[] {
   const head = all.slice(0, 5)
   const rest = all.slice(5).reduce((a, s) => a + s.value, 0)
   return [...head, { key: 'other', name: 'Other', value: rest, color: 'var(--chart-muted)' }]
-}
-
-function ChainMix({ snapshot }: { snapshot: BalancesSnapshot }) {
-  const slices = chainSlices(snapshot)
-  const total = slices.reduce((a, s) => a + s.value, 0)
-  return (
-    <Card className="p-6">
-      <h2 className="text-lg font-semibold tracking-[-0.01em]">By chain</h2>
-      <div className="mt-4 flex flex-col items-center gap-5 sm:flex-row xl:flex-col">
-        <Donut
-          slices={slices}
-          size={168}
-          thickness={20}
-          center={
-            <div>
-              <div className="figure text-lg font-semibold">{compactUsd(total)}</div>
-              <div className="text-2xs text-[var(--fg-2)]">total</div>
-            </div>
-          }
-        />
-        <ul className="w-full space-y-2">
-          {slices.length === 0 && <li className="text-sm text-[var(--fg-2)]">No balances yet.</li>}
-          {slices.map((s) => (
-            <li key={s.key} className="flex items-center gap-2 text-sm">
-              {s.key === 'other' ? (
-                <>
-                  <span className="size-2.5 rounded-full" style={{ background: s.color }} />
-                  <span className="text-[var(--fg-1)]">Other</span>
-                </>
-              ) : (
-                <ChainPill chainId={Number(s.key)} size={16} />
-              )}
-              <span className="figure ml-auto font-medium">{compactUsd(s.value)}</span>
-              <span className="figure w-12 text-right text-xs text-[var(--fg-3)]">
-                {total ? ((s.value / total) * 100).toFixed(0) : 0}%
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </Card>
-  )
 }
 
 /* ── holdings table ───────────────────────────────────────── */
