@@ -1,24 +1,23 @@
 import * as React from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { AlertTriangle, CheckCircle2, KeyRound, Rocket } from '@/components/icons'
+import { Info, KeyRound, Rocket, Webhook } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
+import { chainInfo } from '@/lib/chains'
+import { cn } from '@/lib/utils'
 import type { AlchemyBootstrapResult, ChainInventoryEntry } from '@/lib/types'
 
+import { SegmentedBar } from '@/components/charts'
 import { CopyButton } from '@/components/CopyButton'
+import { ChainIcon, FamilyIcon } from '@/components/CryptoIcon'
+import { TableCard, TableToolbar } from '@/components/DataTable'
 import { Field } from '@/components/Field'
 import { PageHeader } from '@/components/PageHeader'
-import { Callout } from '@/components/States'
-import { Badge } from '@/components/ui/badge'
+import { Callout, EmptyState, ErrorState, ListSkeleton } from '@/components/States'
+import { StatusPill, type StatusTone } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -28,6 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableWrap, TBody, Td, Th, THead, Tr } from '@/components/ui/table'
 import { PasswordField } from '@/components/PasswordField'
 
 const CHAINS_Q = {
@@ -40,20 +40,18 @@ const CHAINS_Q = {
 
 export function AlchemyWebhooksPage() {
   return (
-    <div className="fade-in space-y-6">
-      <PageHeader
-        eyebrow="Infrastructure"
-        title="Alchemy webhooks"
-        description="Bootstrap Alchemy Notify webhooks for on-chain ingest, or register a signing key you created in the Alchemy dashboard."
-      />
+    <div className="fade-in space-y-8">
+      <PageHeader title="Alchemy webhooks" description="Notify ingest, per chain" />
 
-      <BootstrapCard />
+      <BootstrapSection />
       <SigningKeyCard />
     </div>
   )
 }
 
-function BootstrapCard() {
+/* ── summary + bootstrap table ───────────────────────────── */
+
+function BootstrapSection() {
   const chainsQ = useQuery(CHAINS_Q)
 
   const candidates = React.useMemo(
@@ -88,6 +86,8 @@ function BootstrapCard() {
   const allChecked =
     candidates.length > 0 && selected.size === candidates.length
   const gaps = candidates.filter((c) => !c.webhooks).map((c) => c.chainId)
+  const registered = candidates.length - gaps.length
+  const unconfigured = candidates.filter((c) => !c.alchemyConfigured).length
 
   const run = useMutation({
     mutationFn: () => {
@@ -105,221 +105,313 @@ function BootstrapCard() {
     onError: (e: ApiError) => toast.error(e.message || 'Bootstrap failed'),
   })
 
+  const loading = chainsQ.isLoading
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Bootstrap webhooks</CardTitle>
-        <CardDescription>
-          Calls <span className="font-mono">POST /admin/bootstrap/alchemy-webhooks</span>.
-          For each chain, creates a new Alchemy webhook (or notes the existing
-          one) and persists the signing key encrypted. Target URL is env-pinned
-          to <span className="font-mono">GATEWAY_PUBLIC_URL</span>. Pick nothing
-          to fall back to the env-configured default.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form
-          className="grid max-w-2xl gap-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            run.mutate()
-          }}
-        >
-          <div>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--fg-2)]">
-              <span>
-                <span className="font-mono">{selected.size}</span> /{' '}
-                <span className="font-mono">{candidates.length}</span> selected
-              </span>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="cursor-pointer font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={gaps.length === 0}
-                  onClick={() => setSelected(new Set(gaps))}
-                >
-                  Gaps only
-                </button>
-                <button
-                  type="button"
-                  className="cursor-pointer font-medium text-primary hover:underline"
-                  onClick={() =>
-                    setSelected(
-                      allChecked
-                        ? new Set()
-                        : new Set(candidates.map((c) => c.chainId)),
-                    )
-                  }
-                >
-                  {allChecked ? 'Clear all' : 'Select all'}
-                </button>
-              </div>
-            </div>
-            <ChainCheckboxList
-              loading={chainsQ.isLoading}
-              error={chainsQ.isError}
-              candidates={candidates}
-              selected={selected}
-              onToggle={toggle}
+    <>
+      <div className="stagger grid grid-cols-1 gap-5 sm:grid-cols-3">
+        <StatTile
+          label="Registered"
+          loading={loading}
+          value={
+            <>
+              {registered}
+              <span className="text-[var(--fg-3)]">/{candidates.length}</span>
+            </>
+          }
+          footer={
+            <SegmentedBar
+              parts={[
+                { key: 'reg', name: 'Registered', value: registered, color: 'var(--st-ok-dot)' },
+                { key: 'gap', name: 'Gaps', value: gaps.length, color: 'var(--st-warn-dot)' },
+              ]}
             />
-          </div>
+          }
+        />
+        <StatTile
+          label="Gaps"
+          loading={loading}
+          value={gaps.length}
+          badge={
+            gaps.length > 0 ? (
+              <StatusPill tone="warn">Needs bootstrap</StatusPill>
+            ) : (
+              <StatusPill tone="ok">None</StatusPill>
+            )
+          }
+          sub="Wired, no webhook"
+        />
+        <StatTile
+          label="Alchemy not configured"
+          loading={loading}
+          value={unconfigured}
+          sub="Missing from ALCHEMY_CHAINS"
+        />
+      </div>
 
-          <div>
-            <Button type="submit" disabled={run.isPending}>
-              <Rocket className="size-3.5" />{' '}
-              {run.isPending
-                ? 'Bootstrapping…'
-                : selected.size === 0
-                  ? 'Bootstrap (env default)'
-                  : `Bootstrap ${selected.size} chain${selected.size === 1 ? '' : 's'}`}
-            </Button>
-          </div>
-        </form>
-
-        {run.data && run.data.results.length > 0 && (
-          <div className="mt-6 space-y-2 border-t border-border pt-5">
-            <div className="eyebrow">Results</div>
-            {run.data.results.map((r, i) => (
-              <div
-                key={i}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-border bg-card px-3 py-2.5 text-sm"
+      {loading ? (
+        <ListSkeleton rows={4} />
+      ) : chainsQ.isError ? (
+        <ErrorState message="Could not load chains. Check admin key in settings." />
+      ) : candidates.length === 0 ? (
+        <EmptyState
+          framed
+          icon={Webhook}
+          title="No webhook chains"
+          description="No wired webhook-supported chains. Deploy adapters first."
+        />
+      ) : (
+        <TableCard
+          toolbar={
+            <TableToolbar title="Webhook chains" count={candidates.length}>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={gaps.length === 0}
+                onClick={() => setSelected(new Set(gaps))}
               >
-                <Badge
-                  variant={
-                    r.status === 'created'
-                      ? 'success'
-                      : r.status === 'existing'
-                        ? 'default'
-                        : r.status === 'unsupported'
-                          ? 'warn'
-                          : 'danger'
-                  }
+                Gaps only
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  setSelected(
+                    allChecked
+                      ? new Set()
+                      : new Set(candidates.map((c) => c.chainId)),
+                  )
+                }
+              >
+                {allChecked ? 'Clear all' : 'Select all'}
+              </Button>
+            </TableToolbar>
+          }
+          footer={
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 text-sm text-[var(--fg-2)]">
+                <span className="figure">
+                  <span className="font-medium text-foreground">{selected.size}</span> of{' '}
+                  {candidates.length} selected
+                </span>
+                <span
+                  className="inline-flex text-[var(--fg-3)]"
+                  title="Target URL is env-pinned to GATEWAY_PUBLIC_URL. Pick nothing to fall back to the env-configured default."
                 >
-                  {r.status}
-                </Badge>
-                <span className="font-mono text-xs">chain {r.chainId}</span>
-                {r.webhookId && (
-                  <span className="break-all font-mono text-xs text-[var(--fg-2)]">
-                    {r.webhookId}
-                  </span>
-                )}
-                {r.error && (
-                  <span className="break-words font-mono text-xs text-destructive">
-                    {r.error}
-                  </span>
-                )}
-                {r.signingKey && (
-                  <>
-                    <span className="flex-1" />
-                    <span className="font-mono text-xs text-[var(--fg-2)]">
-                      signing key
-                    </span>
-                    <CopyButton value={r.signingKey} label={r.signingKey.slice(0, 8) + '…'} />
-                  </>
-                )}
+                  <Info className="size-4" />
+                </span>
               </div>
+              <Button size="sm" disabled={run.isPending} onClick={() => run.mutate()}>
+                <Rocket className="size-4" />
+                {run.isPending
+                  ? 'Bootstrapping…'
+                  : selected.size === 0
+                    ? 'Bootstrap (env default)'
+                    : `Bootstrap ${selected.size} chain${selected.size === 1 ? '' : 's'}`}
+              </Button>
+            </div>
+          }
+        >
+          <TableWrap>
+            <Table className="min-w-[640px]">
+              <THead>
+                <tr>
+                  <Th className="w-12">
+                    <span className="sr-only">Select</span>
+                  </Th>
+                  <Th>Chain</Th>
+                  <Th>Family</Th>
+                  <Th>Webhook</Th>
+                  <Th>Alchemy</Th>
+                </tr>
+              </THead>
+              <TBody>
+                {candidates.map((c) => {
+                  const checked = selected.has(c.chainId)
+                  return (
+                    <Tr
+                      key={c.chainId}
+                      interactive
+                      tabIndex={0}
+                      aria-selected={checked}
+                      onClick={() => toggle(c.chainId)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          toggle(c.chainId)
+                        }
+                      }}
+                      className={cn(
+                        'focus-visible:bg-[var(--bg-hover)] focus-visible:outline-none',
+                        checked && 'bg-[var(--bg-2)]',
+                      )}
+                    >
+                      <Td>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${c.displayName}`}
+                          checked={checked}
+                          onChange={() => toggle(c.chainId)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="size-4 cursor-pointer accent-[var(--primary)]"
+                        />
+                      </Td>
+                      <Td>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <ChainIcon chainId={c.chainId} size={32} />
+                          <div className="min-w-0">
+                            <div className="truncate font-medium">{c.displayName}</div>
+                            <div className="truncate font-mono text-xs text-[var(--fg-3)]">
+                              {c.chainId} · {c.slug}
+                            </div>
+                          </div>
+                        </div>
+                      </Td>
+                      <Td>
+                        <FamilyIcon family={c.family} size={20} />
+                      </Td>
+                      <Td>
+                        {c.webhooks ? (
+                          <StatusPill tone="ok">Registered</StatusPill>
+                        ) : (
+                          <StatusPill tone="warn">Gap</StatusPill>
+                        )}
+                      </Td>
+                      <Td>
+                        {c.alchemyConfigured ? (
+                          <StatusPill tone="ok">Configured</StatusPill>
+                        ) : (
+                          <span title="ALCHEMY_CHAINS env does not list this chainId">
+                            <StatusPill tone="warn">Not configured</StatusPill>
+                          </span>
+                        )}
+                      </Td>
+                    </Tr>
+                  )
+                })}
+              </TBody>
+            </Table>
+          </TableWrap>
+        </TableCard>
+      )}
+
+      {run.data && run.data.results.length > 0 && (
+        <ResultsTable results={run.data.results} />
+      )}
+    </>
+  )
+}
+
+function resultTone(status: AlchemyBootstrapResult['status']): StatusTone {
+  switch (status) {
+    case 'created':
+      return 'ok'
+    case 'existing':
+      return 'info'
+    case 'unsupported':
+      return 'warn'
+    default:
+      return 'bad'
+  }
+}
+
+function ResultsTable({ results }: { results: AlchemyBootstrapResult[] }) {
+  return (
+    <TableCard
+      className="fade-in"
+      toolbar={<TableToolbar title="Results" count={results.length} />}
+    >
+      <TableWrap>
+        <Table className="min-w-[640px]">
+          <THead>
+            <tr>
+              <Th>Chain</Th>
+              <Th>Status</Th>
+              <Th>Webhook ID</Th>
+              <Th align="right">Signing key</Th>
+            </tr>
+          </THead>
+          <TBody>
+            {results.map((r, i) => (
+              <Tr key={i}>
+                <Td>
+                  <div className="flex items-center gap-3">
+                    <ChainIcon chainId={r.chainId} size={24} />
+                    <span className="font-medium">{chainInfo(r.chainId).name}</span>
+                  </div>
+                </Td>
+                <Td>
+                  <div className="flex flex-col items-start gap-1">
+                    <StatusPill tone={resultTone(r.status)}>{r.status}</StatusPill>
+                    {r.error && (
+                      <span className="break-words font-mono text-xs text-destructive">
+                        {r.error}
+                      </span>
+                    )}
+                  </div>
+                </Td>
+                <Td>
+                  {r.webhookId ? (
+                    <span className="break-all font-mono text-xs text-[var(--fg-1)]">
+                      {r.webhookId}
+                    </span>
+                  ) : (
+                    <span className="text-[var(--fg-3)]">—</span>
+                  )}
+                </Td>
+                <Td className="text-right">
+                  {r.signingKey ? (
+                    <CopyButton
+                      value={r.signingKey}
+                      label={r.signingKey.slice(0, 8) + '…'}
+                      className="font-mono"
+                    />
+                  ) : (
+                    <span className="text-[var(--fg-3)]">—</span>
+                  )}
+                </Td>
+              </Tr>
             ))}
-          </div>
-        )}
-      </CardContent>
+          </TBody>
+        </Table>
+      </TableWrap>
+    </TableCard>
+  )
+}
+
+function StatTile({
+  label,
+  value,
+  sub,
+  badge,
+  footer,
+  loading,
+}: {
+  label: string
+  value: React.ReactNode
+  sub?: React.ReactNode
+  badge?: React.ReactNode
+  footer?: React.ReactNode
+  loading?: boolean
+}) {
+  return (
+    <Card className="flex flex-col p-5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm text-[var(--fg-2)]">{label}</span>
+        {!loading && badge}
+      </div>
+      <div className="figure mt-2 text-xl font-semibold">
+        {loading ? <Skeleton className="h-7 w-16" /> : value}
+      </div>
+      {sub && <div className="mt-1 text-xs text-[var(--fg-2)]">{sub}</div>}
+      {footer && !loading && <div className="mt-auto pt-4">{footer}</div>}
     </Card>
   )
 }
 
-function ChainCheckboxList({
-  loading,
-  error,
-  candidates,
-  selected,
-  onToggle,
-}: {
-  loading: boolean
-  error: boolean
-  candidates: ChainInventoryEntry[]
-  selected: Set<number>
-  onToggle: (chainId: number) => void
-}) {
-  if (loading) {
-    return (
-      <div className="space-y-1">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full" />
-        ))}
-      </div>
-    )
-  }
-  if (error) {
-    return (
-      <Callout tone="danger">
-        Could not load chains. Check admin key in settings.
-      </Callout>
-    )
-  }
-  if (candidates.length === 0) {
-    return (
-      <Callout tone="warn">
-        No wired webhook-supported chains. Deploy adapters first.
-      </Callout>
-    )
-  }
-  return (
-    <ul className="max-h-[280px] space-y-1 overflow-y-auto rounded-lg border border-border p-1">
-      {candidates.map((c) => {
-        const checked = selected.has(c.chainId)
-        const already = c.webhooks
-        return (
-          <li key={c.chainId}>
-            <label
-              className={
-                'flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ' +
-                (checked
-                  ? 'bg-[var(--accent-bg)] ring-1 ring-inset ring-[var(--accent-border)]'
-                  : 'hover:bg-[var(--bg-hover)]')
-              }
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() => onToggle(c.chainId)}
-                className="size-4 accent-[var(--primary)]"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="truncate font-medium">{c.displayName}</span>
-                  <span className="rounded-sm bg-[var(--bg-2)] px-1.5 font-mono text-2xs text-[var(--fg-2)]">
-                    {c.chainId}
-                  </span>
-                  {already ? (
-                    <Badge variant="success">
-                      <CheckCircle2 /> registered
-                    </Badge>
-                  ) : (
-                    <Badge variant="warn">gap</Badge>
-                  )}
-                  {!c.alchemyConfigured && (
-                    <Badge
-                      variant="warn"
-                      title="ALCHEMY_CHAINS env does not list this chainId"
-                    >
-                      <AlertTriangle />
-                      not configured
-                    </Badge>
-                  )}
-                </div>
-                <div className="mt-0.5 font-mono text-2xs text-[var(--fg-3)]">
-                  {c.slug}
-                </div>
-              </div>
-              <Badge variant="outline" className="uppercase">
-                {c.family}
-              </Badge>
-            </label>
-          </li>
-        )
-      })}
-    </ul>
-  )
-}
+/* ── signing key form ────────────────────────────────────── */
 
 function SigningKeyCard() {
   const chainsQ = useQuery(CHAINS_Q)
@@ -365,107 +457,110 @@ function SigningKeyCard() {
   })
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Register signing key</CardTitle>
-        <CardDescription>
-          For webhooks created via the Alchemy dashboard UI (or to rotate a key
-          after delete + recreate). Keys are encrypted with{' '}
-          <span className="font-mono">SECRETS_ENCRYPTION_KEY</span> before being
-          written to <span className="font-mono">alchemy_webhook_registry</span>.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form
-          className="grid max-w-xl gap-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            save.mutate()
-          }}
-        >
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_2fr]">
-            <Field label="Chain">
-              <Select
-                value={chainId}
-                onValueChange={setChainId}
-                disabled={chainsQ.isLoading || chainOptions.length === 0}
-              >
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={
-                      chainsQ.isLoading
-                        ? 'Loading…'
-                        : chainOptions.length === 0
-                          ? 'No eligible chains'
-                          : 'Select chain'
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {chainOptions.map((c) => (
-                    <SelectItem key={c.chainId} value={String(c.chainId)}>
-                      <span className="flex items-center gap-2">
-                        <span>{c.displayName}</span>
-                        <span className="font-mono text-2xs text-[var(--fg-3)]">
-                          {c.chainId}
-                        </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Webhook ID (from Alchemy)">
-              <Input
-                value={webhookId}
-                onChange={(e) => setWebhookId(e.target.value)}
-                placeholder="wh_…"
-                className="font-mono"
-                maxLength={128}
-              />
-            </Field>
-          </div>
-          <Field
-            label="Webhook URL"
-            hint="The public URL your gateway exposes for Alchemy ingest."
-          >
-            <Input
-              value={webhookUrl}
-              onChange={(e) => setWebhookUrl(e.target.value)}
-              type="url"
-              className="font-mono"
-              placeholder="https://gateway.example.com/webhooks/alchemy"
-            />
-          </Field>
-          <Field label="Signing key">
-            <PasswordField
-              value={signingKey}
-              onChange={(e) => setSigningKey(e.target.value)}
-              placeholder="whk_…"
-            />
-          </Field>
-          <div>
-            <Button
-              type="submit"
-              disabled={
-                save.isPending ||
-                !/^\d+$/.test(chainId) ||
-                webhookId.length < 1 ||
-                signingKey.length < 1 ||
-                !/^https?:\/\//.test(webhookUrl)
-              }
+    <Card className="p-6">
+      <div className="flex items-start gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-[var(--bg-2)] text-[var(--fg-1)] ring-1 ring-border">
+          <KeyRound className="size-4" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-1.5 text-lg font-semibold tracking-[-0.01em]">
+            Register signing key
+            <span
+              className="inline-flex text-[var(--fg-3)]"
+              title="Keys are encrypted with SECRETS_ENCRYPTION_KEY before being written to alchemy_webhook_registry."
             >
-              <KeyRound className="size-3.5" />{' '}
-              {save.isPending ? 'Saving…' : 'Register key'}
-            </Button>
-          </div>
-        </form>
-        {save.data && (
-          <Callout tone="success" className="mt-4 max-w-xl">
-            Registered.
-          </Callout>
-        )}
-      </CardContent>
+              <Info className="size-4" />
+            </span>
+          </h2>
+          <p className="mt-0.5 text-sm text-[var(--fg-2)]">
+            For webhooks made in the Alchemy dashboard, or to rotate a key.
+          </p>
+        </div>
+      </div>
+
+      <form
+        className="mt-6 max-w-2xl space-y-5"
+        onSubmit={(e) => {
+          e.preventDefault()
+          save.mutate()
+        }}
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Chain">
+            <Select
+              value={chainId}
+              onValueChange={setChainId}
+              disabled={chainsQ.isLoading || chainOptions.length === 0}
+            >
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={
+                    chainsQ.isLoading
+                      ? 'Loading…'
+                      : chainOptions.length === 0
+                        ? 'No eligible chains'
+                        : 'Select chain'
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {chainOptions.map((c) => (
+                  <SelectItem key={c.chainId} value={String(c.chainId)}>
+                    <span className="flex items-center gap-2">
+                      <ChainIcon chainId={c.chainId} size={16} />
+                      <span>{c.displayName}</span>
+                      <span className="font-mono text-xs text-[var(--fg-3)]">
+                        {c.chainId}
+                      </span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Webhook ID">
+            <Input
+              value={webhookId}
+              onChange={(e) => setWebhookId(e.target.value)}
+              placeholder="wh_…"
+              className="font-mono"
+              maxLength={128}
+            />
+          </Field>
+        </div>
+        <Field label="Webhook URL" hint="Your gateway's public Alchemy ingest URL.">
+          <Input
+            value={webhookUrl}
+            onChange={(e) => setWebhookUrl(e.target.value)}
+            type="url"
+            className="font-mono"
+            placeholder="https://gateway.example.com/webhooks/alchemy"
+          />
+        </Field>
+        <Field label="Signing key">
+          <PasswordField
+            value={signingKey}
+            onChange={(e) => setSigningKey(e.target.value)}
+            placeholder="whk_…"
+          />
+        </Field>
+        {save.data && <Callout tone="success">Registered.</Callout>}
+        <div className="flex justify-end">
+          <Button
+            type="submit"
+            disabled={
+              save.isPending ||
+              !/^\d+$/.test(chainId) ||
+              webhookId.length < 1 ||
+              signingKey.length < 1 ||
+              !/^https?:\/\//.test(webhookUrl)
+            }
+          >
+            <KeyRound className="size-4" />
+            {save.isPending ? 'Saving…' : 'Register key'}
+          </Button>
+        </div>
+      </form>
     </Card>
   )
 }

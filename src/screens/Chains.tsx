@@ -3,24 +3,29 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   AlertTriangle,
-  CheckCircle2,
-  CircleDashed,
+  Copy,
+  Hash,
   Loader2,
+  MoreHorizontal,
   Network,
   Radio,
   RefreshCw,
   Rocket,
-  XCircle,
 } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
+import { chainInfo } from '@/lib/chains'
+import { cn } from '@/lib/utils'
 import type {
   AlchemyBootstrapResult,
   ChainInventoryEntry,
 } from '@/lib/types'
 
-import { Badge } from '@/components/ui/badge'
+import { SegmentedBar, Segmented } from '@/components/charts'
+import { TableCard, TableSearch, TableToolbar } from '@/components/DataTable'
+import { StatusPill, type StatusTone } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -29,13 +34,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableWrap, TBody, Td, Th, THead, Tr } from '@/components/ui/table'
 import { CopyButton } from '@/components/CopyButton'
+import { ChainIcon, FamilyIcon, TokenIcon } from '@/components/CryptoIcon'
 import { PageHeader } from '@/components/PageHeader'
-import { EmptyState, ErrorState, ListSkeleton, Stat } from '@/components/States'
+import { EmptyState, ErrorState, ListSkeleton } from '@/components/States'
 
 const CHAINS_Q = ['gw', 'chains'] as const
+
+type Filter = 'all' | 'ready' | 'incomplete' | 'undeployed'
 
 export function ChainsPage() {
   const qc = useQueryClient()
@@ -66,12 +81,30 @@ export function ChainsPage() {
     null,
   )
   const [pickerOpen, setPickerOpen] = React.useState(false)
+  const [search, setSearch] = React.useState('')
+  const [filter, setFilter] = React.useState<Filter>('all')
 
   const bootstrapableChains = React.useMemo(
     () =>
       rows.filter((c) => c.wired && c.webhooksSupported && !c.webhooks),
     [rows],
   )
+
+  const visible = React.useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return rows.filter((c) => {
+      if (filter === 'ready' && !c.bootstrapReady) return false
+      if (filter === 'incomplete' && (!c.wired || c.bootstrapReady)) return false
+      if (filter === 'undeployed' && c.wired) return false
+      if (!q) return true
+      return (
+        c.displayName.toLowerCase().includes(q) ||
+        c.slug.toLowerCase().includes(q) ||
+        String(c.chainId).includes(q) ||
+        c.family.includes(q)
+      )
+    })
+  }, [rows, search, filter])
 
   const bootstrapWebhooks = useMutation({
     mutationFn: (chainIds: number[]) =>
@@ -95,11 +128,10 @@ export function ChainsPage() {
   })
 
   return (
-    <div className="fade-in space-y-5">
+    <div className="fade-in space-y-8">
       <PageHeader
-        eyebrow="Infrastructure"
         title="Chains"
-        description="Every chain the gateway knows about, with adapter, webhook, and fee-wallet readiness."
+        description="Adapter, webhook and fee-wallet readiness"
         actions={
           <>
             <Button
@@ -109,7 +141,7 @@ export function ChainsPage() {
               disabled={chains.isFetching}
             >
               <RefreshCw
-                className={`size-3.5 ${chains.isFetching ? 'animate-spin' : ''}`}
+                className={cn('size-4', chains.isFetching && 'animate-spin')}
               />
               Refresh
             </Button>
@@ -119,9 +151,9 @@ export function ChainsPage() {
                 onClick={() => setPickerOpen(true)}
                 disabled={bootstrapWebhooks.isPending}
               >
-                <Rocket className="size-3.5" />
+                <Rocket className="size-4" />
                 Bootstrap webhooks
-                <span className="ml-0.5 rounded-sm bg-primary-foreground/20 px-1.5 font-mono text-2xs tabular-nums">
+                <span className="figure ml-0.5 rounded-full bg-primary-foreground/20 px-1.5 text-xs">
                   {bootstrapableChains.length}
                 </span>
               </Button>
@@ -130,7 +162,7 @@ export function ChainsPage() {
         }
       />
 
-      <StatsGrid stats={stats} loading={chains.isLoading} />
+      <SummaryStrip stats={stats} loading={chains.isLoading} />
 
       {chains.isError && (
         <ErrorState
@@ -143,24 +175,66 @@ export function ChainsPage() {
       )}
 
       {chains.isLoading ? (
-        <ListSkeleton rows={5} />
+        <ListSkeleton rows={6} />
       ) : rows.length === 0 ? (
-        <EmptyState
-          framed
-          icon={Network}
-          title="No chains reported by the gateway."
-        />
+        !chains.isError && (
+          <EmptyState framed icon={Network} title="No chains reported" />
+        )
       ) : (
-        <ChainMatrix
-          rows={rows}
-          onBootstrapWebhook={(id) => bootstrapWebhooks.mutate([id])}
-          bootstrappingId={
-            bootstrapWebhooks.isPending &&
-            bootstrapWebhooks.variables?.length === 1
-              ? bootstrapWebhooks.variables[0]
-              : null
+        <TableCard
+          toolbar={
+            <TableToolbar title="All chains" count={visible.length}>
+              <Segmented<Filter>
+                ariaLabel="Filter chains"
+                value={filter}
+                onChange={setFilter}
+                options={[
+                  { value: 'all', label: 'All' },
+                  { value: 'ready', label: 'Ready' },
+                  { value: 'incomplete', label: 'Incomplete' },
+                  { value: 'undeployed', label: 'Not deployed' },
+                ]}
+              />
+              <TableSearch
+                value={search}
+                onChange={setSearch}
+                placeholder="Search chains"
+                className="w-48"
+              />
+            </TableToolbar>
           }
-        />
+        >
+          {visible.length === 0 ? (
+            <EmptyState
+              compact
+              icon={Network}
+              title="No matching chains"
+              action={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSearch('')
+                    setFilter('all')
+                  }}
+                >
+                  Clear filters
+                </Button>
+              }
+            />
+          ) : (
+            <ChainTable
+              rows={visible}
+              onBootstrapWebhook={(id) => bootstrapWebhooks.mutate([id])}
+              bootstrappingId={
+                bootstrapWebhooks.isPending &&
+                bootstrapWebhooks.variables?.length === 1
+                  ? bootstrapWebhooks.variables[0]
+                  : null
+              }
+            />
+          )}
+        </TableCard>
       )}
 
       <SigningKeysDialog
@@ -183,9 +257,9 @@ export function ChainsPage() {
   )
 }
 
-/* ── stats row ───────────────────────────────────────────── */
+/* ── summary strip ───────────────────────────────────────── */
 
-function StatsGrid({
+function SummaryStrip({
   stats,
   loading,
 }: {
@@ -197,73 +271,94 @@ function StatsGrid({
   }
   loading: boolean
 }) {
-  const allReady = !loading && stats.total > 0 && stats.ready === stats.total
+  const incomplete = Math.max(0, stats.total - stats.ready - stats.notDeployed)
+  const parts = [
+    { key: 'ready', name: 'Ready', value: stats.ready, color: 'var(--st-ok-dot)' },
+    { key: 'incomplete', name: 'Incomplete', value: incomplete, color: 'var(--st-warn-dot)' },
+    { key: 'off', name: 'Not deployed', value: stats.notDeployed, color: 'var(--st-wait-dot)' },
+  ]
   return (
-    <div className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3">
-      <StatCard
-        icon={<CheckCircle2 className="size-3.5" />}
-        tone={allReady ? 'success' : 'neutral'}
+    <div className="stagger grid grid-cols-1 gap-5 sm:grid-cols-3">
+      <StatTile
         label="Ready"
-        value={loading ? null : `${stats.ready}/${stats.total}`}
-        sub="bootstrapReady"
+        loading={loading}
+        value={
+          <>
+            {stats.ready}
+            <span className="text-[var(--fg-3)]">/{stats.total}</span>
+          </>
+        }
+        footer={
+          <div className="space-y-2.5">
+            <SegmentedBar parts={parts} />
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--fg-2)]">
+              {parts.map((p) => (
+                <span key={p.key} className="inline-flex items-center gap-1.5">
+                  <span className="size-2 rounded-full" style={{ background: p.color }} />
+                  {p.name}
+                  <span className="figure text-foreground">{p.value}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        }
       />
-      <StatCard
-        icon={<Radio className="size-3.5" />}
-        tone={stats.webhookGaps > 0 ? 'warn' : 'success'}
+      <StatTile
         label="Webhook gaps"
-        value={loading ? null : String(stats.webhookGaps)}
-        sub="wired, no webhook"
+        loading={loading}
+        value={stats.webhookGaps}
+        badge={
+          stats.webhookGaps > 0 ? (
+            <StatusPill tone="warn">Needs bootstrap</StatusPill>
+          ) : (
+            <StatusPill tone="ok">None</StatusPill>
+          )
+        }
+        sub="Wired, no webhook"
       />
-      <StatCard
-        icon={<CircleDashed className="size-3.5" />}
-        tone="neutral"
+      <StatTile
         label="Not deployed"
-        value={loading ? null : String(stats.notDeployed)}
-        sub="adapter not loaded"
+        loading={loading}
+        value={stats.notDeployed}
+        sub="Adapter not loaded"
       />
     </div>
   )
 }
 
-function StatCard({
-  icon,
-  tone,
+function StatTile({
   label,
   value,
   sub,
+  badge,
+  footer,
+  loading,
 }: {
-  icon: React.ReactNode
-  tone: 'success' | 'warn' | 'neutral'
   label: string
-  /** null while loading */
-  value: string | null
-  sub: string
+  value: React.ReactNode
+  sub?: React.ReactNode
+  badge?: React.ReactNode
+  footer?: React.ReactNode
+  loading?: boolean
 }) {
-  const toneClass =
-    tone === 'success'
-      ? 'text-success'
-      : tone === 'warn'
-        ? 'text-warn'
-        : 'text-[var(--fg-2)]'
   return (
-    <div className="bg-card px-5 py-4">
-      <Stat
-        label={
-          <span className="inline-flex items-center gap-1.5">
-            <span className={toneClass}>{icon}</span>
-            {label}
-          </span>
-        }
-        value={value ?? <Skeleton className="h-7 w-14" />}
-        sub={sub}
-      />
-    </div>
+    <Card className="flex flex-col p-5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm text-[var(--fg-2)]">{label}</span>
+        {!loading && badge}
+      </div>
+      <div className="figure mt-2 text-xl font-semibold">
+        {loading ? <Skeleton className="h-7 w-16" /> : value}
+      </div>
+      {sub && <div className="mt-1 text-xs text-[var(--fg-2)]">{sub}</div>}
+      {footer && !loading && <div className="mt-auto pt-4">{footer}</div>}
+    </Card>
   )
 }
 
-/* ── matrix ──────────────────────────────────────────────── */
+/* ── table ───────────────────────────────────────────────── */
 
-function ChainMatrix({
+function ChainTable({
   rows,
   onBootstrapWebhook,
   bootstrappingId,
@@ -273,32 +368,35 @@ function ChainMatrix({
   bootstrappingId: number | null
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <TableWrap>
-        <Table className="min-w-[760px]">
-          <THead>
-            <tr>
-              <Th>Chain</Th>
-              <Th className="w-[96px]">Family</Th>
-              <Th>Status</Th>
-              <Th align="right" className="w-[160px]">
-                Actions
-              </Th>
-            </tr>
-          </THead>
-          <TBody>
-            {rows.map((c) => (
-              <ChainRow
-                key={c.chainId}
-                chain={c}
-                onBootstrapWebhook={() => onBootstrapWebhook(c.chainId)}
-                bootstrapping={bootstrappingId === c.chainId}
-              />
-            ))}
-          </TBody>
-        </Table>
-      </TableWrap>
-    </div>
+    <TableWrap>
+      <Table className="min-w-[960px]">
+        <THead>
+          <tr>
+            <Th>Chain</Th>
+            <Th>Family</Th>
+            <Th>Ready</Th>
+            <Th>Detection</Th>
+            <Th>Webhook</Th>
+            <Th>Fee wallet</Th>
+            <Th align="right">Conf.</Th>
+            <Th align="right">Tokens</Th>
+            <Th className="w-12">
+              <span className="sr-only">Actions</span>
+            </Th>
+          </tr>
+        </THead>
+        <TBody>
+          {rows.map((c) => (
+            <ChainRow
+              key={c.chainId}
+              chain={c}
+              onBootstrapWebhook={() => onBootstrapWebhook(c.chainId)}
+              bootstrapping={bootstrappingId === c.chainId}
+            />
+          ))}
+        </TBody>
+      </Table>
+    </TableWrap>
   )
 }
 
@@ -313,144 +411,197 @@ function ChainRow({
 }) {
   const canBootstrapWebhook =
     chain.wired && chain.webhooksSupported && !chain.webhooks
+  // Same gate as before: only wired, not-yet-ready chains with a webhook gap.
+  const showBootstrap = chain.wired && !chain.bootstrapReady && canBootstrapWebhook
+
+  const copy = async (value: string, what: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success(`${what} copied`)
+    } catch {
+      /* ignore */
+    }
+  }
 
   return (
     <Tr>
-      <Td className="py-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-sm font-medium">
-              {chain.displayName}
-            </span>
-            <span className="rounded-sm bg-[var(--bg-2)] px-1.5 font-mono text-2xs text-[var(--fg-2)]">
-              {chain.chainId}
-            </span>
-            <ReadyBadge chain={chain} />
-            <DetectionBadge detection={chain.detection} />
-          </div>
-          <div className="mt-0.5 flex items-center gap-2 text-xs text-[var(--fg-3)]">
-            <span className="font-mono">{chain.slug}</span>
-            <span>·</span>
-            <span>
-              <span className="font-mono tabular-nums">{chain.confirmationsRequired}</span> conf ·{' '}
-              <span className="font-mono tabular-nums">{chain.tokens.length}</span> token
-              {chain.tokens.length === 1 ? '' : 's'}
-            </span>
+      <Td>
+        <div className="flex min-w-0 items-center gap-3">
+          <ChainIcon chainId={chain.chainId} size={32} />
+          <div className="min-w-0">
+            <div className="truncate font-medium">{chain.displayName}</div>
+            <div className="truncate font-mono text-xs text-[var(--fg-3)]">
+              {chain.chainId} · {chain.slug}
+            </div>
           </div>
         </div>
       </Td>
-
-      <Td className="py-3">
-        <Badge variant="outline" className="uppercase">
-          {chain.family}
-        </Badge>
+      <Td>
+        <FamilyIcon family={chain.family} size={20} />
       </Td>
-
-      <Td className="py-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-          <Flag label="wired" ok={chain.wired} />
-          {chain.webhooksSupported && (
-            <>
-              <Flag
-                label="alchemy"
-                ok={chain.alchemyConfigured}
-                dim={!chain.wired}
-              />
-              <Flag label="webhook" ok={chain.webhooks} dim={!chain.wired} />
-            </>
-          )}
-        </div>
+      <Td>
+        <ReadyPill chain={chain} />
       </Td>
-
-      <Td className="py-3 text-right">
-        <div className="flex flex-wrap justify-end gap-1.5">
-          {!chain.wired ? (
-            <span className="text-xs text-[var(--fg-3)]" title="Adapter not loaded — requires backend deploy">
-              Not deployed
-            </span>
-          ) : chain.bootstrapReady ? (
-            <span className="text-xs text-[var(--fg-3)]">—</span>
-          ) : canBootstrapWebhook ? (
+      <Td>
+        <DetectionPill detection={chain.detection} />
+      </Td>
+      <Td>
+        <WebhookPill chain={chain} bootstrapping={bootstrapping} />
+      </Td>
+      <Td>
+        {chain.feeWallets ? (
+          <StatusPill tone="ok">Set</StatusPill>
+        ) : (
+          <StatusPill tone="off" icon={null}>
+            None
+          </StatusPill>
+        )}
+      </Td>
+      <Td align="right" className="text-[var(--fg-1)]">
+        {chain.confirmationsRequired}
+      </Td>
+      <Td align="right">
+        <TokenStack symbols={chain.tokens.map((t) => t.symbol)} />
+      </Td>
+      <Td className="text-right">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <Button
-              size="sm"
-              variant="outline"
-              onClick={onBootstrapWebhook}
-              disabled={bootstrapping}
+              size="icon-sm"
+              variant="ghost"
+              aria-label={`Actions for ${chain.displayName}`}
             >
               {bootstrapping ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <Loader2 className="size-4 animate-spin" />
               ) : (
-                <Rocket className="size-3.5" />
+                <MoreHorizontal className="size-4" />
               )}
-              Webhook
             </Button>
-          ) : (
-            <span className="text-xs text-[var(--fg-3)]">—</span>
-          )}
-        </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem
+              disabled={!showBootstrap || bootstrapping}
+              onSelect={onBootstrapWebhook}
+            >
+              <Rocket /> Bootstrap webhook
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => copy(String(chain.chainId), 'Chain ID')}>
+              <Hash /> Copy chain ID
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => copy(chain.slug, 'Slug')}>
+              <Copy /> Copy slug
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </Td>
     </Tr>
   )
 }
 
-function DetectionBadge({
+/** Overlapping token logos; symbols listed in the tooltip. */
+function TokenStack({ symbols }: { symbols: string[] }) {
+  const shown = symbols.slice(0, 4)
+  const extra = symbols.length - shown.length
+  return (
+    <span className="inline-flex items-center justify-end" title={symbols.join(', ')}>
+      {shown.map((s, i) => (
+        <span
+          key={s}
+          className="grid place-items-center rounded-full bg-card ring-2 ring-[var(--bg-1)]"
+          style={{ marginLeft: i === 0 ? 0 : -6, zIndex: shown.length - i }}
+        >
+          <TokenIcon symbol={s} size={20} />
+        </span>
+      ))}
+      {extra > 0 && <span className="figure ml-1.5 text-xs text-[var(--fg-2)]">+{extra}</span>}
+    </span>
+  )
+}
+
+function ReadyPill({ chain }: { chain: ChainInventoryEntry }) {
+  if (!chain.wired) {
+    return (
+      <span title="Adapter not loaded — requires backend deploy">
+        <StatusPill tone="off">Not deployed</StatusPill>
+      </span>
+    )
+  }
+  if (chain.bootstrapReady) return <StatusPill tone="ok">Ready</StatusPill>
+  return <StatusPill tone="warn">Incomplete</StatusPill>
+}
+
+function DetectionPill({
   detection,
 }: {
   detection: ChainInventoryEntry['detection']
 }) {
   if (detection === 'alchemy') {
     return (
-      <Badge title="Transactions received via Alchemy webhook">
-        <Radio /> webhook
-      </Badge>
+      <span title="Transactions received via Alchemy webhook">
+        <StatusPill tone="info" icon={Radio}>
+          Webhook
+        </StatusPill>
+      </span>
     )
   }
   return (
-    <Badge title="Transactions detected via RPC polling (no webhook)">
-      <RefreshCw /> polling
-    </Badge>
-  )
-}
-
-function ReadyBadge({ chain }: { chain: ChainInventoryEntry }) {
-  if (!chain.wired) {
-    return <Badge>not deployed</Badge>
-  }
-  if (chain.bootstrapReady) {
-    return (
-      <Badge variant="success">
-        <CheckCircle2 /> ready
-      </Badge>
-    )
-  }
-  return (
-    <Badge variant="warn">
-      <AlertTriangle /> incomplete
-    </Badge>
-  )
-}
-
-function Flag({
-  label,
-  ok,
-  dim,
-}: {
-  label: string
-  ok: boolean
-  dim?: boolean
-}) {
-  const Icon = ok ? CheckCircle2 : XCircle
-  const tone = dim
-    ? 'text-[var(--fg-3)]'
-    : ok
-      ? 'text-success'
-      : 'text-warn'
-  return (
-    <span className={`inline-flex items-center gap-1 ${tone}`}>
-      <Icon className="size-3.5 shrink-0" />
-      <span>{label}</span>
+    <span title="Transactions detected via RPC polling (no webhook)">
+      <StatusPill tone="wait" icon={RefreshCw}>
+        Polling
+      </StatusPill>
     </span>
   )
+}
+
+function WebhookPill({
+  chain,
+  bootstrapping,
+}: {
+  chain: ChainInventoryEntry
+  bootstrapping: boolean
+}) {
+  if (!chain.webhooksSupported) {
+    return (
+      <span className="text-sm text-[var(--fg-3)]" title="Webhooks not supported">
+        —
+      </span>
+    )
+  }
+  if (bootstrapping) return <StatusPill tone="run">Registering</StatusPill>
+  if (chain.webhooks) return <StatusPill tone="ok">Live</StatusPill>
+  if (!chain.wired) {
+    return (
+      <span className="text-sm text-[var(--fg-3)]" title="Adapter not loaded">
+        —
+      </span>
+    )
+  }
+  if (!chain.alchemyConfigured) {
+    return (
+      <span title="Alchemy not configured for this chain">
+        <StatusPill tone="warn">No Alchemy</StatusPill>
+      </span>
+    )
+  }
+  return (
+    <span title="Wired, webhook supported, not registered">
+      <StatusPill tone="warn">Gap</StatusPill>
+    </span>
+  )
+}
+
+function bootstrapTone(status: AlchemyBootstrapResult['status']): StatusTone {
+  switch (status) {
+    case 'created':
+      return 'ok'
+    case 'existing':
+      return 'info'
+    case 'unsupported':
+      return 'warn'
+    default:
+      return 'bad'
+  }
 }
 
 /* ── bootstrap picker dialog ─────────────────────────────── */
@@ -506,77 +657,67 @@ function BootstrapPickerDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center justify-between gap-2 border-b border-border pb-2 text-xs text-[var(--fg-2)]">
-          <span>
-            <span className="font-mono">{selected.size}</span> /{' '}
-            <span className="font-mono">{candidates.length}</span> selected
-          </span>
-          <button
-            type="button"
-            className="cursor-pointer text-xs font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() =>
-              setSelected(
-                allChecked
-                  ? new Set()
-                  : new Set(candidates.map((c) => c.chainId)),
-              )
-            }
-            disabled={submitting}
-          >
-            {allChecked ? 'Clear all' : 'Select all'}
-          </button>
-        </div>
+        <div className="overflow-hidden rounded-xl border border-border">
+          <div className="flex items-center justify-between gap-2 border-b border-border bg-[var(--bg-2)] px-4 py-2 text-xs text-[var(--fg-2)]">
+            <span className="figure">
+              <span className="font-medium text-foreground">{selected.size}</span> of{' '}
+              {candidates.length} selected
+            </span>
+            <button
+              type="button"
+              className="cursor-pointer font-medium text-foreground hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() =>
+                setSelected(
+                  allChecked
+                    ? new Set()
+                    : new Set(candidates.map((c) => c.chainId)),
+                )
+              }
+              disabled={submitting}
+            >
+              {allChecked ? 'Clear all' : 'Select all'}
+            </button>
+          </div>
 
-        <ul className="max-h-[320px] space-y-1 overflow-y-auto">
-          {candidates.map((c) => {
-            const checked = selected.has(c.chainId)
-            return (
-              <li key={c.chainId}>
-                <label
-                  className={
-                    'flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors ' +
-                    (checked
-                      ? 'border-[var(--accent-border)] bg-[var(--accent-bg)]'
-                      : 'border-border hover:bg-[var(--bg-hover)]')
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggle(c.chainId)}
-                    disabled={submitting}
-                    className="size-4 accent-[var(--primary)]"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate font-medium">
-                        {c.displayName}
-                      </span>
-                      <span className="rounded-sm bg-[var(--bg-2)] px-1.5 font-mono text-2xs text-[var(--fg-2)]">
-                        {c.chainId}
-                      </span>
+          <ul className="max-h-[320px] divide-y divide-border overflow-y-auto">
+            {candidates.map((c) => {
+              const checked = selected.has(c.chainId)
+              return (
+                <li key={c.chainId}>
+                  <label
+                    className={cn(
+                      'flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors',
+                      checked ? 'bg-[var(--bg-hover)]' : 'hover:bg-[var(--bg-2)]',
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggle(c.chainId)}
+                      disabled={submitting}
+                      className="size-4 accent-[var(--primary)]"
+                    />
+                    <ChainIcon chainId={c.chainId} size={28} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{c.displayName}</div>
+                      <div className="truncate font-mono text-xs text-[var(--fg-3)]">
+                        {c.chainId} · {c.slug}
+                      </div>
                     </div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-[var(--fg-3)]">
-                      <span className="font-mono">{c.slug}</span>
-                      {!c.alchemyConfigured && (
-                        <>
-                          <span>·</span>
-                          <span className="inline-flex items-center gap-1 text-warn">
-                            <AlertTriangle className="size-3" />
-                            alchemy not configured
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <Badge variant="outline" className="uppercase">
-                    {c.family}
-                  </Badge>
-                </label>
-              </li>
-            )
-          })}
-        </ul>
+                    {!c.alchemyConfigured && (
+                      <span title="alchemy not configured">
+                        <StatusPill tone="warn" size="sm" icon={AlertTriangle}>
+                          No Alchemy
+                        </StatusPill>
+                      </span>
+                    )}
+                    <FamilyIcon family={c.family} size={18} />
+                  </label>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={close}>
@@ -588,9 +729,9 @@ function BootstrapPickerDialog({
             onClick={() => onSubmit(Array.from(selected))}
           >
             {submitting ? (
-              <Loader2 className="size-3.5 animate-spin" />
+              <Loader2 className="size-4 animate-spin" />
             ) : (
-              <Rocket className="size-3.5" />
+              <Rocket className="size-4" />
             )}
             {submitting
               ? 'Bootstrapping…'
@@ -623,29 +764,37 @@ function SigningKeysDialog({
             off-gateway.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-2">
-          {withKey.map((r) => (
-            <div
-              key={r.chainId}
-              className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-sm"
-            >
-              <Badge variant={r.status === 'created' ? 'success' : 'default'}>
-                {r.status}
-              </Badge>
-              <span className="font-mono text-xs">chain {r.chainId}</span>
-              {r.webhookId && (
-                <span className="break-all font-mono text-2xs text-[var(--fg-2)]">
-                  {r.webhookId}
+        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+          {withKey.map((r) => {
+            const info = chainInfo(r.chainId)
+            return (
+              <li
+                key={r.chainId}
+                className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm"
+              >
+                <ChainIcon chainId={r.chainId} size={28} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate font-medium">{info.name}</span>
+                    <StatusPill tone={bootstrapTone(r.status)} size="sm">
+                      {r.status}
+                    </StatusPill>
+                  </div>
+                  <div className="truncate font-mono text-xs text-[var(--fg-3)]">
+                    chain {r.chainId}
+                    {r.webhookId && <> · {r.webhookId}</>}
+                  </div>
+                </div>
+                <span className="flex items-center gap-1 rounded-[10px] border border-border bg-[var(--bg-2)] py-1 pr-1 pl-2.5">
+                  <code className="font-mono text-xs text-[var(--fg-1)]">
+                    {r.signingKey?.slice(0, 10)}…
+                  </code>
+                  {r.signingKey && <CopyButton value={r.signingKey} />}
                 </span>
-              )}
-              <span className="flex-1" />
-              <code className="font-mono text-xs text-[var(--fg-2)]">
-                {r.signingKey?.slice(0, 10)}…
-              </code>
-              {r.signingKey && <CopyButton value={r.signingKey} />}
-            </div>
-          ))}
-        </div>
+              </li>
+            )
+          })}
+        </ul>
         <DialogFooter>
           <Button onClick={onClose}>Done</Button>
         </DialogFooter>

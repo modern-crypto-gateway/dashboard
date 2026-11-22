@@ -1,17 +1,11 @@
 import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CheckCircle2, Save } from '@/components/icons'
+import { Globe, KeyRound, Save, Store } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { configQuery, useMerchants } from '@/lib/merchants'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -21,10 +15,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Field } from '@/components/Field'
 import { PasswordField } from '@/components/PasswordField'
 import { PageHeader } from '@/components/PageHeader'
 import { Callout } from '@/components/States'
+import { StatusPill } from '@/components/StatusPill'
 import { SecurityPanel } from './SecurityPanel'
 
 export function SettingsPage() {
@@ -72,95 +68,90 @@ export function SettingsPage() {
   })
 
   return (
-    <div className="fade-in space-y-6">
-      <PageHeader
-        eyebrow="System"
-        title="Settings"
-        description="Gateway connection + sensitive credentials for the dashboard."
-      />
+    <div className="fade-in space-y-8">
+      <PageHeader title="Settings" />
 
-      <div className="space-y-8">
-        <SettingsSection
-          title="Gateway"
-          description="Where the dashboard sends requests, and the key it uses for admin endpoints."
-        >
-          <Card>
-            <CardHeader>
-              <CardTitle>Gateway endpoint</CardTitle>
-              <CardDescription>
-                The base URL of the gateway API this dashboard proxies to.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form
-                className="grid max-w-lg gap-4"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  saveBaseUrl.mutate({ baseUrl: baseUrl.trim() })
-                }}
-              >
+      <div className="space-y-10">
+        <SettingsSection title="Gateway" description="Connection and admin key.">
+          <Card className="p-6">
+            <CardHead
+              icon={Globe}
+              title="Gateway endpoint"
+              sub="The base URL of the gateway API this dashboard proxies to."
+            />
+            <form
+              className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end"
+              onSubmit={(e) => {
+                e.preventDefault()
+                saveBaseUrl.mutate({ baseUrl: baseUrl.trim() })
+              }}
+            >
+              <div className="min-w-0 flex-1">
                 <Field label="Base URL">
-                  <Input
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                    placeholder="https://api.example.com"
-                    inputMode="url"
-                    className="font-mono"
-                  />
+                  {cfg.isLoading ? (
+                    <Skeleton className="h-9 w-full rounded-[10px]" />
+                  ) : (
+                    <Input
+                      value={baseUrl}
+                      onChange={(e) => setBaseUrl(e.target.value)}
+                      placeholder="https://api.example.com"
+                      inputMode="url"
+                      className="font-mono"
+                    />
+                  )}
                 </Field>
-                <div>
-                  <Button
-                    type="submit"
-                    disabled={
-                      saveBaseUrl.isPending ||
-                      !/^https?:\/\//.test(baseUrl) ||
-                      baseUrl === cfg.data?.baseUrl
-                    }
-                  >
-                    <Save className="size-3.5" />
-                    {saveBaseUrl.isPending ? 'Saving…' : 'Save base URL'}
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
+              </div>
+              <Button
+                type="submit"
+                className="self-end"
+                disabled={
+                  saveBaseUrl.isPending ||
+                  !/^https?:\/\//.test(baseUrl) ||
+                  baseUrl === cfg.data?.baseUrl
+                }
+              >
+                <Save className="size-4" />
+                {saveBaseUrl.isPending ? 'Saving…' : 'Save base URL'}
+              </Button>
+            </form>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Admin key</CardTitle>
-              <CardDescription>
-                Used by the dashboard to call gateway admin endpoints. Encrypted at rest.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {cfg.data?.hasAdminKey ? (
-                <div className="mb-4 flex items-start gap-2 text-sm text-[var(--fg-1)]">
-                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
-                  <span>
-                    An admin key is set
+          <Card className="p-6">
+            <CardHead
+              icon={KeyRound}
+              title="Admin key"
+              sub="Used by the dashboard to call gateway admin endpoints. Encrypted at rest."
+              right={
+                cfg.data?.hasAdminKey ? (
+                  <span className="flex shrink-0 items-center gap-2">
                     {cfg.data.adminKeyHint && (
-                      <>
-                        {' '}— fingerprint{' '}
-                        <span className="font-mono text-xs text-[var(--fg-2)]">
-                          {cfg.data.adminKeyHint}
-                        </span>
-                      </>
+                      <span
+                        className="hidden font-mono text-xs text-[var(--fg-2)] sm:inline"
+                        title="Fingerprint"
+                      >
+                        {cfg.data.adminKeyHint}
+                      </span>
                     )}
-                    . Rotate below to replace it.
+                    <StatusPill tone="ok">Set</StatusPill>
                   </span>
-                </div>
-              ) : (
-                <Callout tone="warn" className="mb-4">
-                  No admin key set.
-                </Callout>
-              )}
-              <form
-                className="grid max-w-lg gap-4"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  rotateKey.mutate({ adminKey })
-                }}
-              >
+                ) : cfg.data ? (
+                  <StatusPill tone="warn">Not set</StatusPill>
+                ) : undefined
+              }
+            />
+            {cfg.data && !cfg.data.hasAdminKey && (
+              <Callout tone="warn" className="mt-5">
+                No admin key set.
+              </Callout>
+            )}
+            <form
+              className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-start"
+              onSubmit={(e) => {
+                e.preventDefault()
+                rotateKey.mutate({ adminKey })
+              }}
+            >
+              <div className="min-w-0 flex-1">
                 <Field
                   label={cfg.data?.hasAdminKey ? 'New admin key' : 'Admin key'}
                   hint="Hex string from your gateway's ADMIN_KEY env. Never leaves the worker — sealed before writing to KV."
@@ -171,37 +162,30 @@ export function SettingsPage() {
                     placeholder="••••••••••••••••"
                   />
                 </Field>
-                <div>
-                  <Button
-                    type="submit"
-                    disabled={rotateKey.isPending || adminKey.length < 32}
-                  >
-                    <Save className="size-3.5" />
-                    {rotateKey.isPending
-                      ? 'Saving…'
-                      : cfg.data?.hasAdminKey
-                        ? 'Rotate admin key'
-                        : 'Set admin key'}
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
+              </div>
+              <Button
+                type="submit"
+                className="self-end sm:mt-[26px] sm:self-start"
+                disabled={rotateKey.isPending || adminKey.length < 32}
+              >
+                <Save className="size-4" />
+                {rotateKey.isPending
+                  ? 'Saving…'
+                  : cfg.data?.hasAdminKey
+                    ? 'Rotate admin key'
+                    : 'Set admin key'}
+              </Button>
+            </form>
           </Card>
         </SettingsSection>
 
-        <SettingsSection
-          title="Defaults"
-          description="What every operator sees first when they open a store-scoped screen."
-        >
+        <SettingsSection title="Defaults" description="Store shown first.">
           <DefaultMerchantCard
             currentId={cfg.data?.defaultMerchantId ?? null}
           />
         </SettingsSection>
 
-        <SettingsSection
-          title="Security"
-          description="Your password, authenticator, recovery codes and signed-in devices."
-        >
+        <SettingsSection title="Security" description="Sign-in, 2FA and devices.">
           <SecurityPanel />
         </SettingsSection>
       </div>
@@ -209,7 +193,7 @@ export function SettingsPage() {
   )
 }
 
-/** One settings group: label column on the left (wide), controls on the right. */
+/** One settings group: short label column on the left, controls on the right. */
 function SettingsSection({
   title,
   description,
@@ -220,17 +204,43 @@ function SettingsSection({
   children: React.ReactNode
 }) {
   return (
-    <section className="grid grid-cols-1 gap-4 border-t border-border pt-6 first:border-t-0 first:pt-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-10">
-      <div className="min-w-0">
-        <h2 className="text-base font-semibold tracking-[-0.005em]">{title}</h2>
+    <section className="grid grid-cols-1 gap-5 border-t border-border pt-8 first:border-t-0 first:pt-0 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-10">
+      <div className="min-w-0 lg:sticky lg:top-6 lg:self-start">
+        <h2 className="text-lg font-semibold tracking-[-0.01em]">{title}</h2>
         {description && (
-          <p className="mt-1 max-w-md text-sm text-pretty text-[var(--fg-2)]">
-            {description}
-          </p>
+          <p className="mt-1 text-sm text-pretty text-[var(--fg-2)]">{description}</p>
         )}
       </div>
-      <div className="min-w-0 space-y-4">{children}</div>
+      <div className="min-w-0 space-y-5">{children}</div>
     </section>
+  )
+}
+
+/** Card title row: icon tile, title, one line, optional right slot. */
+function CardHead({
+  icon: Icon,
+  title,
+  sub,
+  right,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  title: React.ReactNode
+  sub?: React.ReactNode
+  right?: React.ReactNode
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-[var(--bg-2)] text-[var(--fg-1)] ring-1 ring-border">
+          <Icon className="size-4" />
+        </span>
+        <div className="min-w-0">
+          <h3 className="text-lg font-semibold tracking-[-0.01em]">{title}</h3>
+          {sub && <p className="mt-0.5 text-sm text-pretty text-[var(--fg-2)]">{sub}</p>}
+        </div>
+      </div>
+      {right}
+    </div>
   )
 }
 
@@ -265,24 +275,28 @@ function DefaultMerchantCard({ currentId }: { currentId: string | null }) {
   const dirty = (currentId ?? '__none__') !== value
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Default store</CardTitle>
-        <CardDescription>
-          The store pre-selected on Invoices, Payouts and every store-scoped
-          screen. Each operator can still override for the current session via the
-          switcher in the top bar.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form
-          className="grid max-w-lg gap-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            save.mutate(value === '__none__' ? null : value)
-          }}
-        >
-          <Field label="Default store">
+    <Card className="p-6">
+      <CardHead
+        icon={Store}
+        title="Default store"
+        sub="Pre-selected on store-scoped screens. The top-bar switcher still overrides it per session."
+      />
+      <form
+        className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end"
+        onSubmit={(e) => {
+          e.preventDefault()
+          save.mutate(value === '__none__' ? null : value)
+        }}
+      >
+        <div className="min-w-0 flex-1">
+          <Field
+            label="Default store"
+            hint={
+              usable.length === 0
+                ? 'No locally-tracked stores yet. Create or import one to pick a default.'
+                : undefined
+            }
+          >
             <Select value={value} onValueChange={setValue}>
               <SelectTrigger>
                 <SelectValue placeholder="No default — show switcher" />
@@ -293,7 +307,7 @@ function DefaultMerchantCard({ currentId }: { currentId: string | null }) {
                   <SelectItem key={m.id} value={m.id}>
                     <span className="truncate">{m.name}</span>
                     {m.apiKeyFingerprint && (
-                      <span className="ml-auto font-mono text-2xs text-[var(--fg-3)]">
+                      <span className="ml-auto font-mono text-xs text-[var(--fg-3)]">
                         …{m.apiKeyFingerprint}
                       </span>
                     )}
@@ -302,19 +316,16 @@ function DefaultMerchantCard({ currentId }: { currentId: string | null }) {
               </SelectContent>
             </Select>
           </Field>
-          {usable.length === 0 && (
-            <p className="text-xs text-[var(--fg-2)]">
-              No locally-tracked stores yet. Create or import one to pick a default.
-            </p>
-          )}
-          <div>
-            <Button type="submit" disabled={save.isPending || !dirty}>
-              <Save className="size-3.5" />
-              {save.isPending ? 'Saving…' : 'Save default'}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
+        </div>
+        <Button
+          type="submit"
+          className={usable.length === 0 ? 'self-end sm:mb-[26px]' : 'self-end'}
+          disabled={save.isPending || !dirty}
+        >
+          <Save className="size-4" />
+          {save.isPending ? 'Saving…' : 'Save default'}
+        </Button>
+      </form>
     </Card>
   )
 }

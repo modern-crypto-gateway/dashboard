@@ -8,17 +8,18 @@ import {
   EyeOff,
   KeyRound,
   LogOut,
+  Monitor,
   MonitorSmartphone,
   RefreshCw,
   ShieldCheck,
   Smartphone,
-  Trash2,
 } from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
 import { fmtLocal } from '@/lib/format'
 
 import { CopyButton } from '@/components/CopyButton'
+import { TableCard, TableToolbar } from '@/components/DataTable'
 import { Field } from '@/components/Field'
 import { OtpInput } from '@/components/OtpInput'
 import {
@@ -28,15 +29,9 @@ import {
 } from '@/components/PasswordField'
 import { QrCode } from '@/components/QrCode'
 import { EmptyState } from '@/components/States'
-import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -47,6 +42,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableWrap, TBody, Td, Th, THead, Tr } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 
 interface SessionRow {
@@ -64,11 +60,41 @@ const sessionsKey = ['security', 'sessions'] as const
 
 export function SecurityPanel() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <ChangePasswordCard />
-      <RotateTotpCard />
-      <RecoveryCodesCard />
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        <RotateTotpCard />
+        <RecoveryCodesCard />
+      </div>
       <SessionsCard />
+    </div>
+  )
+}
+
+/** Card title row: icon tile, title, one line, optional right slot. */
+function CardHead({
+  icon: Icon,
+  title,
+  sub,
+  right,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  title: React.ReactNode
+  sub?: React.ReactNode
+  right?: React.ReactNode
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-[var(--bg-2)] text-[var(--fg-1)] ring-1 ring-border">
+          <Icon className="size-4" />
+        </span>
+        <div className="min-w-0">
+          <h3 className="text-lg font-semibold tracking-[-0.01em]">{title}</h3>
+          {sub && <p className="mt-0.5 text-sm text-pretty text-[var(--fg-2)]">{sub}</p>}
+        </div>
+      </div>
+      {right}
     </div>
   )
 }
@@ -105,28 +131,29 @@ function ChangePasswordCard() {
     totp.length === 6
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Change password</CardTitle>
-        <CardDescription>
-          Requires your current password and a current authenticator code.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form
-          className="grid max-w-lg gap-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            change.mutate()
-          }}
-        >
-          <Field label="Current password">
-            <PasswordField
-              value={oldPassword}
-              onChange={(e) => setOldPw(e.target.value)}
-              autoComplete="current-password"
-            />
-          </Field>
+    <Card className="p-6">
+      <CardHead
+        icon={KeyRound}
+        title="Change password"
+        sub="Requires your current password and a current authenticator code."
+      />
+      <form
+        className="mt-6 space-y-5"
+        onSubmit={(e) => {
+          e.preventDefault()
+          change.mutate()
+        }}
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2 sm:max-w-[calc(50%-0.5rem)]">
+            <Field label="Current password">
+              <PasswordField
+                value={oldPassword}
+                onChange={(e) => setOldPw(e.target.value)}
+                autoComplete="current-password"
+              />
+            </Field>
+          </div>
           <Field label="New password">
             <PasswordField
               value={newPassword}
@@ -150,20 +177,17 @@ function ChangePasswordCard() {
               autoComplete="new-password"
             />
           </Field>
+        </div>
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <Field label="Authenticator code">
             <OtpInput value={totp} onChange={setTotp} autoFocus={false} />
           </Field>
-          <div>
-            <Button
-              type="submit"
-              disabled={change.isPending || !canSubmit}
-            >
-              <KeyRound className="size-3.5" />
-              {change.isPending ? 'Saving…' : 'Change password'}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
+          <Button type="submit" disabled={change.isPending || !canSubmit}>
+            <KeyRound className="size-4" />
+            {change.isPending ? 'Saving…' : 'Change password'}
+          </Button>
+        </div>
+      </form>
     </Card>
   )
 }
@@ -173,24 +197,22 @@ function ChangePasswordCard() {
 function RotateTotpCard() {
   const [open, setOpen] = React.useState(false)
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Authenticator app</CardTitle>
-        <CardDescription>
-          Scan a new QR with your authenticator. The old one stops working as
-          soon as you confirm the new code.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <Card className="flex flex-col p-6">
+      <CardHead
+        icon={Smartphone}
+        title="Authenticator app"
+        sub="Scan a new QR with your authenticator. The old one stops working as soon as you confirm the new code."
+      />
+      <div className="mt-5 flex flex-1 items-end justify-end">
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button variant="outline">
-              <Smartphone className="size-3.5" /> Rotate 2FA
+            <Button variant="outline" size="sm">
+              <Smartphone className="size-4" /> Rotate 2FA
             </Button>
           </DialogTrigger>
           <RotateTotpDialogContent onDone={() => setOpen(false)} />
         </Dialog>
-      </CardContent>
+      </div>
     </Card>
   )
 }
@@ -242,9 +264,11 @@ function RotateTotpDialogContent({ onDone }: { onDone: () => void }) {
         </DialogDescription>
       </DialogHeader>
 
+      <StepDots step={stage === 'verify' ? 0 : 1} />
+
       {stage === 'verify' && (
         <form
-          className="space-y-4"
+          className="space-y-5"
           onSubmit={(e) => {
             e.preventDefault()
             begin.mutate()
@@ -271,25 +295,25 @@ function RotateTotpDialogContent({ onDone }: { onDone: () => void }) {
 
       {stage === 'scan' && newSecret && (
         <form
-          className="space-y-4"
+          className="space-y-5"
           onSubmit={(e) => {
             e.preventDefault()
             commit.mutate()
           }}
         >
-          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+          <div className="flex flex-col items-center gap-5 rounded-xl border border-border bg-[var(--bg-2)] p-4 sm:flex-row sm:items-start">
             <QrCode value={newSecret.otpauthUrl} />
-            <div className="w-full min-w-0 flex-1 space-y-3">
+            <div className="w-full min-w-0 flex-1 space-y-4">
               <div>
-                <div className="eyebrow mb-1.5">Scan with your app</div>
-                <div className="text-xs text-[var(--fg-2)]">
+                <div className="text-sm font-medium">Scan with your app</div>
+                <div className="mt-0.5 text-xs text-[var(--fg-2)]">
                   Add the dashboard as a new entry. Keep the old one until you
                   finish this dialog.
                 </div>
               </div>
               <div>
-                <div className="eyebrow mb-1.5">Or enter the setup key</div>
-                <div className="flex items-center gap-1.5 rounded-md border border-border bg-secondary px-2.5 py-1.5">
+                <div className="text-sm font-medium">Or enter the setup key</div>
+                <div className="mt-1.5 flex items-center gap-1.5 rounded-[10px] border border-border bg-card py-1.5 pr-1 pl-3">
                   <span className="min-w-0 break-all font-mono text-xs">
                     {newSecret.secret.match(/.{1,4}/g)?.join(' ')}
                   </span>
@@ -301,16 +325,18 @@ function RotateTotpDialogContent({ onDone }: { onDone: () => void }) {
               </div>
             </div>
           </div>
-          <Field label="New authenticator code">
-            <OtpInput value={newCode} onChange={setNewCode} autoFocus />
-          </Field>
-          <Field label="Current authenticator code (old)">
-            <OtpInput
-              value={currentCode}
-              onChange={setCurrentCode}
-              autoFocus={false}
-            />
-          </Field>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="New authenticator code">
+              <OtpInput value={newCode} onChange={setNewCode} autoFocus />
+            </Field>
+            <Field label="Current authenticator code (old)">
+              <OtpInput
+                value={currentCode}
+                onChange={setCurrentCode}
+                autoFocus={false}
+              />
+            </Field>
+          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setStage('verify')}>
               Back
@@ -332,29 +358,44 @@ function RotateTotpDialogContent({ onDone }: { onDone: () => void }) {
   )
 }
 
+/** Two-step progress for the rotate dialog. */
+function StepDots({ step }: { step: 0 | 1 }) {
+  return (
+    <div className="flex items-center gap-2" aria-label={`Step ${step + 1} of 2`}>
+      {[0, 1].map((i) => (
+        <span
+          key={i}
+          className={cn(
+            'h-1 flex-1 rounded-full transition-colors',
+            i <= step ? 'bg-foreground' : 'bg-[var(--chart-muted)]',
+          )}
+        />
+      ))}
+    </div>
+  )
+}
+
 /* ── recovery codes ────────────────────────────────────────── */
 
 function RecoveryCodesCard() {
   const [open, setOpen] = React.useState(false)
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Recovery codes</CardTitle>
-        <CardDescription>
-          Mint a fresh set of 10 single-use codes. The old set becomes invalid
-          immediately.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <Card className="flex flex-col p-6">
+      <CardHead
+        icon={ShieldCheck}
+        title="Recovery codes"
+        sub="Mint a fresh set of 10 single-use codes. The old set becomes invalid immediately."
+      />
+      <div className="mt-5 flex flex-1 items-end justify-end">
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button variant="outline">
-              <ShieldCheck className="size-3.5" /> Regenerate codes
+            <Button variant="outline" size="sm">
+              <ShieldCheck className="size-4" /> Regenerate codes
             </Button>
           </DialogTrigger>
           <RegenerateRecoveryDialog onDone={() => setOpen(false)} />
         </Dialog>
-      </CardContent>
+      </div>
     </Card>
   )
 }
@@ -406,7 +447,7 @@ function RegenerateRecoveryDialog({ onDone }: { onDone: () => void }) {
 
       {!codes ? (
         <form
-          className="space-y-4"
+          className="space-y-5"
           onSubmit={(e) => {
             e.preventDefault()
             regen.mutate()
@@ -436,42 +477,47 @@ function RegenerateRecoveryDialog({ onDone }: { onDone: () => void }) {
           </DialogFooter>
         </form>
       ) : (
-        <div className="space-y-4">
-          <div className="rounded-lg border border-border bg-card p-4">
-            <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="space-y-5">
+          <div className="overflow-hidden rounded-xl border border-border">
+            <div className="flex items-center justify-between gap-2 border-b border-border bg-[var(--bg-2)] px-4 py-2.5">
               <div className="text-sm font-semibold">New recovery codes</div>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
                 onClick={() => setRevealed((r) => !r)}
               >
                 {revealed ? (
                   <>
-                    <EyeOff className="size-3" /> Hide
+                    <EyeOff className="size-4" /> Hide
                   </>
                 ) : (
                   <>
-                    <Eye className="size-3" /> Reveal
+                    <Eye className="size-4" /> Reveal
                   </>
                 )}
               </Button>
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <ol className="grid grid-cols-2 gap-2 p-4">
               {codes.map((c, i) => (
-                <div
+                <li
                   key={i}
-                  className="rounded-md border border-border bg-secondary px-2.5 py-2 font-mono text-sm tracking-wider"
+                  className="flex items-center gap-2 rounded-[10px] border border-border bg-card px-3 py-2"
                 >
-                  {revealed ? c : '•••• ••••'}
-                </div>
+                  <span className="figure w-4 text-right text-xs text-[var(--fg-3)]">
+                    {i + 1}
+                  </span>
+                  <span className="font-mono text-sm tracking-wider">
+                    {revealed ? c : '•••• ••••'}
+                  </span>
+                </li>
               ))}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
+            </ol>
+            <div className="flex flex-wrap gap-2 border-t border-border px-4 py-3">
               <Button variant="outline" size="sm" onClick={copyAll}>
-                <Copy className="size-3" /> Copy all
+                <Copy className="size-4" /> Copy all
               </Button>
               <Button variant="outline" size="sm" onClick={download}>
-                <ArrowDown className="size-3" /> Download .txt
+                <ArrowDown className="size-4" /> Download .txt
               </Button>
             </div>
           </div>
@@ -504,24 +550,24 @@ function SessionsCard() {
     onError: (e: ApiError) => toast.error(e.message || 'Could not revoke'),
   })
 
+  const sessions = list.data?.sessions ?? []
+
   return (
-    <Card>
-      <CardHeader className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <CardTitle>Active sessions</CardTitle>
-          <CardDescription>
-            Devices signed in as you. Revoking ends a session immediately.
-          </CardDescription>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+    <TableCard
+      toolbar={
+        <TableToolbar
+          title="Active sessions"
+          count={list.isLoading ? undefined : sessions.length}
+        >
           <Button
-            variant="outline"
-            size="sm"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Refresh sessions"
+            title="Refresh"
             onClick={() => list.refetch()}
             disabled={list.isFetching}
           >
-            <RefreshCw className={'size-3.5' + (list.isFetching ? ' animate-spin' : '')} />
-            Refresh
+            <RefreshCw className={cn('size-4', list.isFetching && 'animate-spin')} />
           </Button>
           <Button
             variant="outline"
@@ -529,35 +575,50 @@ function SessionsCard() {
             onClick={() => revokeAll.mutate()}
             disabled={revokeAll.isPending || (list.data?.sessions.length ?? 0) <= 1}
           >
-            <LogOut className="size-3.5" />
+            <LogOut className="size-4" />
             {revokeAll.isPending ? 'Revoking…' : 'Revoke all others'}
           </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="pt-4">
-        {list.isLoading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 2 }).map((_, i) => (
-              <div
-                key={i}
-                className="space-y-1.5 rounded-md border border-border px-3 py-2.5"
-              >
-                <Skeleton className="h-3.5 w-56 max-w-full" />
-                <Skeleton className="h-3 w-40 max-w-full" />
+        </TableToolbar>
+      }
+    >
+      {list.isLoading ? (
+        <div className="divide-y divide-border">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 px-6 py-3.5">
+              <Skeleton className="size-8 rounded-full" />
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-3.5 w-48 max-w-full" />
+                <Skeleton className="h-3 w-32 max-w-full" />
               </div>
-            ))}
-          </div>
-        ) : (list.data?.sessions.length ?? 0) === 0 ? (
-          <EmptyState compact icon={MonitorSmartphone} title="No active sessions." />
-        ) : (
-          <div className="space-y-2">
-            {list.data!.sessions.map((s) => (
-              <SessionRowView key={s.hash} row={s} />
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              <Skeleton className="h-3.5 w-20" />
+            </div>
+          ))}
+        </div>
+      ) : sessions.length === 0 ? (
+        <EmptyState compact icon={MonitorSmartphone} title="No active sessions" />
+      ) : (
+        <TableWrap>
+          <Table className="min-w-[680px]">
+            <THead>
+              <tr>
+                <Th>Device</Th>
+                <Th>IP</Th>
+                <Th align="right">Idle</Th>
+                <Th align="right">Expires</Th>
+                <Th className="w-24">
+                  <span className="sr-only">Actions</span>
+                </Th>
+              </tr>
+            </THead>
+            <TBody>
+              {sessions.map((s) => (
+                <SessionRowView key={s.hash} row={s} />
+              ))}
+            </TBody>
+          </Table>
+        </TableWrap>
+      )}
+    </TableCard>
   )
 }
 
@@ -577,42 +638,97 @@ function SessionRowView({ row }: { row: SessionRow }) {
   })
 
   const ua = row.userAgent || ''
-  const label = ua
-    ? ua.slice(0, 80) + (ua.length > 80 ? '…' : '')
-    : 'Unknown client'
+  const device = describeUa(ua)
+  const DeviceIcon = device.mobile ? Smartphone : Monitor
 
   return (
-    <div
-      className={cn(
-        'flex flex-wrap items-center gap-3 rounded-md border bg-card px-3 py-2.5',
-        row.current ? 'border-[var(--accent-border)]' : 'border-border',
-      )}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          {row.current && <Badge variant="accent">this device</Badge>}
-          <span className="min-w-0 break-words text-sm font-medium">{label}</span>
+    <Tr className={cn(row.current && 'bg-[var(--bg-2)]')}>
+      <Td>
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            aria-hidden
+            className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--bg-2)] text-[var(--fg-1)] ring-1 ring-border"
+          >
+            <DeviceIcon className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="truncate font-medium">{device.label}</span>
+              {row.current && (
+                <StatusPill tone="ok" size="sm">
+                  This device
+                </StatusPill>
+              )}
+            </div>
+            <div
+              className="max-w-[320px] truncate text-xs text-[var(--fg-3)]"
+              title={ua || undefined}
+            >
+              {ua || 'Unknown client'}
+            </div>
+          </div>
         </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[var(--fg-2)]">
-          {row.ip && <span className="font-mono">{row.ip}</span>}
-          <span>idle {humanSecs(row.idleSeconds)}</span>
-          <span>·</span>
-          <span>expires {fmtLocal(row.expiresAt)}</span>
-        </div>
-      </div>
-      {!row.current && (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => revoke.mutate()}
-          disabled={revoke.isPending}
-        >
-          <Trash2 className="size-3.5 text-destructive" />
-          Revoke
-        </Button>
-      )}
-    </div>
+      </Td>
+      <Td>
+        {row.ip ? (
+          <span className="font-mono text-xs text-[var(--fg-1)]">{row.ip}</span>
+        ) : (
+          <span className="text-[var(--fg-3)]">—</span>
+        )}
+      </Td>
+      <Td align="right" className="text-sm text-[var(--fg-2)]">
+        {humanSecs(row.idleSeconds)}
+      </Td>
+      <Td align="right" className="text-sm whitespace-nowrap text-[var(--fg-2)]">
+        {fmtLocal(row.expiresAt)}
+      </Td>
+      <Td className="text-right">
+        {!row.current && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-destructive hover:bg-[var(--danger-bg)] hover:text-destructive"
+            onClick={() => revoke.mutate()}
+            disabled={revoke.isPending}
+          >
+            <LogOut className="size-4" />
+            Revoke
+          </Button>
+        )}
+      </Td>
+    </Tr>
   )
+}
+
+/** "Chrome on macOS" from a user-agent string; falls back to a short label. */
+function describeUa(ua: string): { label: string; mobile: boolean } {
+  if (!ua) return { label: 'Unknown client', mobile: false }
+  const mobile = /Mobi|Android|iPhone|iPad/i.test(ua)
+  const browser = /Edg\//.test(ua)
+    ? 'Edge'
+    : /OPR\//.test(ua)
+      ? 'Opera'
+      : /Firefox\//.test(ua)
+        ? 'Firefox'
+        : /Chrome\//.test(ua)
+          ? 'Chrome'
+          : /Safari\//.test(ua)
+            ? 'Safari'
+            : null
+  const os = /iPhone|iPad|iOS/.test(ua)
+    ? 'iOS'
+    : /Android/.test(ua)
+      ? 'Android'
+      : /Windows/.test(ua)
+        ? 'Windows'
+        : /Mac OS X|Macintosh/.test(ua)
+          ? 'macOS'
+          : /Linux/.test(ua)
+            ? 'Linux'
+            : null
+  if (browser && os) return { label: `${browser} on ${os}`, mobile }
+  if (browser || os) return { label: (browser ?? os)!, mobile }
+  return { label: ua.slice(0, 40) + (ua.length > 40 ? '…' : ''), mobile }
 }
 
 function humanSecs(n: number): string {

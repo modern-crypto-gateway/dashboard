@@ -1,18 +1,30 @@
 import * as React from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Search, Shield } from '@/components/icons'
+import {
+  Calendar,
+  CheckCircle2,
+  Database,
+  Hash,
+  Layers,
+  Plus,
+  Search,
+  WalletIcon,
+} from '@/components/icons'
 
 import { api, ApiError } from '@/lib/api'
+import { chainInfo } from '@/lib/chains'
 import { fmtLocalDate } from '@/lib/format'
 import type { AuditResult, ChainInventoryEntry } from '@/lib/types'
 
 import { Addr } from '@/components/Addr'
+import { ChainIcon } from '@/components/CryptoIcon'
 import { Field } from '@/components/Field'
 import { PageHeader } from '@/components/PageHeader'
-import { Stat } from '@/components/States'
+import { EmptyState } from '@/components/States'
+import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -21,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export function AuditAddressPage() {
   const [chainId, setChainId] = React.useState('')
@@ -71,30 +84,24 @@ export function AuditAddressPage() {
   })
 
   return (
-    <div className="fade-in space-y-6">
-      <PageHeader
-        eyebrow="Infrastructure"
-        title="Audit address"
-        description="Diff an address's on-chain history against the gateway's recorded transactions. Missing transfers land as orphans (or credit an open invoice)."
-      />
+    <div className="fade-in space-y-8">
+      <PageHeader title="Audit address" description="Recover missed on-chain transfers" />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Run audit</CardTitle>
-          <CardDescription>
-            Scans every registered token on the chosen chain for the address.
-            Idempotent — already-known txs are silently skipped.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+        <Card className="p-6">
+          <CardHead
+            icon={Search}
+            title="Run audit"
+            sub="Missing transfers land as orphans or credit an open invoice."
+          />
           <form
-            className="grid max-w-xl gap-4"
+            className="mt-6 space-y-5"
             onSubmit={(e) => {
               e.preventDefault()
               audit.mutate()
             }}
           >
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_140px]">
               <Field label="Chain">
                 <Select
                   value={chainId}
@@ -116,8 +123,9 @@ export function AuditAddressPage() {
                     {chainOptions.map((c) => (
                       <SelectItem key={c.chainId} value={String(c.chainId)}>
                         <span className="flex items-center gap-2">
+                          <ChainIcon chainId={c.chainId} size={16} />
                           <span>{c.displayName}</span>
-                          <span className="font-mono text-2xs text-[var(--fg-3)]">
+                          <span className="font-mono text-xs text-[var(--fg-3)]">
                             {c.chainId}
                           </span>
                         </span>
@@ -126,12 +134,12 @@ export function AuditAddressPage() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Lookback (days)" hint="Adapter-clamped; default 30.">
+              <Field label="Lookback (days)" hint="Adapter-clamped.">
                 <Input
                   value={sinceDays}
                   onChange={(e) => setSinceDays(e.target.value)}
                   inputMode="numeric"
-                  className="font-mono"
+                  className="figure"
                 />
               </Field>
             </div>
@@ -144,82 +152,169 @@ export function AuditAddressPage() {
                 required
               />
             </Field>
-            <div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-[var(--fg-2)]">
+                Idempotent — known txs are skipped.
+              </span>
               <Button
                 type="submit"
                 disabled={
                   audit.isPending || !/^\d+$/.test(chainId) || address.trim().length < 8
                 }
               >
-                <Search className="size-3.5" />{' '}
+                <Search className="size-4" />
                 {audit.isPending ? 'Auditing…' : 'Run audit'}
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
-
-      {audit.data && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Result</CardTitle>
-            <CardDescription className="break-all">
-              Chain {audit.data.audit.chainId} · {' '}
-              <span className="font-mono text-xs">{audit.data.audit.address}</span>
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-4">
-              <AuditStat label="Scanned" value={audit.data.audit.scanned} />
-              <AuditStat
-                label="Inserted"
-                value={audit.data.audit.inserted}
-                tone="success"
-              />
-              <AuditStat
-                label="Already present"
-                value={audit.data.audit.alreadyPresent}
-              />
-              <AuditStat
-                label="Since"
-                value={fmtLocalDate(audit.data.audit.sinceMs)}
-              />
-            </div>
-            {audit.data.audit.insertedTxIds.length > 0 && (
-              <div className="mt-5">
-                <div className="eyebrow mb-2">Newly inserted</div>
-                <div className="space-y-1.5">
-                  {audit.data.audit.insertedTxIds.map((id) => (
-                    <div
-                      key={id}
-                      className="flex items-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-2 text-xs"
-                    >
-                      <Shield className="size-3.5 shrink-0 text-success" />
-                      <Addr value={id} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
         </Card>
-      )}
+
+        {audit.isPending ? (
+          <ResultSkeleton />
+        ) : audit.data ? (
+          <ResultCard key={JSON.stringify(audit.data.audit)} result={audit.data.audit} />
+        ) : (
+          <Card>
+            <EmptyState
+              icon={Database}
+              title="No audit yet"
+              description="Results show up here."
+            />
+          </Card>
+        )}
+      </div>
     </div>
   )
 }
 
-function AuditStat({
-  label,
-  value,
-  tone,
+function CardHead({
+  icon: Icon,
+  title,
+  sub,
+  right,
 }: {
-  label: string
-  value: React.ReactNode
-  tone?: 'success'
+  icon: React.ComponentType<{ className?: string }>
+  title: React.ReactNode
+  sub?: React.ReactNode
+  right?: React.ReactNode
 }) {
   return (
-    <div className="bg-card px-4 py-3">
-      <Stat label={label} value={value} tone={tone} />
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-[var(--bg-2)] text-[var(--fg-1)] ring-1 ring-border">
+          <Icon className="size-4" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold tracking-[-0.01em]">{title}</h2>
+          {sub && <p className="mt-0.5 text-sm text-[var(--fg-2)]">{sub}</p>}
+        </div>
+      </div>
+      {right}
     </div>
+  )
+}
+
+function ResultCard({ result }: { result: AuditResult }) {
+  const info = chainInfo(result.chainId)
+  return (
+    <Card className="fade-in p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <ChainIcon chainId={result.chainId} size={32} />
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold tracking-[-0.01em]">Result</h2>
+            <div className="text-sm text-[var(--fg-2)]">{info.name}</div>
+          </div>
+        </div>
+        {result.inserted > 0 ? (
+          <StatusPill tone="info" icon={Plus}>
+            {result.inserted} recovered
+          </StatusPill>
+        ) : (
+          <StatusPill tone="ok">In sync</StatusPill>
+        )}
+      </div>
+
+      <div className="mt-6 grid grid-cols-3 divide-x divide-border rounded-xl border border-border">
+        <MiniStat label="Scanned" value={result.scanned} />
+        <MiniStat label="Inserted" value={result.inserted} />
+        <MiniStat label="Present" value={result.alreadyPresent} />
+      </div>
+
+      <dl className="mt-5 divide-y divide-border rounded-xl border border-border">
+        <Fact icon={Layers} label="Chain">
+          <span className="font-mono text-xs">{result.chainId}</span>
+        </Fact>
+        <Fact icon={WalletIcon} label="Address">
+          <Addr value={result.address} chainId={result.chainId} className="justify-end" />
+        </Fact>
+        <Fact icon={Calendar} label="Since">
+          {fmtLocalDate(result.sinceMs)}
+        </Fact>
+      </dl>
+
+      {result.insertedTxIds.length > 0 && (
+        <div className="mt-6 space-y-3">
+          <h3 className="flex items-center gap-2 text-sm font-semibold">
+            <CheckCircle2 className="size-4 text-[var(--st-ok)]" />
+            Newly inserted
+          </h3>
+          <ul className="divide-y divide-border rounded-xl border border-border">
+            {result.insertedTxIds.map((id) => (
+              <li key={id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                <Hash className="size-4 shrink-0 text-[var(--fg-3)]" />
+                <Addr value={id} truncated={false} className="flex-1" />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="px-4 py-3">
+      <div className="text-xs text-[var(--fg-2)]">{label}</div>
+      <div className="figure mt-0.5 text-lg font-semibold">{value}</div>
+    </div>
+  )
+}
+
+/** One row of a details list: icon · label on the left, value on the right. */
+function Fact({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex min-h-11 items-center gap-3 px-4 py-2.5 text-sm">
+      <dt className="flex w-32 shrink-0 items-center gap-2 text-[var(--fg-2)]">
+        <Icon className="size-4 shrink-0" />
+        {label}
+      </dt>
+      <dd className="min-w-0 flex-1 text-right">{children}</dd>
+    </div>
+  )
+}
+
+function ResultSkeleton() {
+  return (
+    <Card className="p-6">
+      <div className="flex items-center gap-3">
+        <Skeleton className="size-8 rounded-full" />
+        <div className="space-y-1.5">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-3 w-16" />
+        </div>
+      </div>
+      <Skeleton className="mt-6 h-16 w-full rounded-xl" />
+      <Skeleton className="mt-5 h-32 w-full rounded-xl" />
+    </Card>
   )
 }
