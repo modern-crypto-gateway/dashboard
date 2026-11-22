@@ -32,9 +32,32 @@ import type {
 
 import { Addr } from '@/components/Addr'
 import { CopyButton } from '@/components/CopyButton'
+import { PageHeader } from '@/components/PageHeader'
+import {
+  Callout,
+  EmptyState,
+  ErrorState,
+  ListSkeleton,
+} from '@/components/States'
 import { Badge, type BadgeProps } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Table,
+  TableWrap,
+  TBody,
+  Td,
+  Th,
+  THead,
+  Tr,
+} from '@/components/ui/table'
 import {
   Dialog,
   DialogContent,
@@ -245,13 +268,11 @@ export function ExchangePage() {
 
   return (
     <div className="fade-in space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow">Money</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Exchange
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-[var(--fg-2)]">
+      <PageHeader
+        eyebrow="Treasury"
+        title="Exchange"
+        description={
+          <>
             Funds the treasury sends to Kraken are sold automatically to USD
             and, when enabled, USD above a threshold is withdrawn to the bank
             account saved in the Kraken UI. Orders are post-only limit sells
@@ -260,75 +281,85 @@ export function ExchangePage() {
             <span className="font-mono">dry-run</span> mode every order is
             validated with Kraken but never placed and withdrawals are
             journaled as validated only.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {status?.snapshotAt != null && (
-            <span
-              className="text-xs text-muted-foreground"
-              title="Balances, open orders and withdrawal keys are a snapshot written by every run. Refresh reads Kraken live (one serialized read)."
-            >
-              Kraken data as of {fmtLocal(status.snapshotAt)}
-              {status.lockedUntil != null
-                ? ` · locked out until ${fmtLocal(status.lockedUntil)}`
-                : ''}
-            </span>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={async () => {
-              try {
-                const live = await api<ExchangeStatus>(`${BASE}?live=1`)
-                qc.setQueryData(STATUS_Q.queryKey, live)
-                if (live.error) toast.warning(live.error)
-              } catch (e) {
-                toast.error(e instanceof ApiError ? e.message : String(e))
-              }
-              actionsQ.refetch()
-            }}
-            disabled={statusQ.isFetching}
-          >
-            <RefreshCw
-              className={
-                'size-3.5' + (statusQ.isFetching ? ' animate-spin' : '')
-              }
-            />
-            Refresh
-          </Button>
-          <span
-            title={
-              canDryRun
-                ? 'Validates every order with Kraken without placing it'
-                : runDisabledTitle
-            }
-          >
+          </>
+        }
+        actions={
+          <>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => run.mutate(true)}
-              disabled={!canDryRun}
+              onClick={async () => {
+                try {
+                  const live = await api<ExchangeStatus>(`${BASE}?live=1`)
+                  qc.setQueryData(STATUS_Q.queryKey, live)
+                  if (live.error) toast.warning(live.error)
+                } catch (e) {
+                  toast.error(e instanceof ApiError ? e.message : String(e))
+                }
+                actionsQ.refetch()
+              }}
+              disabled={statusQ.isFetching}
             >
-              {run.isPending && run.variables === true ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <FlaskConical className="size-3.5" />
-              )}
-              Dry run now
+              <RefreshCw
+                className={
+                  'size-3.5' + (statusQ.isFetching ? ' animate-spin' : '')
+                }
+              />
+              Refresh
             </Button>
+            <span
+              title={
+                canDryRun
+                  ? 'Validates every order with Kraken without placing it'
+                  : runDisabledTitle
+              }
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => run.mutate(true)}
+                disabled={!canDryRun}
+              >
+                {run.isPending && run.variables === true ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <FlaskConical className="size-3.5" />
+                )}
+                Dry run now
+              </Button>
+            </span>
+            <span title={runDisabledTitle}>
+              <Button size="sm" onClick={startRun} disabled={!canRun}>
+                {run.isPending && run.variables === false ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Play className="size-3.5" />
+                )}
+                Run now
+              </Button>
+            </span>
+          </>
+        }
+      />
+
+      {status?.snapshotAt != null && (
+        <Callout
+          tone={status.lockedUntil != null ? 'warn' : 'info'}
+          icon={Clock}
+        >
+          <span
+            title="Balances, open orders and withdrawal keys are a snapshot written by every run. Refresh reads Kraken live (one serialized read)."
+          >
+            Kraken data as of{' '}
+            <span className="font-mono tabular-nums">
+              {fmtLocal(status.snapshotAt)}
+            </span>
+            {status.lockedUntil != null
+              ? ` · locked out until ${fmtLocal(status.lockedUntil)}`
+              : ''}
           </span>
-          <span title={runDisabledTitle}>
-            <Button size="sm" onClick={startRun} disabled={!canRun}>
-              {run.isPending && run.variables === false ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Play className="size-3.5" />
-              )}
-              Run now
-            </Button>
-          </span>
-        </div>
-      </div>
+        </Callout>
+      )}
 
       <RunConfirmDialog
         open={confirmOpen}
@@ -341,24 +372,20 @@ export function ExchangePage() {
       />
 
       {status?.error && (
-        <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2.5 text-xs text-warn">
-          <AlertTriangle className="size-3.5 shrink-0" />
-          <span>
-            Kraken API error while loading live data — balances and open
-            orders may be stale or empty:{' '}
-            <span className="font-mono">{status.error}</span>
-          </span>
-        </div>
+        <Callout tone="warn">
+          Kraken API error while loading live data — balances and open
+          orders may be stale or empty:{' '}
+          <span className="font-mono break-all">{status.error}</span>
+        </Callout>
       )}
 
       {statusQ.isLoading ? (
-        <Card className="p-10 text-center text-sm text-[var(--fg-2)]">
-          Loading…
-        </Card>
+        <StatusSkeleton />
       ) : statusQ.isError ? (
-        <Card className="p-10 text-center text-sm text-destructive">
-          {errText(statusQ.error, 'Could not load the exchange status')}
-        </Card>
+        <ErrorState
+          title="Could not load the exchange status"
+          message={errText(statusQ.error, 'Could not load the exchange status')}
+        />
       ) : status ? (
         <>
           {!configured && <NotConfigured />}
@@ -392,20 +419,71 @@ export function ExchangePage() {
 
 function NotConfigured() {
   return (
-    <Card className="p-10 text-center">
-      <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-[var(--bg-2)]">
-        <KeyRound className="size-5 text-[var(--fg-2)]" />
+    <EmptyState
+      framed
+      icon={KeyRound}
+      title="Kraken is not configured."
+      description={
+        <>
+          The worker has no <span className="font-mono">KRAKEN_API_KEY</span>{' '}
+          / <span className="font-mono">KRAKEN_API_SECRET</span>. Set them as
+          Cloudflare secrets and redeploy; balances, open orders and runs are
+          unavailable until then. The journal below still shows past actions.
+        </>
+      }
+    />
+  )
+}
+
+function StatusSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      {Array.from({ length: 2 }).map((_, i) => (
+        <Card key={i} className="overflow-hidden">
+          <div className="border-b border-border px-5 py-4">
+            <Skeleton className="h-4 w-32" />
+          </div>
+          <div className="space-y-3 p-5">
+            {Array.from({ length: 5 }).map((__, j) => (
+              <Skeleton key={j} className="h-4 w-full" />
+            ))}
+          </div>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+/** Card header used by every exchange panel: title, meta, right-side extras. */
+function PanelHeader({
+  icon: Icon,
+  title,
+  description,
+  badges,
+  right,
+}: {
+  icon?: React.ComponentType<{ className?: string }>
+  title: React.ReactNode
+  description?: React.ReactNode
+  badges?: React.ReactNode
+  right?: React.ReactNode
+}) {
+  return (
+    <CardHeader className="border-b">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {Icon && <Icon className="size-4 shrink-0 text-[var(--fg-2)]" />}
+          <CardTitle>{title}</CardTitle>
+          {badges}
+        </div>
+        {right && (
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {right}
+          </div>
+        )}
       </div>
-      <div className="mt-3 text-sm text-[var(--fg-1)]">
-        Kraken is not configured.
-      </div>
-      <p className="mx-auto mt-1 max-w-md text-xs text-[var(--fg-2)]">
-        The worker has no <span className="font-mono">KRAKEN_API_KEY</span> /{' '}
-        <span className="font-mono">KRAKEN_API_SECRET</span>. Set them as
-        Cloudflare secrets and redeploy; balances, open orders and runs are
-        unavailable until then. The journal below still shows past actions.
-      </p>
-    </Card>
+      {description && <CardDescription>{description}</CardDescription>}
+    </CardHeader>
   )
 }
 
@@ -450,13 +528,17 @@ function PolicyCard({ policy }: { policy: ExchangePolicy }) {
   const sellable = Object.entries(policy.sellable)
   return (
     <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3.5">
-        <CandlestickChart className="size-4 text-[var(--fg-2)]" />
-        <div className="text-base font-semibold tracking-tight">Policy</div>
-        <ModeBadge mode={policy.mode} />
-        <WithdrawBadge w={policy.withdraw} />
-      </div>
-      <CardContent className="space-y-3 pt-5">
+      <PanelHeader
+        icon={CandlestickChart}
+        title="Policy"
+        badges={
+          <>
+            <ModeBadge mode={policy.mode} />
+            <WithdrawBadge w={policy.withdraw} />
+          </>
+        }
+      />
+      <CardContent className="space-y-3 pt-4">
         <KeyVal label="Min order">
           <span className="font-mono">{usd2(policy.minOrderUsd)}</span>
         </KeyVal>
@@ -509,7 +591,7 @@ function PolicyCard({ policy }: { policy: ExchangePolicy }) {
         <KeyVal label="userref">
           <span className="font-mono">{policy.userref}</span>
         </KeyVal>
-        <div className="text-2xs text-[var(--fg-3)]">
+        <div className="border-t border-border pt-3 text-xs text-[var(--fg-3)]">
           Read-only — {POLICY_HINT}.
         </div>
       </CardContent>
@@ -526,77 +608,84 @@ function LastRunCard({
 }) {
   return (
     <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3.5">
-        <Clock className="size-4 text-[var(--fg-2)]" />
-        <div className="text-base font-semibold tracking-tight">Last run</div>
-        {run && (
-          <>
-            <ModeBadge mode={run.mode} />
-            {run.dryRun && (
-              <Badge variant="accent">
-                <FlaskConical className="size-3" /> dry run
-              </Badge>
-            )}
-            {!run.ran && (
-              <Badge variant="warn" title={run.reason}>
-                <AlertTriangle className="size-3" /> did not run
-                {run.reason && <span>· {run.reason}</span>}
-              </Badge>
-            )}
-            <span className="ml-auto font-mono text-xs text-[var(--fg-2)]">
+      <PanelHeader
+        icon={Clock}
+        title="Last run"
+        badges={
+          run && (
+            <>
+              <ModeBadge mode={run.mode} />
+              {run.dryRun && (
+                <Badge variant="accent">
+                  <FlaskConical className="size-3" /> dry run
+                </Badge>
+              )}
+              {!run.ran && (
+                <Badge variant="warn" title={run.reason}>
+                  <AlertTriangle className="size-3" /> did not run
+                  {run.reason && <span>· {run.reason}</span>}
+                </Badge>
+              )}
+            </>
+          )
+        }
+        right={
+          run && (
+            <span className="font-mono text-xs tabular-nums text-[var(--fg-2)]">
               {fmtLocal(run.at, { seconds: true })}
               <span className="ml-1.5 text-[var(--fg-3)]">
                 ({fmtRelDelta(run.at - now)})
               </span>
             </span>
-          </>
-        )}
-      </div>
-      <CardContent className="space-y-3 pt-5">
+          )
+        }
+      />
+      <CardContent className="space-y-3 pt-4">
         {!run ? (
-          <div className="text-sm text-[var(--fg-3)]">
+          <div className="text-sm text-[var(--fg-2)]">
             No run recorded yet — the worker runs on its interval, or trigger
             one above.
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-              <Stat label="Synced" value={String(run.synced)} />
-              <Stat
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <RunCount label="Synced" value={String(run.synced)} />
+              <RunCount
                 label="Placed"
                 value={String(run.placed)}
                 accent={run.placed > 0}
               />
-              <Stat label="Re-quoted" value={String(run.requoted)} />
-              <Stat
+              <RunCount label="Re-quoted" value={String(run.requoted)} />
+              <RunCount
                 label="Market fallbacks"
                 value={String(run.marketFallbacks)}
                 accent={run.marketFallbacks > 0}
               />
-              <Stat label="Filled" value={String(run.filled)} />
-              <Stat label="Canceled" value={String(run.canceled)} />
-              <Stat
+              <RunCount label="Filled" value={String(run.filled)} />
+              <RunCount label="Canceled" value={String(run.canceled)} />
+              <RunCount
                 label="Withdrawals"
                 value={String(run.withdrawals)}
                 accent={run.withdrawals > 0}
               />
-              <Stat label="Skipped" value={String(run.skipped.length)} />
+              <RunCount label="Skipped" value={String(run.skipped.length)} />
             </div>
             {run.skipped.length > 0 && (
               <SkippedList skipped={run.skipped} />
             )}
             {run.errors.length > 0 && (
-              <ul className="space-y-1 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] p-2">
-                {run.errors.map((e, i) => (
-                  <li
-                    key={i}
-                    className="flex items-start gap-2 font-mono text-2xs text-destructive"
-                  >
-                    <AlertTriangle className="mt-0.5 size-3 shrink-0" />
-                    <span className="break-all">{e}</span>
-                  </li>
-                ))}
-              </ul>
+              <Callout tone="danger">
+                <ul className="space-y-1">
+                  {run.errors.map((e, i) => (
+                    <li
+                      key={i}
+                      className="font-mono text-xs break-all text-destructive"
+                    >
+                      {e}
+                    </li>
+                  ))}
+                </ul>
+              </Callout>
             )}
           </>
         )}
@@ -616,21 +705,21 @@ function SkippedList({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex cursor-pointer items-center gap-1 text-2xs text-warn hover:underline"
+        className="inline-flex cursor-pointer items-center gap-1 text-xs text-warn hover:underline"
       >
         <AlertTriangle className="size-3" />
         {open ? 'Hide' : 'Show'} skipped · {skipped.length}
       </button>
       {open && (
-        <ul className="mt-1.5 space-y-1 rounded-md border border-warn/40 bg-warn/10 p-2">
+        <ul className="mt-2 divide-y divide-[var(--warn-border)] overflow-hidden rounded-md border border-[var(--warn-border)] bg-[var(--warn-bg)]">
           {skipped.map((s, i) => (
             <li
               key={`${s.asset}-${i}`}
-              className="flex flex-wrap items-center gap-2 rounded border border-warn/30 bg-card px-2 py-1 text-xs"
+              className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-xs"
             >
               <span className="font-mono">{s.asset}</span>
               <span
-                className="ml-auto max-w-[360px] truncate font-mono text-2xs text-[var(--fg-3)]"
+                className="ml-auto max-w-full truncate font-mono text-2xs text-[var(--fg-2)] sm:max-w-[360px]"
                 title={s.reason}
               >
                 {s.reason}
@@ -651,16 +740,15 @@ function KeyVal({
   children: React.ReactNode
 }) {
   return (
-    <div className="grid grid-cols-[120px_1fr] items-start gap-3 text-sm">
-      <span className="pt-0.5 text-2xs uppercase tracking-[0.08em] text-[var(--fg-3)]">
-        {label}
-      </span>
-      <div className="min-w-0">{children}</div>
+    <div className="grid grid-cols-1 items-start gap-1 text-sm sm:grid-cols-[120px_1fr] sm:gap-3">
+      <span className="text-xs text-[var(--fg-2)] sm:pt-px">{label}</span>
+      <div className="min-w-0 break-words">{children}</div>
     </div>
   )
 }
 
-function Stat({
+/** Small boxed counter for the last-run tally. */
+function RunCount({
   label,
   value,
   sub,
@@ -680,10 +768,11 @@ function Stat({
           : 'border-border bg-[var(--bg-2)]',
       )}
     >
-      <div className="text-2xs uppercase tracking-[0.08em] text-[var(--fg-3)]">
-        {label}
-      </div>
-      <div className="mt-0.5 truncate font-mono text-sm" title={value}>
+      <div className="truncate text-xs text-[var(--fg-2)]">{label}</div>
+      <div
+        className="mt-0.5 truncate font-mono text-base font-medium tabular-nums"
+        title={value}
+      >
         {value}
       </div>
       {sub && <div className="text-2xs text-[var(--fg-2)]">{sub}</div>}
@@ -723,7 +812,7 @@ function RunConfirmDialog({
           </DialogDescription>
         </DialogHeader>
         {policy && (
-          <div className="rounded-md border border-border bg-secondary px-3 py-2 font-mono text-xs">
+          <div className="rounded-md border border-border bg-secondary px-3 py-2 font-mono text-xs tabular-nums">
             min order {usd2(policy.minOrderUsd)} · 24 h cap{' '}
             {usd2(policy.dailyCapUsd)}
             {policy.withdraw.enabled &&
@@ -761,38 +850,39 @@ function BalancesCard({ rows }: { rows: ExchangeStatus['balances'] }) {
   }, [rows])
   return (
     <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3.5">
-        <div className="text-base font-semibold tracking-tight">Balances</div>
-        <span className="text-xs text-[var(--fg-2)]">
-          Kraken snapshot · {rows.length} asset{rows.length === 1 ? '' : 's'}
-        </span>
-        {totalUsd != null && (
-          <span className="ml-auto font-mono text-xs text-[var(--fg-2)]">
-            ≈ {usd2(totalUsd)} total
-          </span>
-        )}
-      </div>
+      <PanelHeader
+        title="Balances"
+        description={`Kraken snapshot · ${rows.length} asset${rows.length === 1 ? '' : 's'}`}
+        right={
+          totalUsd != null && (
+            <span className="font-mono text-sm font-medium tabular-nums">
+              ≈ {usd2(totalUsd)}{' '}
+              <span className="font-sans text-xs font-normal text-[var(--fg-2)]">
+                total
+              </span>
+            </span>
+          )
+        }
+      />
       {rows.length === 0 ? (
-        <div className="p-8 text-center text-sm text-[var(--fg-2)]">
-          No balances reported.
-        </div>
+        <EmptyState compact title="No balances reported." />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
+        <TableWrap>
+          <Table className="min-w-[560px] text-xs">
+            <THead>
               <tr>
-                <th className="px-4 py-2 text-left">Asset</th>
-                <th className="px-3 py-2 text-right">Available</th>
-                <th className="px-3 py-2 text-right">Price (bid)</th>
-                <th className="px-3 py-2 text-right">USD value</th>
-                <th className="px-4 py-2 text-left">Pair</th>
+                <Th>Asset</Th>
+                <Th align="right">Available</Th>
+                <Th align="right">Price (bid)</Th>
+                <Th align="right">USD value</Th>
+                <Th>Pair</Th>
               </tr>
-            </thead>
-            <tbody>
+            </THead>
+            <TBody>
               {rows.map((r) => (
-                <tr key={r.asset} className="border-t border-border align-top">
-                  <td className="px-4 py-2 font-mono font-medium">{r.asset}</td>
-                  <td className="px-3 py-2 text-right font-mono whitespace-nowrap">
+                <Tr key={r.asset}>
+                  <Td className="align-top font-mono font-medium">{r.asset}</Td>
+                  <Td align="right" className="align-top whitespace-nowrap">
                     <div>{r.available}</div>
                     {isPositive(r.holdTrade) && (
                       <div
@@ -802,25 +892,31 @@ function BalancesCard({ rows }: { rows: ExchangeStatus['balances'] }) {
                         held {r.holdTrade}
                       </div>
                     )}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono whitespace-nowrap text-[var(--fg-2)]">
+                  </Td>
+                  <Td
+                    align="right"
+                    className="align-top whitespace-nowrap text-[var(--fg-2)]"
+                  >
                     {r.price ?? '—'}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono whitespace-nowrap">
+                  </Td>
+                  <Td
+                    align="right"
+                    className="align-top font-medium whitespace-nowrap"
+                  >
                     {usd2(r.usd)}
-                  </td>
-                  <td className="px-4 py-2 font-mono">
+                  </Td>
+                  <Td className="align-top font-mono">
                     {r.pair ?? (
                       <span className="text-[var(--fg-3)]">
                         {r.asset === 'ZUSD' ? 'USD' : 'not sellable'}
                       </span>
                     )}
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TBody>
+          </Table>
+        </TableWrap>
       )}
     </Card>
   )
@@ -831,70 +927,70 @@ function BalancesCard({ rows }: { rows: ExchangeStatus['balances'] }) {
 function OpenOrdersCard({ orders }: { orders: ExchangeOpenOrder[] }) {
   return (
     <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3.5">
-        <div className="text-base font-semibold tracking-tight">
-          Open orders
-        </div>
-        <span className="text-xs text-[var(--fg-2)]">
-          Kraken snapshot · {orders.length}
-        </span>
-      </div>
+      <PanelHeader
+        title="Open orders"
+        description={`Kraken snapshot · ${orders.length}`}
+      />
       {orders.length === 0 ? (
-        <div className="p-8 text-center text-sm text-[var(--fg-2)]">
-          No open orders.
-        </div>
+        <EmptyState compact title="No open orders." />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
+        <TableWrap>
+          <Table className="min-w-[880px] text-xs">
+            <THead>
               <tr>
-                <th className="px-4 py-2 text-left">Pair</th>
-                <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-right">Volume</th>
-                <th className="px-3 py-2 text-right">Executed</th>
-                <th className="px-3 py-2 text-right">Cost / fee</th>
-                <th className="px-3 py-2 text-right">Avg price</th>
-                <th className="px-3 py-2 text-left">Opened</th>
-                <th className="px-4 py-2 text-left">Txid</th>
+                <Th>Pair</Th>
+                <Th>Status</Th>
+                <Th align="right">Volume</Th>
+                <Th align="right">Executed</Th>
+                <Th align="right">Cost / fee</Th>
+                <Th align="right">Avg price</Th>
+                <Th>Opened</Th>
+                <Th>Txid</Th>
               </tr>
-            </thead>
-            <tbody>
+            </THead>
+            <TBody>
               {orders.map((o) => {
                 const sb = ORDER_STATUS_BADGE[o.status] ?? {
                   variant: 'default' as const,
                 }
                 return (
-                  <tr key={o.txid} className="border-t border-border align-top">
-                    <td className="px-4 py-2 font-mono font-medium">{o.pair}</td>
-                    <td className="px-3 py-2">
+                  <Tr key={o.txid}>
+                    <Td className="font-mono font-medium">{o.pair}</Td>
+                    <Td>
                       <Badge variant={sb.variant} className={sb.className}>
                         {o.status}
                       </Badge>
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono whitespace-nowrap">
+                    </Td>
+                    <Td align="right" className="whitespace-nowrap">
                       {o.volume}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono whitespace-nowrap">
+                    </Td>
+                    <Td align="right" className="whitespace-nowrap">
                       {o.volumeExecuted}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono whitespace-nowrap text-[var(--fg-2)]">
+                    </Td>
+                    <Td
+                      align="right"
+                      className="whitespace-nowrap text-[var(--fg-2)]"
+                    >
                       {o.cost} / {o.fee}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono whitespace-nowrap text-[var(--fg-2)]">
+                    </Td>
+                    <Td
+                      align="right"
+                      className="whitespace-nowrap text-[var(--fg-2)]"
+                    >
                       {o.averagePrice ?? '—'}
-                    </td>
-                    <td className="px-3 py-2 font-mono whitespace-nowrap">
+                    </Td>
+                    <Td className="font-mono whitespace-nowrap tabular-nums">
                       {fmtLocal(o.openedAt)}
-                    </td>
-                    <td className="px-4 py-2">
+                    </Td>
+                    <Td>
                       <Addr value={o.txid} />
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 )
               })}
-            </tbody>
-          </table>
-        </div>
+            </TBody>
+          </Table>
+        </TableWrap>
       )}
     </Card>
   )
@@ -911,55 +1007,74 @@ function WithdrawKeysCard({
 }) {
   return (
     <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3.5">
-        <KeyRound className="size-4 text-[var(--fg-2)]" />
-        <div className="text-base font-semibold tracking-tight">
-          Saved withdrawal keys
-        </div>
-        <span className="text-xs text-[var(--fg-2)]">
-          fiat destinations saved in the Kraken UI · copy the exact name into{' '}
-          <span className="font-mono">KRAKEN_WITHDRAW_KEY</span>
-        </span>
-      </div>
+      <PanelHeader
+        icon={KeyRound}
+        title="Saved withdrawal keys"
+        description={
+          <>
+            fiat destinations saved in the Kraken UI · copy the exact name
+            into <span className="font-mono">KRAKEN_WITHDRAW_KEY</span>
+          </>
+        }
+      />
       {keys.length === 0 ? (
-        <div className="p-8 text-center text-sm text-[var(--fg-2)]">
-          No withdrawal keys saved at Kraken — add a bank account in the
-          Kraken UI first.
-        </div>
+        <EmptyState
+          compact
+          title="No withdrawal keys saved at Kraken"
+          description="Add a bank account in the Kraken UI first."
+        />
       ) : (
-        <ul className="divide-y divide-border">
-          {keys.map((k) => {
-            const active = activeKey != null && k.key === activeKey
-            return (
-              <li
-                key={`${k.key}-${k.address}`}
-                className={cn(
-                  'flex flex-wrap items-center gap-3 px-5 py-2.5 text-sm',
-                  active && 'bg-[var(--accent-bg)]',
-                )}
-              >
-                <span className="font-mono">{k.key}</span>
-                <CopyButton value={k.key} label="Copy key" />
-                {k.verified ? (
-                  <Badge variant="success">
-                    <BadgeCheck className="size-3" /> verified
-                  </Badge>
-                ) : (
-                  <Badge variant="warn">
-                    <AlertTriangle className="size-3" /> unverified
-                  </Badge>
-                )}
-                {active && <Badge variant="accent">in use</Badge>}
-                <span
-                  className="ml-auto max-w-[420px] truncate font-mono text-xs text-[var(--fg-2)]"
-                  title={k.address}
-                >
-                  {k.address}
-                </span>
-              </li>
-            )
-          })}
-        </ul>
+        <TableWrap>
+          <Table className="min-w-[620px]">
+            <THead>
+              <tr>
+                <Th>Key</Th>
+                <Th>Status</Th>
+                <Th>Destination</Th>
+              </tr>
+            </THead>
+            <TBody>
+              {keys.map((k) => {
+                const active = activeKey != null && k.key === activeKey
+                return (
+                  <Tr
+                    key={`${k.key}-${k.address}`}
+                    className={cn(active && 'bg-[var(--accent-bg)]')}
+                  >
+                    <Td>
+                      <span className="inline-flex items-center gap-2">
+                        <span className="font-mono">{k.key}</span>
+                        <CopyButton value={k.key} label="Copy key" />
+                      </span>
+                    </Td>
+                    <Td>
+                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                        {k.verified ? (
+                          <Badge variant="success">
+                            <BadgeCheck className="size-3" /> verified
+                          </Badge>
+                        ) : (
+                          <Badge variant="warn">
+                            <AlertTriangle className="size-3" /> unverified
+                          </Badge>
+                        )}
+                        {active && <Badge variant="accent">in use</Badge>}
+                      </span>
+                    </Td>
+                    <Td className="max-w-[420px]">
+                      <span
+                        className="block truncate font-mono text-xs text-[var(--fg-2)]"
+                        title={k.address}
+                      >
+                        {k.address}
+                      </span>
+                    </Td>
+                  </Tr>
+                )
+              })}
+            </TBody>
+          </Table>
+        </TableWrap>
       )}
     </Card>
   )
@@ -1007,58 +1122,58 @@ function ActionsJournal({
 }) {
   return (
     <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3.5">
-        <div className="text-base font-semibold tracking-tight">
-          Actions journal
-        </div>
-        <span className="text-xs text-[var(--fg-2)]">newest first · last 50</span>
-        <div className="ml-auto">
+      <PanelHeader
+        title="Actions journal"
+        description="newest first · last 50"
+        right={
           <Button
             variant="outline"
             size="sm"
             onClick={onRefresh}
             disabled={isFetching}
+            aria-label="Refresh journal"
           >
             <RefreshCw
               className={'size-3.5' + (isFetching ? ' animate-spin' : '')}
             />
           </Button>
-        </div>
-      </div>
+        }
+      />
       {isLoading ? (
-        <div className="p-8 text-center text-sm text-[var(--fg-2)]">Loading…</div>
+        <ListSkeleton rows={5} className="rounded-none border-0" />
       ) : error ? (
-        <div className="p-8 text-center text-sm text-destructive">
-          {errText(error, 'Could not load the journal')}
+        <div className="p-5">
+          <ErrorState
+            title="Could not load the journal"
+            message={errText(error, 'Could not load the journal')}
+          />
         </div>
       ) : actions.length === 0 ? (
-        <div className="p-8 text-center text-sm text-[var(--fg-2)]">
-          No actions yet.
-        </div>
+        <EmptyState compact title="No actions yet." />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
+        <TableWrap>
+          <Table className="min-w-[1180px] text-xs">
+            <THead>
               <tr>
-                <th className="px-4 py-2 text-left">Time</th>
-                <th className="px-3 py-2 text-left">Kind</th>
-                <th className="px-3 py-2 text-left">Asset / pair</th>
-                <th className="px-3 py-2 text-right">Volume</th>
-                <th className="px-3 py-2 text-right">Price</th>
-                <th className="px-3 py-2 text-right">USD</th>
-                <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-left">Flags</th>
-                <th className="px-3 py-2 text-left">Ref</th>
-                <th className="px-4 py-2 text-left">Error</th>
+                <Th>Time</Th>
+                <Th>Kind</Th>
+                <Th>Asset / pair</Th>
+                <Th align="right">Volume</Th>
+                <Th align="right">Price</Th>
+                <Th align="right">USD</Th>
+                <Th>Status</Th>
+                <Th>Flags</Th>
+                <Th>Ref</Th>
+                <Th>Error</Th>
               </tr>
-            </thead>
-            <tbody>
+            </THead>
+            <TBody>
               {actions.map((a) => (
                 <ActionRow key={a.id} a={a} />
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TBody>
+          </Table>
+        </TableWrap>
       )}
     </Card>
   )
@@ -1070,8 +1185,8 @@ function ActionRow({ a }: { a: ExchangeAction }) {
     a.error != null || a.executedVolume != null || a.cost != null || a.fee != null
   return (
     <>
-      <tr className="border-t border-border align-top">
-        <td className="px-4 py-2 font-mono whitespace-nowrap">
+      <Tr>
+        <Td className="align-top font-mono whitespace-nowrap tabular-nums">
           <div>{fmtLocal(a.createdAt, { seconds: true })}</div>
           {a.updatedAt !== a.createdAt && (
             <div
@@ -1081,34 +1196,34 @@ function ActionRow({ a }: { a: ExchangeAction }) {
               upd {fmtLocal(a.updatedAt, { seconds: true })}
             </div>
           )}
-        </td>
-        <td className="px-3 py-2">
+        </Td>
+        <Td className="align-top">
           <KindBadge kind={a.kind} />
-        </td>
-        <td className="px-3 py-2 font-mono whitespace-nowrap">
+        </Td>
+        <Td className="align-top font-mono whitespace-nowrap">
           <div className="font-medium">{a.asset}</div>
           {a.pair && (
             <div className="text-2xs text-[var(--fg-3)]">{a.pair}</div>
           )}
-        </td>
-        <td className="px-3 py-2 text-right font-mono whitespace-nowrap">
+        </Td>
+        <Td align="right" className="align-top whitespace-nowrap">
           <div>{a.volume}</div>
           {a.executedVolume != null && a.executedVolume !== a.volume && (
             <div className="text-2xs text-[var(--fg-3)]">
               exec {a.executedVolume}
             </div>
           )}
-        </td>
-        <td className="px-3 py-2 text-right font-mono whitespace-nowrap text-[var(--fg-2)]">
+        </Td>
+        <Td align="right" className="align-top whitespace-nowrap text-[var(--fg-2)]">
           {a.price ?? <span className="text-[var(--fg-3)]">market</span>}
-        </td>
-        <td className="px-3 py-2 text-right font-mono whitespace-nowrap">
+        </Td>
+        <Td align="right" className="align-top whitespace-nowrap">
           {usd2(a.usdEstimate)}
-        </td>
-        <td className="px-3 py-2">
+        </Td>
+        <Td className="align-top">
           <ActionStatusBadge status={a.status} />
-        </td>
-        <td className="px-3 py-2">
+        </Td>
+        <Td className="align-top">
           <div className="flex flex-wrap items-center gap-1.5">
             {a.dryRun === 1 && (
               <Badge variant="accent">
@@ -1133,15 +1248,15 @@ function ActionRow({ a }: { a: ExchangeAction }) {
               <span className="text-[var(--fg-3)]">—</span>
             )}
           </div>
-        </td>
-        <td className="px-3 py-2 whitespace-nowrap">
+        </Td>
+        <Td className="align-top whitespace-nowrap">
           {a.exchangeRef ? (
             <Addr value={a.exchangeRef} />
           ) : (
             <span className="text-[var(--fg-3)]">—</span>
           )}
-        </td>
-        <td className="px-4 py-2">
+        </Td>
+        <Td className="align-top">
           {hasDetails ? (
             <button
               type="button"
@@ -1164,11 +1279,11 @@ function ActionRow({ a }: { a: ExchangeAction }) {
           ) : (
             <span className="text-[var(--fg-3)]">—</span>
           )}
-        </td>
-      </tr>
+        </Td>
+      </Tr>
       {open && (
-        <tr className="border-t border-border bg-[var(--bg-2)]">
-          <td colSpan={10} className="px-4 py-2.5">
+        <Tr className="bg-[var(--bg-2)] hover:bg-[var(--bg-2)]">
+          <Td colSpan={10} className="py-3">
             <div className="flex flex-wrap items-start gap-x-6 gap-y-1.5 text-xs">
               <span className="font-mono text-[var(--fg-2)]">
                 id <Addr value={a.id} />
@@ -1187,13 +1302,13 @@ function ActionRow({ a }: { a: ExchangeAction }) {
               {a.fee != null && <span className="font-mono">fee {a.fee}</span>}
             </div>
             {a.error && (
-              <div className="mt-1.5 flex items-start gap-2 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-2.5 py-2 font-mono text-2xs text-destructive">
+              <div className="mt-2 flex items-start gap-2 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 font-mono text-xs text-destructive">
                 <AlertTriangle className="mt-0.5 size-3 shrink-0" />
                 <span className="break-all whitespace-pre-wrap">{a.error}</span>
               </div>
             )}
-          </td>
-        </tr>
+          </Td>
+        </Tr>
       )}
     </>
   )

@@ -39,9 +39,30 @@ import type {
 
 import { Addr } from '@/components/Addr'
 import { Field } from '@/components/Field'
+import { PageHeader } from '@/components/PageHeader'
+import {
+  Callout,
+  EmptyState,
+  ErrorState,
+  ListSkeleton,
+} from '@/components/States'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import {
+  Table,
+  TableWrap,
+  TBody,
+  Td,
+  Th,
+  THead,
+  Tr,
+} from '@/components/ui/table'
 import {
   Dialog,
   DialogContent,
@@ -266,44 +287,44 @@ export function TreasuryPage() {
 
   return (
     <div className="fade-in space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow">Money</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Treasury
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-[var(--fg-2)]">
+      <PageHeader
+        eyebrow="Treasury"
+        title="Treasury"
+        description={
+          <>
             Allow-listed external addresses (Kraken deposit addresses) that
             receive pool balances through the gateway's own payout rails, one
             per (chain, token). Stablecoin credits younger than the refund hold
             stay on their receiving address; a{' '}
             <span className="font-mono">float</span> of each token is always
-            kept for merchant payouts; per-transfer and rolling 24 h USD caps
+            kept for store payouts; per-transfer and rolling 24 h USD caps
             bound every run. A new destination starts disabled and unverified:
             send a small verification transfer, confirm it arrived at the
             exchange, mark it verified, then enable it.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              destQ.refetch()
-              transfersQ.refetch()
-            }}
-            disabled={destQ.isFetching}
-          >
-            <RefreshCw
-              className={'size-3.5' + (destQ.isFetching ? ' animate-spin' : '')}
-            />
-            Refresh
-          </Button>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-3.5" /> Add destination
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                destQ.refetch()
+                transfersQ.refetch()
+              }}
+              disabled={destQ.isFetching}
+            >
+              <RefreshCw
+                className={'size-3.5' + (destQ.isFetching ? ' animate-spin' : '')}
+              />
+              Refresh
+            </Button>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="size-3.5" /> Add destination
+            </Button>
+          </>
+        }
+      />
 
       <DestinationFormDialog
         mode="create"
@@ -328,44 +349,60 @@ export function TreasuryPage() {
       )}
 
       {destQ.isLoading ? (
-        <Card className="p-10 text-center text-sm text-[var(--fg-2)]">
-          Loading…
-        </Card>
+        <ListSkeleton rows={4} />
       ) : destQ.isError ? (
-        <Card className="p-10 text-center text-sm text-destructive">
-          {destQ.error instanceof Error ? destQ.error.message : 'Error'}
-        </Card>
+        <ErrorState
+          title="Could not load treasury destinations"
+          message={destQ.error instanceof Error ? destQ.error.message : 'Error'}
+        />
       ) : destinations.length === 0 ? (
-        <EmptyState onCreate={() => setCreateOpen(true)} />
+        <NoDestinations onCreate={() => setCreateOpen(true)} />
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-5">
           {groups.map((g) => (
-            <section key={g.chainId} className="space-y-3">
-              <div className="flex items-center gap-2 px-0.5">
-                <span
-                  className="size-2.5 rounded-sm"
-                  style={{ background: chainInfo(g.chainId).color }}
-                />
-                <span className="text-2xs font-semibold uppercase tracking-[0.12em] text-[var(--fg-2)]">
-                  {g.name}
-                </span>
-                <span className="font-mono text-2xs text-[var(--fg-3)]">
-                  {g.chainId} · {g.rows.length}
-                </span>
-              </div>
-              <div className="grid grid-cols-1 gap-4">
-                {g.rows.map((d) => (
-                  <DestinationCard
-                    key={d.id}
-                    d={d}
-                    chains={chains}
-                    hasTransfers={destsWithTransfers.has(d.id)}
-                    onEdit={() => setEditing(d)}
-                    onChanged={invalidate}
-                  />
-                ))}
-              </div>
-            </section>
+            <Card key={g.chainId} className="overflow-hidden">
+              <CardHeader className="border-b">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <CardTitle className="inline-flex items-center gap-2">
+                    <span
+                      aria-hidden
+                      className="size-2 shrink-0 rounded-full"
+                      style={{ background: chainInfo(g.chainId).color }}
+                    />
+                    {g.name}
+                  </CardTitle>
+                  <span className="font-mono text-xs tabular-nums text-[var(--fg-2)]">
+                    {g.chainId} · {g.rows.length}
+                  </span>
+                </div>
+              </CardHeader>
+              <TableWrap>
+                <Table className="min-w-[1080px]">
+                  <THead>
+                    <tr>
+                      <Th className="w-8 px-0 pl-4" aria-label="Details" />
+                      <Th>Destination</Th>
+                      <Th>Status</Th>
+                      <Th align="right">Caps (USD)</Th>
+                      <Th>Schedule</Th>
+                      <Th align="right">Actions</Th>
+                    </tr>
+                  </THead>
+                  <TBody>
+                    {g.rows.map((d) => (
+                      <DestinationRow
+                        key={d.id}
+                        d={d}
+                        chains={chains}
+                        hasTransfers={destsWithTransfers.has(d.id)}
+                        onEdit={() => setEditing(d)}
+                        onChanged={invalidate}
+                      />
+                    ))}
+                  </TBody>
+                </Table>
+              </TableWrap>
+            </Card>
           ))}
         </div>
       )}
@@ -385,30 +422,25 @@ export function TreasuryPage() {
   )
 }
 
-function EmptyState({ onCreate }: { onCreate: () => void }) {
+function NoDestinations({ onCreate }: { onCreate: () => void }) {
   return (
-    <Card className="p-10 text-center">
-      <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-[var(--bg-2)]">
-        <Landmark className="size-5 text-[var(--fg-2)]" />
-      </div>
-      <div className="mt-3 text-sm text-[var(--fg-1)]">
-        No treasury destinations yet.
-      </div>
-      <p className="mx-auto mt-1 max-w-md text-xs text-[var(--fg-2)]">
-        Add one per (chain, token) route you want to sweep to the exchange.
-        It starts disabled; verify it with a small test transfer before
-        enabling.
-      </p>
-      <Button size="sm" className="mt-4" onClick={onCreate}>
-        <Plus className="size-3.5" /> Add destination
-      </Button>
-    </Card>
+    <EmptyState
+      framed
+      icon={Landmark}
+      title="No treasury destinations yet."
+      description="Add one per (chain, token) route you want to sweep to the exchange. It starts disabled; verify it with a small test transfer before enabling."
+      action={
+        <Button size="sm" onClick={onCreate}>
+          <Plus className="size-3.5" /> Add destination
+        </Button>
+      }
+    />
   )
 }
 
-/* ── Destination card ───────────────────────────────────────── */
+/* ── Destination row ────────────────────────────────────────── */
 
-function DestinationCard({
+function DestinationRow({
   d,
   chains,
   hasTransfers,
@@ -421,7 +453,6 @@ function DestinationCard({
   onEdit: () => void
   onChanged: () => void
 }) {
-  const info = chainInfo(d.chainId)
   const name = chainName(chains, d.chainId)
   const dec = findToken(chains, d.chainId, d.token)?.decimals ?? null
   const now = useNow(15_000)
@@ -474,235 +505,290 @@ function DestinationCard({
         : 'Allows transfers'
 
   return (
-    <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3.5">
-        <span className="size-3 rounded-sm" style={{ background: info.color }} />
-        <div className="text-base font-semibold tracking-tight">{d.label}</div>
-        <Badge variant="outline">{d.exchange}</Badge>
-        <span className="text-sm text-[var(--fg-2)]">{name}</span>
-        <Badge variant="outline" className="font-mono">
-          {d.token}
-        </Badge>
-        {verified ? (
-          <Badge variant="success">
-            <BadgeCheck className="size-3" /> Verified
-          </Badge>
-        ) : (
-          <Badge variant="warn">
-            <AlertTriangle className="size-3" /> Awaiting verification
-          </Badge>
-        )}
-        {d.enabled ? (
-          <Badge variant="success">
-            <Play className="size-3" /> Enabled
-          </Badge>
-        ) : (
-          <Badge variant="default">
-            <Pause className="size-3" /> Disabled
-          </Badge>
-        )}
-        {auto && (
-          <Badge variant="accent" title={`next ${fmtLocal(d.nextRunDue)}`}>
-            <Clock className="size-3" /> Auto every {d.autoIntervalHours} h
-          </Badge>
-        )}
-        {overdue && (
-          <Badge variant="warn">
-            <AlertTriangle className="size-3" /> overdue
-          </Badge>
-        )}
-
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <span title={transferTitle}>
-            <Button
-              size="sm"
-              disabled={!canTransfer}
-              onClick={() => setTransferOpen(true)}
-            >
-              <Send className="size-3.5" /> Transfer now
-            </Button>
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setVerifyOpen(true)}
-            title="Send a small test transfer to this address"
+    <>
+      <Tr>
+        <Td className="w-8 px-0 pl-4 align-top">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            aria-label={`${expanded ? 'Hide' : 'Show'} details and eligibility`}
+            title={`${expanded ? 'Hide' : 'Show'} eligibility`}
+            className="mt-0.5 grid size-6 cursor-pointer place-items-center rounded-md text-[var(--fg-2)] hover:bg-[var(--bg-hover)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
-            <FlaskConical className="size-3.5" /> Verify
-          </Button>
-          {!verified && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => markVerified.mutate()}
-              disabled={markVerified.isPending}
-              title="After the test transfer confirmed on-chain and arrived at the exchange"
-            >
-              {markVerified.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <BadgeCheck className="size-3.5" />
-              )}
-              Mark verified
-            </Button>
-          )}
-          <span title={toggleTitle}>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => toggle.mutate()}
-              disabled={(!verified && !d.enabled) || toggle.isPending}
-            >
-              {d.enabled ? (
-                <Pause className="size-3.5" />
-              ) : (
-                <Play className="size-3.5" />
-              )}
-              {d.enabled ? 'Disable' : 'Enable'}
-            </Button>
-          </span>
-          <Button size="sm" variant="outline" onClick={onEdit}>
-            <Pencil className="size-3.5" /> Edit
-          </Button>
-          <DeleteDestinationButton
-            d={d}
-            hasTransfers={hasTransfers}
-            onChanged={onChanged}
-          />
-        </div>
-      </div>
-
-      <CardContent className="grid grid-cols-1 gap-4 pt-5 md:grid-cols-2">
-        <div className="space-y-3">
-          <KeyVal label="Address">
-            <Addr value={d.address} truncated={false} />
-          </KeyVal>
-          {d.memo && (
-            <KeyVal label="Memo">
-              <span className="font-mono">{d.memo}</span>
-            </KeyVal>
-          )}
-          <KeyVal label="Exchange minimum">
-            <span className="font-mono">
-              {fmtAmt(d.exchangeMinRaw, dec, d.token)}
+            {expanded ? (
+              <ChevronDown className="size-3.5" />
+            ) : (
+              <ChevronRight className="size-3.5" />
+            )}
+          </button>
+        </Td>
+        <Td className="align-top">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">{d.label}</span>
+            <Badge variant="outline">{d.exchange}</Badge>
+            <Badge variant="outline" className="font-mono">
+              {d.token}
+            </Badge>
+          </div>
+          <div className="mt-1 text-xs text-[var(--fg-2)]">{name}</div>
+          <div className="mt-1 text-[var(--fg-2)]">
+            <Addr value={d.address} />
+          </div>
+        </Td>
+        <Td className="align-top">
+          <div className="flex max-w-[220px] flex-wrap items-center gap-1.5">
+            {verified ? (
+              <Badge variant="success">
+                <BadgeCheck className="size-3" /> Verified
+              </Badge>
+            ) : (
+              <Badge variant="warn">
+                <AlertTriangle className="size-3" /> Awaiting verification
+              </Badge>
+            )}
+            {d.enabled ? (
+              <Badge variant="success">
+                <Play className="size-3" /> Enabled
+              </Badge>
+            ) : (
+              <Badge variant="default">
+                <Pause className="size-3" /> Disabled
+              </Badge>
+            )}
+            {auto && (
+              <Badge variant="accent" title={`next ${fmtLocal(d.nextRunDue)}`}>
+                <Clock className="size-3" /> Auto every {d.autoIntervalHours} h
+              </Badge>
+            )}
+            {overdue && (
+              <Badge variant="warn">
+                <AlertTriangle className="size-3" /> overdue
+              </Badge>
+            )}
+          </div>
+        </Td>
+        <Td align="right" className="align-top whitespace-nowrap">
+          <div>
+            {fmtUsd(d.maxPerTransferUsd)}{' '}
+            <span className="font-sans text-xs text-[var(--fg-2)]">
+              per transfer
             </span>
-          </KeyVal>
-          <KeyVal label="Float kept">
-            <span className="font-mono">
-              {fmtAmt(d.keepFloatRaw, dec, d.token)}
-              <span className="ml-1.5 text-2xs text-[var(--fg-3)]">
-                always left for merchant payouts
-              </span>
-            </span>
-          </KeyVal>
-          <KeyVal label="Caps (USD)">
-            <span className="font-mono">
-              min {fmtUsd(d.minTransferUsd)} · per transfer{' '}
-              {fmtUsd(d.maxPerTransferUsd)} · daily {fmtUsd(d.maxDailyUsd)}
-            </span>
-          </KeyVal>
-        </div>
-        <div className="space-y-3">
-          <KeyVal label="Schedule">
+          </div>
+          <div className="text-xs text-[var(--fg-2)]">
+            {fmtUsd(d.maxDailyUsd)} <span className="font-sans">daily</span>
+          </div>
+          <div className="text-xs text-[var(--fg-2)]">
+            <span className="font-sans">min</span> {fmtUsd(d.minTransferUsd)}
+          </div>
+        </Td>
+        <Td className="align-top whitespace-nowrap">
+          <div>
             {auto ? (
               <span className="font-mono">every {d.autoIntervalHours}h</span>
             ) : (
-              <span className="text-[var(--fg-3)]">manual only</span>
+              <span className="text-[var(--fg-2)]">manual only</span>
             )}
-          </KeyVal>
-          <KeyVal label="Next run">
-            {auto && d.nextRunDue != null ? (
-              <span
-                className={cn(
-                  'font-mono',
-                  overdue ? 'text-warn' : 'text-foreground',
-                )}
-              >
-                {fmtLocal(d.nextRunDue)}
-                <span className="ml-1.5 text-[var(--fg-3)]">
-                  ({fmtRelDelta(d.nextRunDue - now)})
-                </span>
-              </span>
-            ) : (
-              <span className="text-[var(--fg-3)]">—</span>
-            )}
-          </KeyVal>
-          <KeyVal label="Last run">
-            {d.lastRunAt != null ? (
-              <span className="font-mono">
-                {fmtLocal(d.lastRunAt)}
-                <span className="ml-1.5 text-[var(--fg-3)]">
-                  ({fmtRelDelta(d.lastRunAt - now)})
-                </span>
-              </span>
-            ) : (
-              <span className="text-[var(--fg-3)]">never</span>
-            )}
-          </KeyVal>
-          <KeyVal label="Last transfer">
-            {d.lastTransferId ? (
-              <Addr value={d.lastTransferId} />
-            ) : (
-              <span className="text-[var(--fg-3)]">—</span>
-            )}
-          </KeyVal>
-          <KeyVal label="Verified at">
-            {verified ? (
-              <span className="font-mono">{fmtLocal(d.verifiedAt)}</span>
-            ) : (
-              <span className="text-[var(--fg-3)]">not yet</span>
-            )}
-          </KeyVal>
-        </div>
-      </CardContent>
-
-      <div className="border-t border-border px-5 py-3">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="inline-flex cursor-pointer items-center gap-1 text-2xs text-primary hover:underline"
-        >
-          {expanded ? (
-            <ChevronDown className="size-3" />
-          ) : (
-            <ChevronRight className="size-3" />
-          )}
-          {expanded ? 'Hide' : 'Show'} eligibility
-        </button>
-        {expanded && (
-          <div className="mt-3">
-            <EligibilityPanel destinationId={d.id} token={d.token} />
           </div>
-        )}
-      </div>
+          {auto && d.nextRunDue != null && (
+            <div
+              className={cn(
+                'font-mono text-xs tabular-nums',
+                overdue ? 'text-warn' : 'text-[var(--fg-2)]',
+              )}
+            >
+              next {fmtLocal(d.nextRunDue)} ({fmtRelDelta(d.nextRunDue - now)})
+            </div>
+          )}
+          <div className="font-mono text-xs tabular-nums text-[var(--fg-2)]">
+            {d.lastRunAt != null
+              ? `last ${fmtLocal(d.lastRunAt)} (${fmtRelDelta(d.lastRunAt - now)})`
+              : 'last never'}
+          </div>
+        </Td>
+        <Td className="align-top">
+          <div className="ml-auto flex max-w-[380px] flex-wrap items-center justify-end gap-2">
+            <span title={transferTitle}>
+              <Button
+                size="sm"
+                disabled={!canTransfer}
+                onClick={() => setTransferOpen(true)}
+              >
+                <Send className="size-3.5" /> Transfer now
+              </Button>
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setVerifyOpen(true)}
+              title="Send a small test transfer to this address"
+            >
+              <FlaskConical className="size-3.5" /> Verify
+            </Button>
+            {!verified && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => markVerified.mutate()}
+                disabled={markVerified.isPending}
+                title="After the test transfer confirmed on-chain and arrived at the exchange"
+              >
+                {markVerified.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <BadgeCheck className="size-3.5" />
+                )}
+                Mark verified
+              </Button>
+            )}
+            <span title={toggleTitle}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => toggle.mutate()}
+                disabled={(!verified && !d.enabled) || toggle.isPending}
+              >
+                {d.enabled ? (
+                  <Pause className="size-3.5" />
+                ) : (
+                  <Play className="size-3.5" />
+                )}
+                {d.enabled ? 'Disable' : 'Enable'}
+              </Button>
+            </span>
+            <Button size="sm" variant="outline" onClick={onEdit}>
+              <Pencil className="size-3.5" /> Edit
+            </Button>
+            <DeleteDestinationButton
+              d={d}
+              hasTransfers={hasTransfers}
+              onChanged={onChanged}
+            />
+          </div>
 
-      {verifyOpen && (
-        <VerifyDialog
-          d={d}
-          dec={dec}
-          onClose={() => setVerifyOpen(false)}
-          onChanged={onChanged}
-        />
+          {verifyOpen && (
+            <VerifyDialog
+              d={d}
+              dec={dec}
+              onClose={() => setVerifyOpen(false)}
+              onChanged={onChanged}
+            />
+          )}
+          {transferOpen && (
+            <TransferDialog
+              d={d}
+              dec={dec}
+              onClose={() => setTransferOpen(false)}
+              onChanged={onChanged}
+            />
+          )}
+        </Td>
+      </Tr>
+
+      {expanded && (
+        <Tr className="bg-[var(--bg-2)] hover:bg-[var(--bg-2)]">
+          <Td colSpan={6} className="px-5 py-4">
+            <div className="grid grid-cols-1 gap-x-8 gap-y-3 md:grid-cols-2">
+              <div className="space-y-3">
+                <KeyVal label="Address">
+                  <Addr value={d.address} truncated={false} />
+                </KeyVal>
+                {d.memo && (
+                  <KeyVal label="Memo">
+                    <span className="font-mono">{d.memo}</span>
+                  </KeyVal>
+                )}
+                <KeyVal label="Exchange minimum">
+                  <span className="font-mono tabular-nums">
+                    {fmtAmt(d.exchangeMinRaw, dec, d.token)}
+                  </span>
+                </KeyVal>
+                <KeyVal label="Float kept">
+                  <span className="font-mono tabular-nums">
+                    {fmtAmt(d.keepFloatRaw, dec, d.token)}
+                    <span className="ml-1.5 font-sans text-xs text-[var(--fg-2)]">
+                      always left for store payouts
+                    </span>
+                  </span>
+                </KeyVal>
+                <KeyVal label="Caps (USD)">
+                  <span className="font-mono tabular-nums">
+                    min {fmtUsd(d.minTransferUsd)} · per transfer{' '}
+                    {fmtUsd(d.maxPerTransferUsd)} · daily {fmtUsd(d.maxDailyUsd)}
+                  </span>
+                </KeyVal>
+              </div>
+              <div className="space-y-3">
+                <KeyVal label="Schedule">
+                  {auto ? (
+                    <span className="font-mono">every {d.autoIntervalHours}h</span>
+                  ) : (
+                    <span className="text-[var(--fg-2)]">manual only</span>
+                  )}
+                </KeyVal>
+                <KeyVal label="Next run">
+                  {auto && d.nextRunDue != null ? (
+                    <span
+                      className={cn(
+                        'font-mono tabular-nums',
+                        overdue ? 'text-warn' : 'text-foreground',
+                      )}
+                    >
+                      {fmtLocal(d.nextRunDue)}
+                      <span className="ml-1.5 text-[var(--fg-3)]">
+                        ({fmtRelDelta(d.nextRunDue - now)})
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-[var(--fg-3)]">—</span>
+                  )}
+                </KeyVal>
+                <KeyVal label="Last run">
+                  {d.lastRunAt != null ? (
+                    <span className="font-mono tabular-nums">
+                      {fmtLocal(d.lastRunAt)}
+                      <span className="ml-1.5 text-[var(--fg-3)]">
+                        ({fmtRelDelta(d.lastRunAt - now)})
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-[var(--fg-3)]">never</span>
+                  )}
+                </KeyVal>
+                <KeyVal label="Last transfer">
+                  {d.lastTransferId ? (
+                    <Addr value={d.lastTransferId} />
+                  ) : (
+                    <span className="text-[var(--fg-3)]">—</span>
+                  )}
+                </KeyVal>
+                <KeyVal label="Verified at">
+                  {verified ? (
+                    <span className="font-mono tabular-nums">
+                      {fmtLocal(d.verifiedAt)}
+                    </span>
+                  ) : (
+                    <span className="text-[var(--fg-3)]">not yet</span>
+                  )}
+                </KeyVal>
+              </div>
+            </div>
+            <div className="mt-4 border-t border-border pt-4">
+              <div className="eyebrow mb-2">Eligibility</div>
+              <EligibilityPanel destinationId={d.id} token={d.token} />
+            </div>
+          </Td>
+        </Tr>
       )}
-      {transferOpen && (
-        <TransferDialog
-          d={d}
-          dec={dec}
-          onClose={() => setTransferOpen(false)}
-          onChanged={onChanged}
-        />
-      )}
-    </Card>
+    </>
   )
 }
 
 function KeyVal({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[140px_1fr] items-start gap-3 text-sm">
-      <span className="pt-0.5 text-2xs uppercase tracking-[0.08em] text-[var(--fg-3)]">
-        {label}
-      </span>
-      <div className="min-w-0">{children}</div>
+    <div className="grid grid-cols-1 items-start gap-1 text-sm sm:grid-cols-[140px_1fr] sm:gap-3">
+      <span className="text-xs text-[var(--fg-2)] sm:pt-px">{label}</span>
+      <div className="min-w-0 break-words">{children}</div>
     </div>
   )
 }
@@ -726,15 +812,16 @@ function EligibilityPanel({
   })
   if (q.isLoading)
     return (
-      <div className="flex items-center gap-2 text-xs text-[var(--fg-2)]">
-        <Loader2 className="size-3 animate-spin" /> Computing eligibility…
+      <div className="flex items-center gap-2 text-sm text-[var(--fg-2)]">
+        <Loader2 className="size-3.5 animate-spin" /> Computing eligibility…
       </div>
     )
   if (q.isError)
     return (
-      <div className="text-xs text-destructive">
-        {errText(q.error, 'Could not load eligibility')}
-      </div>
+      <ErrorState
+        title="Could not load eligibility"
+        message={errText(q.error, 'Could not load eligibility')}
+      />
     )
   if (!q.data) return null
   return (
@@ -755,31 +842,28 @@ function EligibilityView({
   return (
     <div className="space-y-3">
       {e.blocked && (
-        <div className="flex items-center gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
-          <AlertTriangle className="size-3.5 shrink-0" />
-          <span>
-            Blocked — <span className="font-mono">{e.blocked}</span>:{' '}
-            {BLOCKED_TEXT[e.blocked]}
-          </span>
-        </div>
+        <Callout tone="warn">
+          Blocked — <span className="font-mono">{e.blocked}</span>:{' '}
+          {BLOCKED_TEXT[e.blocked]}
+        </Callout>
       )}
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
-        <Stat label="Spendable" value={fmtAmt(e.spendableRaw, dec, token)} />
-        <Stat
+      <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+        <Metric label="Spendable" value={fmtAmt(e.spendableRaw, dec, token)} />
+        <Metric
           label={`Held for refunds · ${e.holdHours} h hold`}
           value={fmtAmt(e.heldForRefundsRaw, dec, token)}
         />
-        <Stat label="Float kept" value={fmtAmt(e.keepFloatRaw, dec, token)} />
-        <Stat label="Per-transfer cap" value={fmtUsd(e.perTransferCapUsd)} />
-        <Stat label="Daily remaining" value={fmtUsd(e.dailyRemainingUsd)} />
-        <Stat
+        <Metric label="Float kept" value={fmtAmt(e.keepFloatRaw, dec, token)} />
+        <Metric label="Per-transfer cap" value={fmtUsd(e.perTransferCapUsd)} />
+        <Metric label="Daily remaining" value={fmtUsd(e.dailyRemainingUsd)} />
+        <Metric
           label="Budget now"
           value={fmtAmt(e.budgetRaw, dec, token)}
           sub={fmtUsd(e.budgetUsd)}
           accent={e.blocked == null && e.budgetRaw !== '0'}
         />
-        <Stat label="Rate" value={`1 ${token} = $${fmtNum(e.usdRate, 4)}`} />
-        <Stat
+        <Metric label="Rate" value={`1 ${token} = $${fmtNum(e.usdRate, 4)}`} />
+        <Metric
           label="Sources"
           value={String(e.sources.length)}
           sub={`${e.sources.filter((s) => s.eligibleRaw !== '0').length} eligible`}
@@ -788,11 +872,11 @@ function EligibilityView({
       {sources === 'open' ? (
         <SourcesTable e={e} token={token} />
       ) : (
-        <details className="text-xs">
-          <summary className="cursor-pointer select-none text-2xs text-primary hover:underline">
+        <details className="text-sm">
+          <summary className="cursor-pointer text-xs text-primary select-none hover:underline">
             Show {e.sources.length} source{e.sources.length === 1 ? '' : 's'}
           </summary>
-          <div className="mt-1.5">
+          <div className="mt-2">
             <SourcesTable e={e} token={token} />
           </div>
         </details>
@@ -801,7 +885,8 @@ function EligibilityView({
   )
 }
 
-function Stat({
+/** Small boxed figure for the eligibility breakdown. */
+function Metric({
   label,
   value,
   sub,
@@ -821,13 +906,20 @@ function Stat({
           : 'border-border bg-[var(--bg-2)]',
       )}
     >
-      <div className="text-2xs uppercase tracking-[0.08em] text-[var(--fg-3)]">
+      <div className="truncate text-xs text-[var(--fg-2)]" title={label}>
         {label}
       </div>
-      <div className="mt-0.5 truncate font-mono text-sm" title={value}>
+      <div
+        className="mt-0.5 truncate font-mono text-sm font-medium tabular-nums"
+        title={value}
+      >
         {value}
       </div>
-      {sub && <div className="text-2xs text-[var(--fg-2)]">{sub}</div>}
+      {sub && (
+        <div className="font-mono text-xs tabular-nums text-[var(--fg-2)]">
+          {sub}
+        </div>
+      )}
     </div>
   )
 }
@@ -836,46 +928,47 @@ function SourcesTable({ e, token }: { e: TreasuryEligibility; token: string }) {
   const dec = e.decimals
   if (e.sources.length === 0)
     return (
-      <div className="text-xs text-[var(--fg-3)]">
+      <div className="text-sm text-[var(--fg-2)]">
         No pool source holds this token.
       </div>
     )
   return (
-    <div className="overflow-hidden rounded-md border border-border">
-      <table className="w-full text-xs">
-        <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
+    <TableWrap className="rounded-md border border-border bg-card">
+      <Table className="min-w-[480px] text-xs">
+        <THead>
           <tr>
-            <th className="px-2 py-1.5 text-left">Source</th>
-            <th className="px-2 py-1.5 text-right">Spendable</th>
-            <th className="px-2 py-1.5 text-right">Held</th>
-            <th className="px-2 py-1.5 text-right">Eligible</th>
+            <Th>Source</Th>
+            <Th align="right">Spendable</Th>
+            <Th align="right">Held</Th>
+            <Th align="right">Eligible</Th>
           </tr>
-        </thead>
-        <tbody>
+        </THead>
+        <TBody>
           {e.sources.map((s) => (
-            <tr key={s.address} className="border-t border-border">
-              <td className="px-2 py-1.5">
+            <Tr key={s.address}>
+              <Td className="py-2">
                 <Addr value={s.address} />
-              </td>
-              <td className="px-2 py-1.5 text-right font-mono">
+              </Td>
+              <Td align="right" className="py-2">
                 {formatUnits(s.spendableRaw, dec)}
-              </td>
-              <td className="px-2 py-1.5 text-right font-mono text-[var(--fg-2)]">
+              </Td>
+              <Td align="right" className="py-2 text-[var(--fg-2)]">
                 {formatUnits(s.heldRaw, dec)}
-              </td>
-              <td
+              </Td>
+              <Td
+                align="right"
                 className={cn(
-                  'px-2 py-1.5 text-right font-mono',
+                  'py-2',
                   s.eligibleRaw !== '0' ? 'text-success' : 'text-[var(--fg-3)]',
                 )}
               >
                 {formatUnits(s.eligibleRaw, dec)} {token}
-              </td>
-            </tr>
+              </Td>
+            </Tr>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </TBody>
+      </Table>
+    </TableWrap>
   )
 }
 
@@ -1106,9 +1199,10 @@ function TransferDialog({
             </DialogFooter>
           </>
         ) : (
-          <div className="space-y-3">
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
+          <div className="space-y-4">
+            <StepLabel n={1}>Set a limit for this run</StepLabel>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="min-w-0 flex-1">
                 <Field
                   label="Max USD this run (optional)"
                   hint="Lower than the per-transfer cap only; empty = use the destination's cap."
@@ -1137,7 +1231,7 @@ function TransferDialog({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="mb-[22px]"
+                className="self-start sm:mb-[22px] sm:self-auto"
                 onClick={applyMax}
                 disabled={preview.isFetching || maxUsdInput.trim() === maxUsd}
               >
@@ -1150,15 +1244,17 @@ function TransferDialog({
               </Button>
             </div>
 
+            <div className="border-t border-border pt-4">
+              <StepLabel n={2}>Review the dry run, then confirm</StepLabel>
+            </div>
             {preview.isLoading ? (
-              <div className="flex items-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-6 text-xs text-[var(--fg-2)]">
+              <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-[var(--bg-2)] px-3 py-6 text-sm text-[var(--fg-2)]">
                 <Loader2 className="size-3.5 animate-spin" /> Running dry run…
               </div>
             ) : preview.isError ? (
-              <div className="flex items-start gap-2 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2.5 text-xs text-destructive">
-                <AlertTriangle className="size-3.5 shrink-0" />
-                <span>{errText(preview.error, 'Dry run failed')}</span>
-              </div>
+              <Callout tone="danger">
+                {errText(preview.error, 'Dry run failed')}
+              </Callout>
             ) : elig ? (
               <EligibilityView e={elig} token={d.token} sources="collapsed" />
             ) : null}
@@ -1200,6 +1296,24 @@ function TransferDialog({
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** Numbered step heading inside the money dialogs (configure → confirm). */
+function StepLabel({
+  n,
+  children,
+}: {
+  n: number
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center gap-2 text-sm font-medium">
+      <span className="grid size-5 shrink-0 place-items-center rounded-full border border-border bg-[var(--bg-2)] font-mono text-2xs tabular-nums text-[var(--fg-2)]">
+        {n}
+      </span>
+      {children}
+    </div>
   )
 }
 
@@ -1259,12 +1373,12 @@ function TransferSummary({
   token: string
 }) {
   return (
-    <div className="space-y-2 rounded-md border border-border bg-secondary px-3 py-2.5 text-sm">
+    <div className="space-y-2 rounded-md border border-border bg-secondary px-4 py-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <ModeBadge mode={t.mode} />
         <TransferStatusBadges status={t.status} />
       </div>
-      <div className="font-mono text-xs">
+      <div className="font-mono text-xs tabular-nums">
         planned {fmtAmt(t.plannedAmountRaw, dec, token)} · {fmtUsd(t.plannedUsd)}{' '}
         · {t.legCount} leg{t.legCount === 1 ? '' : 's'}
         {t.skippedCount > 0 && ` · ${t.skippedCount} skipped`}
@@ -1278,7 +1392,7 @@ function TransferSummary({
         <span>
           batch <Addr value={t.batchId} />
         </span>
-        <span className="font-mono">{fmtLocal(t.createdAt)}</span>
+        <span className="font-mono tabular-nums">{fmtLocal(t.createdAt)}</span>
       </div>
       {t.skippedReasons.length > 0 && (
         <SkippedReasonsList reasons={t.skippedReasons} dec={dec} token={token} />
@@ -1302,24 +1416,24 @@ function SkippedReasonsList({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex cursor-pointer items-center gap-1 text-2xs text-warn hover:underline"
+        className="inline-flex cursor-pointer items-center gap-1 text-xs text-warn hover:underline"
       >
         <AlertTriangle className="size-3" />
         {open ? 'Hide' : 'Show'} skipped sources · {reasons.length}
       </button>
       {open && (
-        <ul className="mt-1.5 space-y-1 rounded-md border border-warn/40 bg-warn/10 p-2">
+        <ul className="mt-2 divide-y divide-[var(--warn-border)] overflow-hidden rounded-md border border-[var(--warn-border)] bg-[var(--warn-bg)]">
           {reasons.slice(0, 50).map((r) => (
             <li
               key={r.sourceAddress + r.amountRaw + r.reason}
-              className="flex flex-wrap items-center gap-2 rounded border border-warn/30 bg-card px-2 py-1 text-xs"
+              className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-xs"
             >
               <Addr value={r.sourceAddress} />
-              <span className="font-mono text-2xs text-[var(--fg-2)]">
+              <span className="font-mono text-xs tabular-nums text-[var(--fg-2)]">
                 {fmtAmt(r.amountRaw, dec, token)}
               </span>
               <span
-                className="ml-auto max-w-[280px] truncate font-mono text-2xs text-[var(--fg-3)]"
+                className="ml-auto max-w-full truncate font-mono text-2xs text-[var(--fg-2)] sm:max-w-[280px]"
                 title={r.reason}
               >
                 {r.reason}
@@ -1361,67 +1475,71 @@ function TransfersSection({
   )
   return (
     <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3.5">
-        <div className="text-base font-semibold tracking-tight">
-          Recent transfers
-        </div>
-        <span className="text-xs text-[var(--fg-2)]">newest first · last 50</span>
-        <div className="ml-auto flex items-center gap-2">
-          <Select value={filter} onValueChange={onFilterChange}>
-            <SelectTrigger className="w-[260px]">
-              <SelectValue placeholder="All destinations" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All destinations</SelectItem>
-              {destinations.map((d) => (
-                <SelectItem key={d.id} value={d.id}>
-                  <span className="flex items-center gap-2">
-                    <span>{d.label}</span>
-                    <span className="font-mono text-2xs text-[var(--fg-3)]">
-                      {chainName(chains, d.chainId)} · {d.token}
+      <CardHeader className="border-b">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="min-w-0">
+            <CardTitle>Recent transfers</CardTitle>
+            <CardDescription>newest first · last 50</CardDescription>
+          </div>
+          <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
+            <Select value={filter} onValueChange={onFilterChange}>
+              <SelectTrigger className="w-full min-w-0 sm:w-[260px]">
+                <SelectValue placeholder="All destinations" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All destinations</SelectItem>
+                {destinations.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    <span className="flex items-center gap-2">
+                      <span>{d.label}</span>
+                      <span className="font-mono text-2xs text-[var(--fg-3)]">
+                        {chainName(chains, d.chainId)} · {d.token}
+                      </span>
                     </span>
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onRefresh}
-            disabled={isFetching}
-          >
-            <RefreshCw
-              className={'size-3.5' + (isFetching ? ' animate-spin' : '')}
-            />
-          </Button>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRefresh}
+              disabled={isFetching}
+              aria-label="Refresh transfers"
+            >
+              <RefreshCw
+                className={'size-3.5' + (isFetching ? ' animate-spin' : '')}
+              />
+            </Button>
+          </div>
         </div>
-      </div>
+      </CardHeader>
       {isLoading ? (
-        <div className="p-8 text-center text-sm text-[var(--fg-2)]">Loading…</div>
+        <ListSkeleton rows={5} className="rounded-none border-0" />
       ) : error ? (
-        <div className="p-8 text-center text-sm text-destructive">
-          {errText(error, 'Could not load transfers')}
+        <div className="p-5">
+          <ErrorState
+            title="Could not load transfers"
+            message={errText(error, 'Could not load transfers')}
+          />
         </div>
       ) : transfers.length === 0 ? (
-        <div className="p-8 text-center text-sm text-[var(--fg-2)]">
-          No transfers yet.
-        </div>
+        <EmptyState compact title="No transfers yet." />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-[var(--bg-2)] text-2xs uppercase tracking-wider text-[var(--fg-3)]">
+        <TableWrap>
+          <Table className="min-w-[1040px] text-xs">
+            <THead>
               <tr>
-                <th className="px-4 py-2 text-left">Created</th>
-                <th className="px-3 py-2 text-left">Mode</th>
-                <th className="px-3 py-2 text-left">Destination</th>
-                <th className="px-3 py-2 text-right">Planned</th>
-                <th className="px-3 py-2 text-right">Legs</th>
-                <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-4 py-2 text-left">Ids</th>
+                <Th>Created</Th>
+                <Th>Mode</Th>
+                <Th>Destination</Th>
+                <Th align="right">Planned</Th>
+                <Th align="right">Legs</Th>
+                <Th>Status</Th>
+                <Th>Ids</Th>
               </tr>
-            </thead>
-            <tbody>
+            </THead>
+            <TBody>
               {transfers.map((t) => {
                 const dest = byId.get(t.destinationId)
                 const dec = dest
@@ -1437,9 +1555,9 @@ function TransfersSection({
                   />
                 )
               })}
-            </tbody>
-          </table>
-        </div>
+            </TBody>
+          </Table>
+        </TableWrap>
       )}
     </Card>
   )
@@ -1460,18 +1578,18 @@ function TransferRow({
   const token = dest?.token ?? ''
   return (
     <>
-      <tr className="border-t border-border align-top">
-        <td className="px-4 py-2 font-mono whitespace-nowrap">
+      <Tr>
+        <Td className="align-top font-mono whitespace-nowrap tabular-nums">
           {fmtLocal(t.createdAt)}
-        </td>
-        <td className="px-3 py-2">
+        </Td>
+        <Td className="align-top">
           <ModeBadge mode={t.mode} />
-        </td>
-        <td className="px-3 py-2">
+        </Td>
+        <Td className="align-top">
           {dest ? (
             <div>
               <div className="font-medium">{dest.label}</div>
-              <div className="font-mono text-2xs text-[var(--fg-3)]">
+              <div className="font-mono text-2xs text-[var(--fg-2)]">
                 {chainName(chains, dest.chainId)} · {dest.token}
               </div>
             </div>
@@ -1480,10 +1598,10 @@ function TransferRow({
               {t.destinationId.slice(0, 8)}… (unknown destination)
             </span>
           )}
-        </td>
-        <td className="px-3 py-2 text-right font-mono whitespace-nowrap">
-          <div>{fmtAmt(t.plannedAmountRaw, dec, token)}</div>
-          <div className="text-2xs text-[var(--fg-3)]">
+        </Td>
+        <Td align="right" className="align-top whitespace-nowrap">
+          <div className="font-medium">{fmtAmt(t.plannedAmountRaw, dec, token)}</div>
+          <div className="text-2xs text-[var(--fg-2)]">
             {fmtUsd(t.plannedUsd)}
           </div>
           {t.status.confirmedAmountRaw !== '0' &&
@@ -1492,8 +1610,8 @@ function TransferRow({
                 confirmed {fmtAmt(t.status.confirmedAmountRaw, dec, token)}
               </div>
             )}
-        </td>
-        <td className="px-3 py-2 text-right font-mono whitespace-nowrap">
+        </Td>
+        <Td align="right" className="align-top whitespace-nowrap">
           <div>{t.legCount}</div>
           {t.skippedCount > 0 && (
             <button
@@ -1509,28 +1627,28 @@ function TransferRow({
               {t.skippedCount} skipped
             </button>
           )}
-        </td>
-        <td className="px-3 py-2">
+        </Td>
+        <Td className="align-top">
           <TransferStatusBadges status={t.status} />
-        </td>
-        <td className="px-4 py-2 text-[var(--fg-2)]">
+        </Td>
+        <Td className="align-top text-[var(--fg-2)]">
           <div className="flex flex-col gap-0.5">
             <span>
-              <span className="text-2xs uppercase text-[var(--fg-3)]">tx </span>
+              <span className="text-2xs uppercase tracking-[0.06em] text-[var(--fg-3)]">tx </span>
               <Addr value={t.id} />
             </span>
             <span>
-              <span className="text-2xs uppercase text-[var(--fg-3)]">batch </span>
+              <span className="text-2xs uppercase tracking-[0.06em] text-[var(--fg-3)]">batch </span>
               <Addr value={t.batchId} />
             </span>
           </div>
-        </td>
-      </tr>
+        </Td>
+      </Tr>
       {open && (
-        <tr className="border-t border-border bg-[var(--bg-2)]">
-          <td colSpan={7} className="px-4 py-2.5">
+        <Tr className="bg-[var(--bg-2)] hover:bg-[var(--bg-2)]">
+          <Td colSpan={7} className="py-3">
             {t.skippedReasons.length === 0 ? (
-              <span className="text-[var(--fg-3)]">
+              <span className="text-[var(--fg-2)]">
                 {t.skippedCount} skipped — reasons not recorded.
               </span>
             ) : (
@@ -1538,14 +1656,14 @@ function TransferRow({
                 {t.skippedReasons.slice(0, 50).map((r) => (
                   <li
                     key={r.sourceAddress + r.amountRaw + r.reason}
-                    className="flex flex-wrap items-center gap-2 rounded border border-warn/30 bg-card px-2 py-1"
+                    className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--warn-border)] bg-card px-3 py-1.5"
                   >
                     <Addr value={r.sourceAddress} />
-                    <span className="font-mono text-2xs text-[var(--fg-2)]">
+                    <span className="font-mono text-xs tabular-nums text-[var(--fg-2)]">
                       {fmtAmt(r.amountRaw, dec, token)}
                     </span>
                     <span
-                      className="ml-auto max-w-[360px] truncate font-mono text-2xs text-[var(--fg-3)]"
+                      className="ml-auto max-w-full truncate font-mono text-2xs text-[var(--fg-2)] sm:max-w-[360px]"
                       title={r.reason}
                     >
                       {r.reason}
@@ -1554,8 +1672,8 @@ function TransferRow({
                 ))}
               </ul>
             )}
-          </td>
-        </tr>
+          </Td>
+        </Tr>
       )}
     </>
   )
@@ -1852,7 +1970,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
             save.mutate()
           }}
         >
-          <div className="grid grid-cols-[1fr_150px] gap-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_150px] sm:gap-2">
             <Field label="Label">
               <Input
                 value={label}
@@ -1899,7 +2017,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-[1fr_140px] gap-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_140px] sm:gap-2">
                 <Field label="Chain">
                   <Select
                     value={chainId}
@@ -1978,7 +2096,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
             </>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
             <Field
               label={`Exchange minimum (${symbol || 'token'})`}
               hint={
@@ -2000,7 +2118,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
               label={`Float to keep (${symbol || 'token'})`}
               hint={
                 <>
-                  Always left in the gateway for merchant payouts.{' '}
+                  Always left in the gateway for store payouts.{' '}
                   {rawHint(keepFloat)}
                 </>
               }
@@ -2015,7 +2133,7 @@ function DestinationFormDialog(props: DestinationFormProps) {
             </Field>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-2">
             <UsdField
               label="Min transfer"
               value={minTransferUsd}
