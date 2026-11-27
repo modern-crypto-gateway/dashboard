@@ -133,5 +133,8 @@ export {
   HourglassSimpleIcon as HourglassSimple,
   ChartBarIcon as ChartBar,
   NotePencilIcon as NotePencil,
+  AlarmIcon as Alarm,
+  PaperclipIcon as Paperclip,
+  ImageSquareIcon as ImageSquare,
 } from '@phosphor-icons/react'
 export type { Icon as IconType, IconProps } from '@phosphor-icons/react'

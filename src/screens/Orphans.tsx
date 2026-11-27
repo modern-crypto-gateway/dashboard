@@ -1,8 +1,10 @@
 import * as React from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   ArrowRight,
+  Info,
   MoreHorizontal,
   RefreshCw,
   Search,
@@ -76,8 +78,21 @@ export function OrphansPage() {
     qc.invalidateQueries({ queryKey: ['orphans'] })
   }
 
-  const [query, setQuery] = React.useState('')
+  // Links from other pages (e.g. Audit address): ?q=<tx hash> pre-fills the
+  // search, ?open=<transaction id> opens that orphan's attribute dialog.
+  const [params] = useSearchParams()
+  const [query, setQuery] = React.useState(() => params.get('q') ?? '')
   const orphans = React.useMemo(() => list.data?.orphans ?? [], [list.data])
+  const linkedId = params.get('open')
+  const [link, setLink] = React.useState<'pending' | 'opened' | 'missing'>('pending')
+  if (link === 'pending' && linkedId && list.data) {
+    const hit = orphans.find((o) => o.id === linkedId)
+    setLink(hit ? 'opened' : 'missing')
+    if (hit) {
+      setTarget(hit)
+      setMode('attribute')
+    }
+  }
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return orphans
@@ -128,6 +143,13 @@ export function OrphansPage() {
           </Button>
         }
       />
+
+      {link === 'missing' && (
+        <div className="flex items-start gap-2.5 rounded-xl border border-border bg-card px-4 py-3 text-sm text-[var(--fg-2)]">
+          <Info className="mt-0.5 size-4 shrink-0" />
+          That transfer is not among the latest 100 open orphans. It may already be attributed or dismissed.
+        </div>
+      )}
 
       {list.isError ? (
         <ErrorState

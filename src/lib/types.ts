@@ -879,6 +879,26 @@ export type OrphanTransaction = {
   detectedAt: string
 }
 
+/** One transfer the audit found, and what became of it (gateway read-back). */
+export type AuditTransfer = {
+  txHash: string
+  logIndex: number | null
+  token: string
+  amountRaw: string
+  fromAddress: string
+  blockNumber: number | null
+  onchainTime: number | null
+  outcome: 'inserted' | 'already_present'
+  transactionId: string | null
+  status: 'detected' | 'confirmed' | 'reverted' | 'orphaned' | null
+  dismissed: boolean
+  amountUsd: string | null
+  invoiceId: string | null
+  merchantId: string | null
+  invoiceStatus: string | null
+  externalId: string | null
+}
+
 export type AuditResult = {
   chainId: number
   address: string
@@ -887,6 +907,9 @@ export type AuditResult = {
   inserted: number
   alreadyPresent: number
   insertedTxIds: string[]
+  /** Present from the gateway version that reports per-transfer outcomes. */
+  transfers?: AuditTransfer[]
+  transfersTruncated?: boolean
 }
 
 export type AlchemyBootstrapResult = {

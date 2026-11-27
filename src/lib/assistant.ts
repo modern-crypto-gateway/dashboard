@@ -35,8 +35,17 @@ export interface AssistantAnswer {
   other?: string
 }
 
+/** An image in the operator's message (src: local preview before the server has it). */
+export interface AssistantImage {
+  id: string
+  mediaType: string
+  width?: number
+  height?: number
+  src?: string
+}
+
 export type AssistantUiItem =
-  | { kind: 'user'; id: string; text: string; at: number }
+  | { kind: 'user'; id: string; text: string; at: number; images?: AssistantImage[] }
   | { kind: 'assistant'; id: string; text: string; at: number }
   | { kind: 'step'; id: string; step: AssistantStep; at: number }
   | { kind: 'notice'; id: string; text: string; at: number }
@@ -48,6 +57,16 @@ export type AssistantUiItem =
       status: 'waiting' | 'answered' | 'skipped' | 'replied'
       at: number
     }
+  | {
+      kind: 'wakeup'
+      id: string
+      dueAt: number
+      reason: string
+      status: 'scheduled' | 'done' | 'cancelled' | 'replaced'
+      firedAt?: number
+      at: number
+    }
+  | { kind: 'checkin'; id: string; reason: string; at: number }
 
 export interface AssistantPendingAction {
   id: string
@@ -67,6 +86,9 @@ export interface ConversationMeta {
   createdAt: number
   updatedAt: number
   pending: boolean
+  /** Scheduled check-in, if any (absent from older servers). */
+  wakeAt?: number | null
+  wakeId?: string | null
 }
 
 export interface AssistantConversation extends Omit<ConversationMeta, 'pending'> {
@@ -75,6 +97,7 @@ export interface AssistantConversation extends Omit<ConversationMeta, 'pending'>
   ui: AssistantUiItem[]
   pending: { id: string; expiresAt: number; actions: AssistantPendingAction[] } | null
   question: { id: string; questions: AssistantQuestion[] } | null
+  wakeup?: { id: string; dueAt: number; reason: string } | null
 }
 
 export interface AssistantConfig {
@@ -138,7 +161,7 @@ function csrfToken(): string | null {
  * and throw ApiError before any event.
  */
 export async function streamAssistant(
-  action: 'chat' | 'approve' | 'answer',
+  action: 'chat' | 'approve' | 'answer' | 'wake',
   body: unknown,
   onEvent: (ev: StreamEvent) => void,
 ): Promise<void> {
@@ -210,7 +233,7 @@ export function applyEvent(conv: AssistantConversation, ev: StreamEvent): Assist
 export const LOCAL_USER_ID = 'local-user'
 
 export function emptyConversation(meta: ConversationMeta): AssistantConversation {
-  return { ...meta, rev: 0, busy: true, ui: [], pending: null, question: null }
+  return { ...meta, rev: 0, busy: true, ui: [], pending: null, question: null, wakeup: null }
 }
 
 /* ── record links (gw:…) ──────────────────────────────────── */

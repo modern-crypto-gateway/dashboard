@@ -5,12 +5,15 @@
  *
  *   GET  /api/assistant/state              settings summary + chat list
  *   GET  /api/assistant/conversations/:id  one chat
+ *   GET  /api/assistant/conversations/:id/images/:imageId  an image the operator attached
  *   POST /api/assistant/config             set the Anthropic key (needs 2FA code) and/or model
  *   POST /api/assistant/key/delete         remove the Anthropic key
  *   POST /api/assistant/test               check the key works
  *   POST /api/assistant/chat               send a message (streams progress)
  *   POST /api/assistant/approve            approve / decline the pending batch (streams progress)
  *   POST /api/assistant/answer             answer / skip the assistant's question (streams progress)
+ *   POST /api/assistant/wake               run the chat's scheduled check-in (streams progress)
+ *   POST /api/assistant/wake/cancel        cancel the scheduled check-in
  *   POST /api/assistant/stop               stop the running turn after the current step
  *   POST /api/assistant/rename             rename a chat
  *   POST /api/assistant/delete             delete a chat
@@ -30,6 +33,7 @@ import { verifyUserTotpOnce } from '../lib/stepup'
 import { moneyActionFor } from '../../shared/moneyRoutes'
 import {
   appendUserText,
+  beginCheckin,
   executeBatch,
   notice,
   repairDangling,
@@ -49,8 +53,8 @@ import {
   writeApiKey,
   writeModel,
 } from './config'
-import type { AssistantStoreApi } from './store'
-import { metaOf, type Conversation, type StreamEvent } from './types'
+import { MAX_IMAGES_PER_CHAT, type AssistantStoreApi } from './store'
+import { metaOf, type Conversation, type ImageMediaType, type ImageRef, type StreamEvent } from './types'
 
 export interface Sess {
   hash: string
@@ -64,6 +68,54 @@ const TITLE_MAX = 80
 const PAGE_RX = /^\/[A-Za-z0-9/_-]{0,120}$/
 const STORE_ID_RX = /^[A-Za-z0-9_-]{1,128}$/
 const CONV_ID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const IMAGES_PER_MESSAGE = 4
+/** Per image, after the browser has scaled it down (Claude reads up to ~1568 px). */
+const IMAGE_BYTES_MAX = 1_500_000
+const B64_RX = /^[A-Za-z0-9+/]+={0,2}$/
+
+/** The type an image really is, from its first bytes (never the declared type). */
+function sniffImage(b: Uint8Array): ImageMediaType | null {
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return 'image/png'
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg'
+  if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38 && (b[4] === 0x37 || b[4] === 0x39) && b[5] === 0x61) return 'image/gif'
+  if (b.length >= 12 && String.fromCharCode(...b.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...b.subarray(8, 12)) === 'WEBP') return 'image/webp'
+  return null
+}
+
+type ParsedImage = { ref: ImageRef; bytes: Uint8Array }
+
+/** Validate the images of a chat message: count, size, real type. */
+function parseImages(raw: unknown): { ok: true; images: ParsedImage[] } | { ok: false; message: string } {
+  if (raw == null) return { ok: true, images: [] }
+  if (!Array.isArray(raw)) return { ok: false, message: 'images must be a list' }
+  if (raw.length > IMAGES_PER_MESSAGE) return { ok: false, message: `At most ${IMAGES_PER_MESSAGE} images per message.` }
+  const images: ParsedImage[] = []
+  for (const item of raw) {
+    const o = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>
+    const data = typeof o.data === 'string' ? o.data : ''
+    if (!data || !B64_RX.test(data) || data.length > Math.ceil((IMAGE_BYTES_MAX * 4) / 3) + 4) {
+      return { ok: false, message: 'Each image must be a PNG, JPEG, WebP or GIF of at most 1.5 MB.' }
+    }
+    let bytes: Uint8Array
+    try {
+      bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
+    } catch {
+      return { ok: false, message: 'An image could not be read.' }
+    }
+    const mediaType = sniffImage(bytes)
+    if (!mediaType || bytes.length > IMAGE_BYTES_MAX) {
+      return { ok: false, message: 'Each image must be a PNG, JPEG, WebP or GIF of at most 1.5 MB.' }
+    }
+    const dim = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v > 0 && v <= 10_000 ? v : undefined)
+    const width = dim(o.width)
+    const height = dim(o.height)
+    images.push({
+      ref: { id: crypto.randomUUID(), mediaType, ...(width ? { width } : {}), ...(height ? { height } : {}) },
+      bytes,
+    })
+  }
+  return { ok: true, images }
+}
 
 function store(env: Bindings, username: string): AssistantStoreApi {
   const ns = env.ASSISTANT_STORE
@@ -98,6 +150,7 @@ function publicView(conv: Conversation) {
       })),
     },
     question: conv.question && { id: conv.question.id, questions: conv.question.questions },
+    wakeup: conv.wakeup ? { id: conv.wakeup.id, dueAt: conv.wakeup.dueAt, reason: conv.wakeup.reason } : null,
   }
 }
 
@@ -136,6 +189,7 @@ async function makeCtx(
     client: anthropicClient(env, req, apiKey, { maxRetries: 1, timeout: 90_000 }),
     model: cfg.model,
     checkpoint: (conv) => s.checkpoint(conv),
+    loadImages: (cid, ids) => s.getImages(cid, ids),
     shouldStop: async () => false,
     emit: () => {},
   }
@@ -206,11 +260,34 @@ export async function getAssistantState(_req: Request, env: Bindings, sess: Sess
 }
 
 export async function getConversation(_req: Request, env: Bindings, sess: Sess, id: string): Promise<Response> {
+  const img = /^([^/]+)\/images\/([^/]+)$/.exec(id)
+  if (img) return getImage(env, sess, img[1], img[2])
   const cid = convId(id)
   if (!cid) return error('BAD_ID', 'Unknown conversation', 404)
   const conv = await store(env, sess.record.username).read(cid)
   if (!conv) return error('NOT_FOUND', 'Unknown conversation', 404)
   return json({ conversation: publicView(conv) })
+}
+
+/**
+ * An attached image, for the chat transcript. Only types sniffed on upload
+ * are ever stored, and the response can't be run as a page if opened directly.
+ */
+async function getImage(env: Bindings, sess: Sess, conv: string, image: string): Promise<Response> {
+  const cid = convId(conv)
+  const iid = convId(image)
+  if (!cid || !iid) return error('NOT_FOUND', 'Unknown image', 404)
+  const found = await store(env, sess.record.username).getImage(cid, iid)
+  if (!found) return error('NOT_FOUND', 'Unknown image', 404)
+  return new Response(found.bytes, {
+    headers: {
+      'Content-Type': found.mediaType,
+      'Cache-Control': 'private, max-age=86400',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Disposition': 'inline',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+    },
+  })
 }
 
 /* ── POST dispatcher ──────────────────────────────────────── */
@@ -237,6 +314,10 @@ export async function assistantPost(
       return postApprove(req, env, sess, dispatch, ectx)
     case 'answer':
       return postAnswer(req, env, sess, dispatch, ectx)
+    case 'wake':
+      return postWake(req, env, sess, dispatch, ectx)
+    case 'wake/cancel':
+      return postWakeCancel(req, env, sess)
     case 'stop':
       return postStop(req, env, sess)
     case 'rename':
@@ -302,9 +383,18 @@ async function postChat(
   dispatch: Dispatch,
   ectx: ExecutionContext,
 ): Promise<Response> {
-  const body = await readJson<{ conversationId?: unknown; message?: unknown; page?: unknown; storeId?: unknown }>(req)
+  const body = await readJson<{
+    conversationId?: unknown
+    message?: unknown
+    page?: unknown
+    storeId?: unknown
+    images?: unknown
+  }>(req)
   const text = typeof body.message === 'string' ? body.message.trim() : ''
-  if (!text || text.length > MESSAGE_MAX) {
+  const parsedImages = parseImages(body.images)
+  if (!parsedImages.ok) return error('BAD_IMAGE', parsedImages.message, 400)
+  const images = parsedImages.images
+  if ((!text && images.length === 0) || text.length > MESSAGE_MAX) {
     return error('BAD_MESSAGE', `Message must be 1–${MESSAGE_MAX} characters.`, 400)
   }
   const requested = body.conversationId == null ? null : convId(body.conversationId)
@@ -320,7 +410,7 @@ async function postChat(
 
   const s = store(env, sess.record.username)
   const ctx = await makeCtx(req, env, sess, dispatch, s)
-  const begun = await s.begin(requested, sess.record.username, titleFrom(text))
+  const begun = await s.begin(requested, sess.record.username, titleFrom(text || 'Image'))
   if (!begun.ok) {
     return begun.reason === 'busy'
       ? error('AI_BUSY', 'The assistant is still working on the last message.', 409)
@@ -331,6 +421,16 @@ async function postChat(
     await s.release(conv.id)
     return error('AI_PENDING', 'Approve or decline the pending changes first.', 409)
   }
+  if (images.length) {
+    const stored = await s.putImages(
+      conv.id,
+      images.map((i) => ({ id: i.ref.id, mediaType: i.ref.mediaType, bytes: i.bytes })),
+    )
+    if (!stored) {
+      await s.release(conv.id)
+      return error('AI_TOO_MANY_IMAGES', `A chat can hold ${MAX_IMAGES_PER_CHAT} images. Start a new chat to send more.`, 409)
+    }
+  }
 
   return streamTurn(ectx, async (emit) => {
     ctx.emit = emit
@@ -339,7 +439,13 @@ async function postChat(
     // Typing instead of picking an option answers the waiting question.
     if (conv.question) resolveQuestion(ctx, conv, { replied: true })
     repairDangling(ctx, conv)
-    appendUserText(ctx, conv, text, context || undefined)
+    appendUserText(
+      ctx,
+      conv,
+      text,
+      context || undefined,
+      images.map((i) => i.ref),
+    )
     try {
       await runModel(ctx, conv)
     } catch (e) {
@@ -491,6 +597,75 @@ async function postAnswer(
     const saved = await s.commit(conv)
     emit({ t: 'done', conversation: publicView(saved) })
   })
+}
+
+/* ── scheduled check-ins ──────────────────────────────────── */
+
+/**
+ * Run a check-in the assistant scheduled. The operator's own browser calls
+ * this when it is due (or when they press "Check now"), so it runs with their
+ * session, CSRF token and limits like any message; nothing runs server-side
+ * on its own. Two tabs firing together run it once (claimWakeup is atomic).
+ */
+async function postWake(
+  req: Request,
+  env: Bindings,
+  sess: Sess,
+  dispatch: Dispatch,
+  ectx: ExecutionContext,
+): Promise<Response> {
+  const body = await readJson<{ conversationId?: unknown; wakeupId?: unknown }>(req)
+  const cid = convId(body.conversationId)
+  const wid = typeof body.wakeupId === 'string' ? body.wakeupId : ''
+  if (!cid || !wid) return error('BAD_INPUT', 'conversationId and wakeupId are required', 400)
+
+  const s = store(env, sess.record.username)
+  const ctx = await makeCtx(req, env, sess, dispatch, s)
+  const claimed = await s.claimWakeup(cid, wid)
+  if (!claimed.ok) {
+    switch (claimed.reason) {
+      case 'busy':
+        return error('AI_BUSY', 'The assistant is busy. The check-in will run after the current step.', 409)
+      case 'pending':
+        return error('AI_PENDING', 'Approve, decline or answer what is waiting first.', 409)
+      case 'not_found':
+        return error('NOT_FOUND', 'Unknown conversation', 404)
+      default:
+        return error('AI_NO_WAKEUP', 'That check-in already ran or was cancelled.', 409)
+    }
+  }
+  const conv = claimed.conv
+
+  return streamTurn(ectx, async (emit) => {
+    ctx.emit = emit
+    ctx.shouldStop = () => s.shouldStop(conv.id)
+    emit({ t: 'start', conversation: metaOf(conv) })
+    repairDangling(ctx, conv)
+    beginCheckin(ctx, conv, claimed.wakeup)
+    try {
+      await runModel(ctx, conv)
+    } catch (e) {
+      repairDangling(ctx, conv)
+      notice(ctx, conv, describeFailure(e))
+    }
+    if (await ctx.shouldStop()) repairDangling(ctx, conv, 'stopped')
+    const saved = await s.commit(conv)
+    emit({ t: 'done', conversation: publicView(saved) })
+  })
+}
+
+async function postWakeCancel(req: Request, env: Bindings, sess: Sess): Promise<Response> {
+  const body = await readJson<{ conversationId?: unknown; wakeupId?: unknown }>(req)
+  const cid = convId(body.conversationId)
+  const wid = typeof body.wakeupId === 'string' ? body.wakeupId : ''
+  if (!cid || !wid) return error('BAD_INPUT', 'conversationId and wakeupId are required', 400)
+  const r = await store(env, sess.record.username).cancelWakeup(cid, wid)
+  if (!r.ok) {
+    if (r.reason === 'busy') return error('AI_BUSY', 'Wait for the current step to finish.', 409)
+    if (r.reason === 'not_found') return error('NOT_FOUND', 'Unknown conversation', 404)
+    return error('AI_NO_WAKEUP', 'That check-in already ran or was cancelled.', 409)
+  }
+  return json({ conversation: publicView(r.conv) })
 }
 
 /* ── chat housekeeping ────────────────────────────────────── */

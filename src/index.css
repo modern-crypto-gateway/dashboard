@@ -496,7 +496,10 @@ textarea:focus-visible,
 /* Soft pulse ring behind the assistant avatar while it works. */
 @keyframes ai-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 45%, transparent); } 100% { box-shadow: 0 0 0 8px transparent; } }
 .ai-pulse { animation: ai-pulse 1.4s ease-out infinite; }
+/* A scheduled check-in's alarm: a short ring every few seconds. */
+@keyframes ai-ring { 0%, 76%, 100% { transform: rotate(0); } 80% { transform: rotate(14deg); } 84% { transform: rotate(-12deg); } 88% { transform: rotate(9deg); } 92% { transform: rotate(-6deg); } 96% { transform: rotate(3deg); } }
+.ai-ring { animation: ai-ring 3s ease-in-out infinite; transform-origin: 50% 40%; }
 @media (prefers-reduced-motion: reduce) {
-  .ai-shimmer, .ai-caret::after, .ai-streaming *::after, .ai-pulse { animation: none; }
+  .ai-shimmer, .ai-caret::after, .ai-streaming *::after, .ai-pulse, .ai-ring { animation: none; }
   .ai-shimmer { color: var(--fg-2); background: none; }
 }

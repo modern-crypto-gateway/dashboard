@@ -4,6 +4,19 @@ import type { EntityRef } from '@/lib/assistant'
 /** Opens a record the assistant linked to (provided by the assistant panel). */
 export const EntityContext = React.createContext<(ref: EntityRef) => void>(() => {})
 
+/** Scheduled check-ins: run one now, or cancel it (provided by <Assistant>). */
+export interface CheckinApi {
+  run: (conversationId: string, wakeupId: string) => Promise<void>
+  cancel: (conversationId: string, wakeupId: string) => Promise<void>
+}
+export const CheckinContext = React.createContext<CheckinApi>({
+  run: async () => {},
+  cancel: async () => {},
+})
+
+/** A due check-in older than this is not run on its own; the chat offers "Check now". */
+export const CHECKIN_AUTO_GRACE_MS = 30 * 60 * 1000
+
 export type ResourceKey =
   | 'thinking'
   | 'invoice'

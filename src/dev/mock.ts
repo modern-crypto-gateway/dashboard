@@ -969,17 +969,33 @@ function buildRoutes(db: MockDb, flags: Set<Flag>, auth: { authenticated: boolea
       db.orphans = db.orphans.filter((o) => o.id !== params.id)
       return { dismissed: true }
     }),
-    route('POST', '/api/gw/admin/audit-address', ({ body }) => ({
-      audit: {
-        chainId: Number(body.chainId ?? 1),
-        address: String(body.address ?? ''),
-        sinceMs: Number(body.sinceMs ?? now() - 7 * DAY),
-        scanned: 37,
-        inserted: 2,
-        alreadyPresent: 35,
-        insertedTxIds: [gen.uuid(r), gen.uuid(r)],
-      },
-    })),
+    route('POST', '/api/gw/admin/audit-address', ({ body }) => {
+      // Same shape as the gateway: counts plus what became of each transfer.
+      const chainId = Number(body.chainId ?? 1)
+      const inv = db.invoices[0]
+      const tx = () => '0x' + gen.hex(r, 64)
+      const base = { fromAddress: '0x' + gen.hex(r, 40), blockNumber: 19_000_000, dismissed: false }
+      const transfers = [
+        { ...base, txHash: tx(), logIndex: 4, token: 'USDT', amountRaw: '250000000', onchainTime: now() - 2 * 3600_000, outcome: 'inserted', transactionId: gen.uuid(r), status: 'confirmed', amountUsd: '250.00', invoiceId: inv?.id ?? null, merchantId: inv?.merchantId ?? null, invoiceStatus: 'completed', externalId: 'order-1042' },
+        { ...base, txHash: tx(), logIndex: 1, token: 'USDT', amountRaw: '7000000', onchainTime: now() - 26 * 3600_000, outcome: 'inserted', transactionId: gen.uuid(r), status: 'orphaned', amountUsd: '7.00', invoiceId: null, merchantId: null, invoiceStatus: null, externalId: null },
+        { ...base, txHash: tx(), logIndex: 0, token: 'USDC', amountRaw: '120000000', onchainTime: now() - 3 * DAY, outcome: 'already_present', transactionId: gen.uuid(r), status: 'confirmed', amountUsd: '120.00', invoiceId: inv?.id ?? null, merchantId: inv?.merchantId ?? null, invoiceStatus: 'completed', externalId: null },
+        { ...base, txHash: tx(), logIndex: 2, token: 'USDT', amountRaw: '1', onchainTime: now() - 5 * DAY, outcome: 'already_present', transactionId: gen.uuid(r), status: 'orphaned', dismissed: true, amountUsd: null, invoiceId: null, merchantId: null, invoiceStatus: null, externalId: null },
+        { ...base, txHash: tx(), logIndex: 0, token: 'USDT', amountRaw: '500000000', onchainTime: now() - 6 * DAY, outcome: 'already_present', transactionId: gen.uuid(r), status: 'reverted', amountUsd: null, invoiceId: null, merchantId: null, invoiceStatus: null, externalId: null },
+      ]
+      return {
+        audit: {
+          chainId,
+          address: String(body.address ?? ''),
+          sinceMs: Number(body.sinceMs ?? now() - 7 * DAY),
+          scanned: transfers.length,
+          inserted: 2,
+          alreadyPresent: 3,
+          insertedTxIds: transfers.filter((t) => t.outcome === 'inserted').map((t) => t.transactionId),
+          transfers,
+          transfersTruncated: false,
+        },
+      }
+    }),
 
     /* consolidation schedules */
     route('GET', '/api/gw/admin/consolidation-schedules', () => ({ schedules: list(db.schedules) })),

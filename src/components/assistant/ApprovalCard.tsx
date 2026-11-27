@@ -8,6 +8,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { OtpInput } from '@/components/OtpInput'
 import { ChevronDown, Clock, Loader2, ShieldCheck } from '@/components/icons'
+import { ChainIcon, TokenIcon } from '@/components/CryptoIcon'
+import { chainInfo } from '@/lib/chains'
+import { useMerchants } from '@/lib/merchants'
 import { resourceKey } from '@/lib/assistantUi'
 import { ResourceIcon } from './Steps'
 
@@ -177,11 +180,13 @@ function ActionRow({
             </Badge>
           </div>
           {action.facts.length > 0 && (
-            <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[12px]">
+            <dl className="mt-1.5 grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 text-[12px]">
               {action.facts.map(([k, v], i) => (
                 <React.Fragment key={`${k}-${i}`}>
-                  <dt className="text-[var(--fg-2)]">{k}</dt>
-                  <dd className="min-w-0 font-mono text-[11.5px] break-all">{v}</dd>
+                  <dt className="text-[var(--fg-2)]">{FACT_LABEL[k] ?? k}</dt>
+                  <dd className="min-w-0 text-[11.5px] break-all">
+                    <FactValue k={k} v={v} />
+                  </dd>
                 </React.Fragment>
               ))}
             </dl>
@@ -208,4 +213,55 @@ function ActionRow({
       )}
     </li>
   )
+}
+
+const FACT_LABEL: Record<string, string> = {
+  storeId: 'Store',
+  chainId: 'Chain',
+  token: 'Token',
+  amount: 'Amount',
+  amountRaw: 'Amount (base units)',
+  amountUSD: 'Amount (USD)',
+  amountUsd: 'Amount (USD)',
+  destinationAddress: 'To',
+  address: 'Address',
+  feeTier: 'Fee tier',
+  rows: 'Rows',
+}
+
+/** A fact, readable: chains and tokens with their logos, stores by name. */
+function FactValue({ k, v }: { k: string; v: string }) {
+  const merchants = useMerchants()
+  if (k === 'chainId' && /^\d+$/.test(v)) {
+    const id = Number(v)
+    return (
+      <span className="inline-flex items-center gap-1.5 font-medium">
+        <ChainIcon chainId={id} size={15} />
+        {chainInfo(id).name}
+        <span className="font-mono text-[10.5px] text-[var(--fg-3)]">{v}</span>
+      </span>
+    )
+  }
+  if (k === 'token') {
+    return (
+      <span className="inline-flex items-center gap-1.5 font-medium">
+        <TokenIcon symbol={v} size={15} />
+        {v}
+      </span>
+    )
+  }
+  if (k === 'storeId') {
+    const name = merchants.data?.merchants.find((m) => m.id === v)?.name
+    return name ? (
+      <span className="font-medium">
+        {name} <span className="font-mono text-[10.5px] text-[var(--fg-3)]">{v.slice(0, 8)}…</span>
+      </span>
+    ) : (
+      <span className="font-mono">{v}</span>
+    )
+  }
+  if (k === 'amount' || k === 'amountUSD' || k === 'amountUsd') {
+    return <span className="figure text-[12.5px] font-semibold">{k === 'amount' ? v : `$${v}`}</span>
+  }
+  return <span className="font-mono">{v}</span>
 }

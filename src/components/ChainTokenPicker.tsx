@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Fuel } from '@/components/icons'
+import { ChainIcon, TokenIcon } from '@/components/CryptoIcon'
 
 import { api } from '@/lib/api'
 import type { ChainInventoryEntry, ChainToken } from '@/lib/types'
@@ -70,7 +71,7 @@ export function ChainTokenPicker({
 
   const tokens = selectedChain?.tokens ?? []
   const selectedToken = tokens.find(
-    (t) => t.symbol.toUpperCase() === token.toUpperCase(),
+    (t) => t.symbol.toUpperCase() === (token ?? '').toUpperCase(),
   )
 
   // When the chain list loads, auto-pick the first chain if the current id isn't in it.
@@ -158,6 +159,7 @@ export function ChainTokenPicker({
               {chains.map((c) => (
                 <SelectItem key={c.chainId} value={String(c.chainId)}>
                   <span className="flex items-center gap-2">
+                    <ChainIcon chainId={c.chainId} size={16} />
                     <span>{c.displayName}</span>
                     <span className="font-mono text-2xs text-[var(--fg-3)]">
                       {c.chainId}
@@ -184,6 +186,7 @@ export function ChainTokenPicker({
                 return (
                   <SelectItem key={t.symbol} value={t.symbol}>
                     <span className="flex items-center gap-2">
+                      <TokenIcon symbol={t.symbol} size={16} />
                       <span className="font-mono">{t.symbol}</span>
                       {isNative && (
                         <span className="inline-flex items-center gap-1 rounded-full border border-border bg-[var(--bg-2)] px-1.5 py-0.5 text-2xs uppercase tracking-wider text-[var(--fg-2)]">

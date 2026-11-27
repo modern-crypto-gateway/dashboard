@@ -62,6 +62,19 @@ export interface PendingQuestion {
   ready: ReadyResult[]
 }
 
+/**
+ * A check-in the assistant scheduled (schedule_check). The browser runs it
+ * through /api/assistant/wake when it is due, as the signed-in operator.
+ */
+export interface Wakeup {
+  /** Also the id of its transcript item. */
+  id: string
+  createdAt: number
+  dueAt: number
+  /** What the assistant will check (its words). */
+  reason: string
+}
+
 export type StepStatus = 'running' | 'ok' | 'error' | 'declined' | 'expired' | 'stopped'
 
 /** One visible unit of work: a thinking pass or one dashboard call. */
@@ -84,8 +97,25 @@ export interface Step {
   endedAt?: number
 }
 
+/** An image the operator attached (bytes live in the store, see store.ts). */
+export interface ImageRef {
+  id: string
+  mediaType: ImageMediaType
+  width?: number
+  height?: number
+}
+
+export type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
+
+/** A stored image as the model gets it. */
+export interface StoredImage {
+  mediaType: ImageMediaType
+  /** Base64. */
+  data: string
+}
+
 export type UiItem =
-  | { kind: 'user'; id: string; text: string; at: number }
+  | { kind: 'user'; id: string; text: string; at: number; images?: ImageRef[] }
   | { kind: 'assistant'; id: string; text: string; at: number }
   | { kind: 'step'; id: string; step: Step; at: number }
   | { kind: 'notice'; id: string; text: string; at: number }
@@ -97,6 +127,17 @@ export type UiItem =
       status: 'waiting' | 'answered' | 'skipped' | 'replied'
       at: number
     }
+  | {
+      kind: 'wakeup'
+      id: string
+      dueAt: number
+      reason: string
+      status: 'scheduled' | 'done' | 'cancelled' | 'replaced'
+      firedAt?: number
+      at: number
+    }
+  /** Marks where a scheduled check-in started a new response. */
+  | { kind: 'checkin'; id: string; reason: string; at: number }
 
 /** Progress events streamed to the browser during a turn (NDJSON). */
 export type StreamEvent =
@@ -113,6 +154,9 @@ export interface ConversationMeta {
   createdAt: number
   updatedAt: number
   pending: boolean
+  /** When the scheduled check-in is due, if any. */
+  wakeAt: number | null
+  wakeId: string | null
 }
 
 export interface Conversation {
@@ -131,6 +175,10 @@ export interface Conversation {
   busyUntil: number
   /** Set by the Stop button; the loop checks it between steps. */
   stop: boolean
+  /** The scheduled check-in (absent on chats saved before check-ins existed). */
+  wakeup?: Wakeup | null
+  /** Check-ins run in a row since the operator last wrote. */
+  wakeChain?: number
 }
 
 export function newConversation(username: string, id: string, title: string): Conversation {
@@ -148,6 +196,8 @@ export function newConversation(username: string, id: string, title: string): Co
     ui: [],
     busyUntil: 0,
     stop: false,
+    wakeup: null,
+    wakeChain: 0,
   }
 }
 
@@ -158,5 +208,7 @@ export function metaOf(c: Conversation): ConversationMeta {
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
     pending: !!c.pending || !!c.question,
+    wakeAt: c.wakeup?.dueAt ?? null,
+    wakeId: c.wakeup?.id ?? null,
   }
 }
