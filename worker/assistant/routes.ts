@@ -446,6 +446,8 @@ async function postChat(
       context || undefined,
       images.map((i) => i.ref),
     )
+    // Save the message now, so the chat shows it if reopened mid-turn.
+    await ctx.checkpoint(conv)
     try {
       await runModel(ctx, conv)
     } catch (e) {
@@ -642,6 +644,7 @@ async function postWake(
     emit({ t: 'start', conversation: metaOf(conv) })
     repairDangling(ctx, conv)
     beginCheckin(ctx, conv, claimed.wakeup)
+    await ctx.checkpoint(conv)
     try {
       await runModel(ctx, conv)
     } catch (e) {

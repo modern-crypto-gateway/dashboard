@@ -195,7 +195,15 @@ function AssistantPanel({
   const [dragging, setDragging] = React.useState(false)
   const [entity, setEntity] = React.useState<EntityRef | null>(null)
 
-  const convQ = useQuery({ ...conversationQuery(storedId ?? 'none'), enabled: !!storedId, retry: false })
+  // While this tab streams a turn for the chat, the stream is the live copy:
+  // a refetch (mount, focus, busy polling) would return the server's last
+  // save and wipe what is streaming in. The stream ends with the saved chat.
+  const streamingHere = streaming || (!!storedId && checkinRunning.includes(storedId))
+  const convQ = useQuery({
+    ...conversationQuery(storedId ?? 'none'),
+    enabled: !!storedId && !streamingHere,
+    retry: false,
+  })
   // A remembered chat that no longer exists (deleted, expired) starts fresh.
   const gone = !!storedId && convQ.error instanceof ApiError && convQ.error.status === 404
   const activeId = gone ? null : storedId
