@@ -214,10 +214,11 @@ function buildRoutes(db: MockDb, flags: Set<Flag>, auth: { authenticated: boolea
     const dec = tokenDecimals(p.chainId, p.token)
     const srcs = [0, 1, 2].map((i) => ({
       address: db.srcAddr(fam, i),
+      // Same shape as the gateway's SourceCandidate: no symbol fields.
+      derivationIndex: i,
       tokenBalance: toRaw(String([18420.11, 6200.5, 940][i]), dec),
-      tokenSymbol: p.token,
       nativeBalance: toRaw(String([fam === 'tron' ? 412 : 0.21, fam === 'tron' ? 2.1 : 0.0003, 0.05][i]), nDec),
-      nativeSymbol: nSym,
+      feeCoveredByDelegatedEnergy: false,
     }))
     const needsTopUp = fam === 'tron'
     return {

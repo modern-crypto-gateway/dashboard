@@ -401,10 +401,12 @@ export type PayoutEstimateSource = {
   address: string
   /** Raw smallest-units of the target token held by this source. */
   tokenBalance: string
-  tokenSymbol: string
+  /** Not sent by the gateway's estimate (SourceCandidate has no symbols);
+   * the form knows the token and the chain's native coin. */
+  tokenSymbol?: string
   /** Raw smallest-units of native gas currency held by this source. */
   nativeBalance: string
-  nativeSymbol: string
+  nativeSymbol?: string
 }
 
 /**

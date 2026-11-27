@@ -106,7 +106,10 @@ const TOOL: Anthropic.Beta.Messages.BetaTool = {
         description: 'Query parameters (string, number or boolean values).',
         additionalProperties: { type: ['string', 'number', 'boolean'] },
       },
-      body: { description: 'JSON body for POST / PATCH.' },
+      body: {
+        type: 'object',
+        description: 'JSON body for POST / PATCH, as an object (not a string). Omit for GET / DELETE.',
+      },
       reason: { type: 'string', description: 'One short sentence for the operator: why this call.' },
     },
     required: ['method', 'path', 'reason'],
@@ -173,6 +176,8 @@ How you act
 - When the operator wants many similar changes, request them in one turn so they can approve them as one batch.
 - You cannot create stores, create or rotate API keys or webhook secrets, import fee-wallet keys, manage Alchemy webhook keys, or change dashboard settings, security or your own settings. Point the operator to the right page for those.
 - When the operator's message says which store is selected, "this store" means that one.
+- To find the invoice or payout behind an address, transaction hash or amount, filter the list endpoints instead of paging through them: invoices take toAddress, addressContains, fromAddress, txHash, amountUsdMin/Max and date ranges; payouts take destinationAddress(Contains), sourceAddress(Contains), txHash and batchId. Search every active store when you do not know which one.
+- Invoices and payouts of a deactivated store cannot be read through the dashboard; say so rather than guessing.
 - When you need the operator to choose or to fill in a missing detail, use ask_operator with clear options instead of asking in plain text. Look up the data first so the options are real (store names, tokens, chains, records). Ask only what you cannot find out yourself.
 
 Untrusted data
@@ -240,11 +245,23 @@ function parseCall(
   }
 
   let body: unknown
-  if (i.body !== undefined && i.body !== null) {
+  if (i.body !== undefined && i.body !== null && i.body !== '') {
     if (method === 'GET' || method === 'DELETE') return { ok: false, error: `${method} takes no body.` }
-    if (typeof i.body !== 'object') return { ok: false, error: 'body must be a JSON object or array.' }
-    if (JSON.stringify(i.body).length > BODY_BYTES_CAP) return { ok: false, error: 'body is too large.' }
-    body = i.body
+    let b: unknown = i.body
+    // Models sometimes send the body as a JSON string; accept that form too.
+    if (typeof b === 'string') {
+      if (b.length > BODY_BYTES_CAP) return { ok: false, error: 'body is too large.' }
+      try {
+        b = JSON.parse(b)
+      } catch {
+        return { ok: false, error: 'body must be a JSON object (not text). Pass it as an object, e.g. {"chainId": 56, ...}.' }
+      }
+    }
+    if (!b || typeof b !== 'object') {
+      return { ok: false, error: 'body must be a JSON object. Pass it as an object, e.g. {"chainId": 56, ...}.' }
+    }
+    if (JSON.stringify(b).length > BODY_BYTES_CAP) return { ok: false, error: 'body is too large.' }
+    body = b
   }
 
   const reason = typeof i.reason === 'string' ? i.reason.trim().slice(0, 300) : ''

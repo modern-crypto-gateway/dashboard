@@ -2953,7 +2953,7 @@ function MaxAmountPanel({
           Either lower the amount or proceed and let the backend reject with
           a suggested value. Source holds{' '}
           <span className="figure font-medium text-foreground">{bal}</span>{' '}
-          {source.tokenSymbol}.
+          {source.tokenSymbol ?? tokenMeta?.symbol ?? ''}.
         </p>
         <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-[var(--warn-border)] bg-card px-3 py-2.5">
           <input
@@ -2991,6 +2991,11 @@ function SourcePanel({
     tokenMeta ? formatUnits(raw, tokenMeta.decimals) : raw
   const fmtNative = (raw: string) =>
     nativeDecimals != null ? formatUnits(raw, nativeDecimals) : raw
+  // The gateway's estimate does not name the symbols; the form does.
+  const tokenSym = source.tokenSymbol ?? tokenMeta?.symbol ?? ''
+  const nativeSym = source.nativeSymbol ?? (chainId != null ? nativeMeta(chainId).symbol : '')
+  // UTXO chains answer with one synthetic source for all coins.
+  const aggregate = source.address === '<utxo-aggregate>'
 
   const sponsorMissing = topUp && topUp.sponsor === null
   const sponsorNeeded = topUp !== null && !sponsorMissing
@@ -3002,18 +3007,24 @@ function SourcePanel({
           <Wallet className="size-4 text-[var(--fg-2)]" />
           Picked source
         </div>
-        <Addr value={source.address} chainId={chainId} className="max-w-full" />
+        {aggregate ? (
+          <div className="text-[var(--fg-2)]">All spendable coins in the pool (picked at send time)</div>
+        ) : (
+          <Addr value={source.address} chainId={chainId} className="max-w-full" />
+        )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[var(--fg-2)]">
           <span className="inline-flex items-center gap-1">
-            <TokenIcon symbol={source.tokenSymbol} size={14} />
+            <TokenIcon symbol={tokenSym} size={14} />
             <span className="figure text-foreground">{fmtToken(source.tokenBalance)}</span>
-            {source.tokenSymbol}
+            {tokenSym}
           </span>
-          <span className="inline-flex items-center gap-1">
-            <TokenIcon symbol={source.nativeSymbol} size={14} />
-            <span className="figure text-foreground">{fmtNative(source.nativeBalance)}</span>
-            {source.nativeSymbol}
-          </span>
+          {!aggregate && (
+            <span className="inline-flex items-center gap-1">
+              <TokenIcon symbol={nativeSym} size={14} />
+              <span className="figure text-foreground">{fmtNative(source.nativeBalance)}</span>
+              {nativeSym}
+            </span>
+          )}
         </div>
       </div>
 
@@ -3024,7 +3035,7 @@ function SourcePanel({
             <span>
               Gas auto-sponsored:{' '}
               <span className="figure text-foreground">{fmtNative(topUp.amountRaw)}</span>{' '}
-              {source.nativeSymbol} moved from sponsor before broadcast.
+              {nativeSym} moved from sponsor before broadcast.
             </span>
           </div>
           <Addr value={topUp.sponsor.address} chainId={chainId} className="max-w-full" />
@@ -3055,8 +3066,8 @@ function SourcePanel({
               <li key={alt.address} className="space-y-0.5">
                 <Addr value={alt.address} chainId={chainId} />
                 <div className="figure text-[var(--fg-2)]">
-                  {fmtToken(alt.tokenBalance)} {alt.tokenSymbol} ·{' '}
-                  {fmtNative(alt.nativeBalance)} {alt.nativeSymbol}
+                  {fmtToken(alt.tokenBalance)} {alt.tokenSymbol ?? tokenSym} ·{' '}
+                  {fmtNative(alt.nativeBalance)} {alt.nativeSymbol ?? nativeSym}
                 </div>
               </li>
             ))}

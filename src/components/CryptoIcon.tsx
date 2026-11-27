@@ -95,7 +95,7 @@ function Fallback({ text, color, size }: { text: string; color?: string; size: n
       className="grid shrink-0 place-items-center rounded-full font-semibold text-white"
       style={{ width: size, height: size, fontSize: Math.max(9, size * 0.42), background: color ?? 'var(--fg-3)' }}
     >
-      {text.slice(0, 1).toUpperCase()}
+      {(text || '?').slice(0, 1).toUpperCase()}
     </span>
   )
 }
@@ -140,17 +140,19 @@ export function FamilyIcon({ family, size = 18 }: { family: Family; size?: numbe
   )
 }
 
-/** Token logo by symbol; letter disc for unknown tokens. */
+/** Token logo by symbol; letter disc for unknown tokens (and "?" when the
+ * symbol is missing, so bad data shows a placeholder instead of crashing). */
 export function TokenIcon({
-  symbol,
+  symbol: rawSymbol,
   size = 18,
   className,
 }: {
-  symbol: string
+  symbol: string | null | undefined
   size?: number
   className?: string
 }) {
-  const Icon = TOKEN_ICON[symbol.toUpperCase()]
+  const symbol = typeof rawSymbol === 'string' ? rawSymbol : ''
+  const Icon = symbol ? TOKEN_ICON[symbol.toUpperCase()] : undefined
   return (
     <span title={symbol} className={cn('inline-grid shrink-0 place-items-center', className)} style={{ width: size, height: size }}>
       {Icon ? (
@@ -168,7 +170,7 @@ export function TokenOnChain({
   chainId,
   size = 32,
 }: {
-  symbol: string
+  symbol: string | null | undefined
   chainId: number
   size?: number
 }) {

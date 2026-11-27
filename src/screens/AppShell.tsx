@@ -8,6 +8,7 @@ import {
 } from '@/components/CommandPalette'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Assistant } from '@/components/Assistant'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { useSession } from '@/lib/session'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { cn } from '@/lib/utils'
@@ -78,11 +79,15 @@ export function AppShell() {
             key={pathname}
             className="page-enter mx-auto w-full max-w-[1360px] flex-1 px-5 pt-8 pb-20 md:px-8 lg:px-10"
           >
-            <Outlet />
+            <ErrorBoundary key={pathname} label="page">
+              <Outlet />
+            </ErrorBoundary>
           </div>
         </main>
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-        <Assistant />
+        <ErrorBoundary label="assistant" compact>
+          <Assistant />
+        </ErrorBoundary>
       </div>
     </TooltipProvider>
   )

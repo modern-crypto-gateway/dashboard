@@ -56,7 +56,7 @@ export const ENDPOINTS: Endpoint[] = [
     path: `${STORE}/invoices`,
     risk: 'read',
     label: 'List invoices',
-    hint: 'Query: status, chainId, token, externalId, externalIdContains, hasPayments, amountUsdMin/Max, createdFrom/createdTo (ms epoch), sortBy, sortDir, limit (<=100), offset.',
+    hint: 'Query: status, extraStatus, chainId, token, externalId, externalIdContains, toAddress (exact receive address), addressContains, fromAddress (payer), txHash, hasPayments, amountUsdMin/Max, paidUsdMin/Max, createdFrom/To, updatedFrom/To, confirmedFrom/To, expiresFrom/To (ms epoch), sortBy, sortDir, limit (<=100), offset.',
   },
   { method: 'GET', path: `${STORE}/invoices/:invoiceId`, risk: 'read', label: 'Get invoice' },
   {
@@ -74,7 +74,7 @@ export const ENDPOINTS: Endpoint[] = [
     path: `${STORE}/payouts`,
     risk: 'read',
     label: 'List payouts',
-    hint: 'Query: status, chainId, token, destinationAddress, batchId, txHash, hasError, amountUsdMin/Max, createdFrom/createdTo (ms epoch), sortBy, sortDir, limit, offset.',
+    hint: 'Query: status, chainId, token, destinationAddress, destinationAddressContains, sourceAddress, sourceAddressContains, batchId, txHash, feeTier, hasError, amountUsdMin/Max, createdFrom/To, submittedFrom/To, confirmedFrom/To (ms epoch), sortBy, sortDir, limit (<=100), offset.',
   },
   { method: 'GET', path: `${STORE}/payouts/:payoutId`, risk: 'read', label: 'Get payout' },
   {
